@@ -1,0 +1,10 @@
+{
+	"hooks": {
+		"Stop": [
+			{
+				"type": "command",
+				"command": "bun run build"
+			}
+		]
+	}
+}
