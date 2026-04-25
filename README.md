@@ -218,3 +218,14 @@ drizzle/                # 数据库迁移文件
 ## Link
 
 [Forum](https://linux.do/t/topic/2056392)
+
+## Star History
+
+<picture>
+  <source media="(prefers-color-scheme: dark)"
+    srcset="https://api.star-history.com/svg?repos=GoJam11/LLMRelayService&type=Date&theme=dark" />
+  <source media="(prefers-color-scheme: light)"
+    srcset="https://api.star-history.com/svg?repos=GoJam11/LLMRelayService&type=Date" />
+  <img alt="Star History Chart"
+    src="https://api.star-history.com/svg?repos=GoJam11/LLMRelayService&type=Date" />
+</picture>
