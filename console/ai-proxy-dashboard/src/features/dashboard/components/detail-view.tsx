@@ -109,7 +109,6 @@ export function DetailView({
 
   const record = detail.record
   const analysis = detail.analysis
-  const sourceRequestType = detail.source_request_type ?? "unknown"
   const usage = record.response_usage ?? {}
   const timing = record.response_timing ?? {}
   const requestRows = [
