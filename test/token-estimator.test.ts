@@ -67,6 +67,31 @@ describe('Token Estimator', () => {
       const tokens = estimateInputTokens(requestBody);
       expect(tokens).toBeGreaterThan(0);
     });
+
+    it('includes Anthropic system prompts and tool definitions', () => {
+      const requestBody = JSON.stringify({
+        model: 'claude-sonnet-4-5-20250929',
+        system: 'Answer with concise JSON.',
+        tools: [
+          {
+            name: 'lookup',
+            input_schema: {
+              type: 'object',
+              properties: { query: { type: 'string' } },
+            },
+          },
+        ],
+        messages: [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: 'Find the latest invoice total.' }],
+          },
+        ],
+      });
+
+      const tokens = estimateInputTokens(requestBody);
+      expect(tokens).toBeGreaterThan(countTokens('Find the latest invoice total.'));
+    });
   });
 
   describe('estimateOutputTokens', () => {
@@ -86,6 +111,50 @@ describe('Token Estimator', () => {
     it('returns 0 for empty response', () => {
       const tokens = estimateOutputTokens('');
       expect(tokens).toBe(0);
+    });
+
+    it('estimates OpenAI JSON output from assistant content instead of the raw envelope', () => {
+      const content = 'The answer is 42.';
+      const response = JSON.stringify({
+        id: 'chatcmpl-test',
+        choices: [{ message: { role: 'assistant', content } }],
+      });
+
+      expect(estimateOutputTokens(response)).toBe(countTokens(content));
+    });
+
+    it('estimates Anthropic SSE output from text deltas', () => {
+      const response = `event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" world"}}
+
+event: message_stop
+data: {"type":"message_stop"}`;
+
+      expect(estimateOutputTokens(response)).toBe(countTokens('Hello world'));
+    });
+
+    it('does not double count OpenAI Responses SSE completed envelopes', () => {
+      const response = `event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"Hello"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":" world"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"output_text":"Hello world"}}`;
+
+      expect(estimateOutputTokens(response)).toBe(countTokens('Hello world'));
+    });
+
+    it('returns 0 for JSON error envelopes without assistant output', () => {
+      const response = JSON.stringify({
+        error: { type: 'overloaded_error', message: 'Overloaded' },
+      });
+
+      expect(estimateOutputTokens(response)).toBe(0);
     });
   });
 });

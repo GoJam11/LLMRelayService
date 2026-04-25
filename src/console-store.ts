@@ -150,6 +150,7 @@ interface ConsoleRequestRow {
   reasoning_output_tokens: number | string;
   ephemeral_5m_input_tokens: number | string;
   ephemeral_1h_input_tokens: number | string;
+  token_usage_estimated: number | string;
   failover_from: string | null;
   failover_chain_json: string | null;
   original_route_prefix: string | null;
@@ -262,6 +263,7 @@ type ConsoleRequestListRow = Pick<ConsoleRequestRow,
   | 'reasoning_output_tokens'
   | 'ephemeral_5m_input_tokens'
   | 'ephemeral_1h_input_tokens'
+  | 'token_usage_estimated'
   | 'failover_from'
   | 'failover_chain_json'
   | 'original_route_prefix'
@@ -1084,6 +1086,7 @@ function toCamelCaseRow(row: typeof consoleRequests.$inferSelect): ConsoleReques
     reasoning_output_tokens: row.reasoningOutputTokens,
     ephemeral_5m_input_tokens: row.ephemeral5mInputTokens,
     ephemeral_1h_input_tokens: row.ephemeral1hInputTokens,
+    token_usage_estimated: row.tokenUsageEstimated,
     failover_from: row.failoverFrom,
     failover_chain_json: row.failoverChainJson,
     original_route_prefix: row.originalRoutePrefix,
@@ -1135,6 +1138,7 @@ function toUsage(row: Pick<ConsoleRequestRow,
   | 'reasoning_output_tokens'
   | 'ephemeral_5m_input_tokens'
   | 'ephemeral_1h_input_tokens'
+  | 'token_usage_estimated'
 >): ResponseUsageForConsole {
   return {
     model: row.response_model ?? '',
@@ -1148,6 +1152,7 @@ function toUsage(row: Pick<ConsoleRequestRow,
     reasoning_output_tokens: normalizeNumber(row.reasoning_output_tokens),
     ephemeral_5m_input_tokens: normalizeNumber(row.ephemeral_5m_input_tokens),
     ephemeral_1h_input_tokens: normalizeNumber(row.ephemeral_1h_input_tokens),
+    estimated: normalizeNumber(row.token_usage_estimated) > 0,
   };
 }
 
@@ -1512,6 +1517,7 @@ export async function listConsoleRequests(
     reasoning_output_tokens: consoleRequests.reasoningOutputTokens,
     ephemeral_5m_input_tokens: consoleRequests.ephemeral5mInputTokens,
     ephemeral_1h_input_tokens: consoleRequests.ephemeral1hInputTokens,
+    token_usage_estimated: consoleRequests.tokenUsageEstimated,
     failover_from: consoleRequests.failoverFrom,
     failover_chain_json: consoleRequests.failoverChainJson,
     original_route_prefix: consoleRequests.originalRoutePrefix,

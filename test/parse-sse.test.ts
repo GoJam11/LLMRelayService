@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { parseResponseUsage } from "../src/index";
+import { parseUsageForProvider, type UpstreamType } from "../src/providers";
+
+function parseResponseUsage(body: string, upstreamType: UpstreamType = "anthropic") {
+  return parseUsageForProvider(body, upstreamType);
+}
 
 // 真实 SSE 响应数据 (来自 scripts/sse example.txt)
 const REAL_SSE = `event: message_start

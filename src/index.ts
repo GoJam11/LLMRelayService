@@ -446,6 +446,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
 
   let body: BodyInit | null | undefined;
   let requestModel = originalRequestModel;
+  let forwardedPayload: string | null = null;
   let forwardedPayloadForStore: string | null = null;
   let forwardedSummaryForLog: PayloadSummaryForLog | null = null;
   let sourceRequestType = 'unknown';
@@ -489,7 +490,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
   addPerfPhase(requestPerfPhases, 'build_forward_headers_ms', elapsedPerfMs(buildHeadersStart));
 
   if (c.req.method === 'POST') {
-    const forwardedPayload = typeof body === 'string' ? body : rawPayloadForLog;
+    forwardedPayload = typeof body === 'string' ? body : rawPayloadForLog;
     if (forwardedPayload != null) {
       forwardedPayloadForStore = forwardedPayload;
       lastForwardedPayloadChars = forwardedPayload.length;

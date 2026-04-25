@@ -386,6 +386,38 @@ function formatTruncationReason(reason: TruncationReason): string | undefined {
   return undefined;
 }
 
+function hasNoTokenUsage(usage: UsageData): boolean {
+  return usage.input_tokens === 0
+    && usage.output_tokens === 0
+    && usage.total_tokens === 0
+    && usage.cache_creation_input_tokens === 0
+    && usage.cache_read_input_tokens === 0
+    && usage.cached_input_tokens === 0
+    && usage.reasoning_output_tokens === 0
+    && usage.ephemeral_5m_input_tokens === 0
+    && usage.ephemeral_1h_input_tokens === 0;
+}
+
+function applyEstimatedTokenUsageFallback(
+  usage: UsageData,
+  requestBody: string | null | undefined,
+  responseBody: string | null | undefined,
+): UsageData {
+  if (!hasNoTokenUsage(usage)) return usage;
+
+  const estimatedInput = estimateInputTokens(requestBody);
+  const estimatedOutput = estimateOutputTokens(responseBody);
+  if (estimatedInput <= 0 && estimatedOutput <= 0) return usage;
+
+  return {
+    ...usage,
+    input_tokens: estimatedInput,
+    output_tokens: estimatedOutput,
+    total_tokens: estimatedInput + estimatedOutput,
+    estimated: true,
+  };
+}
+
 function queueObservedResponseLog(
   observation: ResponseObservation,
   response: Pick<Response, 'status' | 'statusText' | 'headers'>,
@@ -400,22 +432,11 @@ function queueObservedResponseLog(
     .then(async () => {
       const { rawPayload, timing, payloadTruncated, truncationReason, observeMs } = observation;
       const payloadForLog = truncatePayloadForLog(rawPayload);
-      let usage = parseUsageForProvider(rawPayload, upstreamType);
-
-      // Estimate tokens if upstream returned zeros
-      if (usage.input_tokens === 0 && usage.output_tokens === 0 && usage.total_tokens === 0) {
-        const estimatedInput = estimateInputTokens(requestBody);
-        const estimatedOutput = estimateOutputTokens(rawPayload);
-        if (estimatedInput > 0 || estimatedOutput > 0) {
-          usage = {
-            ...usage,
-            input_tokens: estimatedInput,
-            output_tokens: estimatedOutput,
-            total_tokens: estimatedInput + estimatedOutput,
-            estimated: true,
-          };
-        }
-      }
+      const usage = applyEstimatedTokenUsageFallback(
+        parseUsageForProvider(rawPayload, upstreamType),
+        requestBody,
+        rawPayload,
+      );
 
       // 合并截断原因：优先使用观测阶段的截断原因，其次使用日志输出阶段的截断原因
       const finalTruncationReason = truncationReason ?? (payloadForLog.truncated ? 'size_limit' : null);
@@ -519,6 +540,7 @@ function logEmptyResponseAsync(
   createdAtPerf: number,
   upstreamType: UpstreamType,
   truncatePayloadForLog: FinalizeProxyResponseOptions['truncatePayloadForLog'],
+  requestBody?: string,
 ): void {
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
   const isEventStream = isEventStreamContentType(contentType);
@@ -535,7 +557,7 @@ function logEmptyResponseAsync(
     truncationReason: null,
     observeMs: 0,
   };
-  queueObservedResponseLog(observation, response, requestId, path, createdAt, upstreamType, truncatePayloadForLog);
+  queueObservedResponseLog(observation, response, requestId, path, createdAt, upstreamType, truncatePayloadForLog, requestBody);
 }
 
 export function finalizeProxyResponse(options: FinalizeProxyResponseOptions): Response {
@@ -551,7 +573,7 @@ export function finalizeProxyResponse(options: FinalizeProxyResponseOptions): Re
   }
 
   if (!transformedResponse.body) {
-    if (shouldLog) logEmptyResponseAsync(transformedResponse, requestId, path, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog);
+    if (shouldLog) logEmptyResponseAsync(transformedResponse, requestId, path, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog, requestBody);
     return new Response(null, {
       status: transformedResponse.status,
       statusText: transformedResponse.statusText,
@@ -586,7 +608,7 @@ export function finalizeProxyResponse(options: FinalizeProxyResponseOptions): Re
         requestBody,
       );
     } else {
-      logEmptyResponseAsync(transformedResponse, requestId, path, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog);
+      logEmptyResponseAsync(transformedResponse, requestId, path, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog, requestBody);
     }
     return transformedResponse;
   }
