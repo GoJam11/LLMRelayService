@@ -19,6 +19,7 @@ export interface UsageData {
   reasoning_output_tokens: number;
   ephemeral_5m_input_tokens: number;
   ephemeral_1h_input_tokens: number;
+  estimated?: boolean;
 }
 
 export interface PreparedRequestResult {

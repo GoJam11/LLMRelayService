@@ -52,6 +52,7 @@ export interface ResponseUsageForConsole {
   cost?: number;
   cost_breakdown?: CostBreakdown;
   cost_pricing?: ModelPricing;
+  estimated?: boolean;
 }
 
 export interface ResponseTimingSnapshotForConsole {
@@ -1431,6 +1432,7 @@ export async function saveConsoleResponse(record: ConsoleResponseSnapshotInput):
         reasoningOutputTokens: record.response_usage.reasoning_output_tokens,
         ephemeral5mInputTokens: record.response_usage.ephemeral_5m_input_tokens,
         ephemeral1hInputTokens: record.response_usage.ephemeral_1h_input_tokens,
+        tokenUsageEstimated: record.response_usage.estimated ? 1 : 0,
       })
       .where(eq(consoleRequests.requestId, record.request_id));
     const dbTxMs = elapsedPerfMs(txStart);

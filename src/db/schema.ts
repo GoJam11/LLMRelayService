@@ -47,6 +47,7 @@ export const consoleRequests = pgTable('console_requests', {
   originalRequestModel: text('original_request_model'),
   failoverReason: text('failover_reason'),
   sourceRequestType: text('source_request_type').notNull().default('unknown'),
+  tokenUsageEstimated: integer('token_usage_estimated').notNull().default(0),
 }, (table) => ({
   createdAtIdx: index('idx_console_requests_created_at').on(table.createdAt),
   compareIdx: index('idx_console_requests_compare').on(

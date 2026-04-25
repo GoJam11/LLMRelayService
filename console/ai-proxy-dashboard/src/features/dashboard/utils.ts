@@ -121,18 +121,19 @@ export function getUsageMetricRows(
   const outputSpeed = formatTokensPerSecond(
     calculateOutputTokensPerSecond(usageLike, timingLike),
   )
+  const estimatedSuffix = usageLike?.estimated ? " (estimated)" : ""
 
   if (upstreamType === "openai") {
     return [
-      { label: "prompt", value: formatCount(usageLike?.input_tokens) },
+      { label: `prompt${estimatedSuffix}`, value: formatCount(usageLike?.input_tokens) },
       {
-        label: "uncached prompt",
+        label: `uncached prompt${estimatedSuffix}`,
         value: formatCount(
           usageLike?.uncached_input_tokens ?? usageLike?.input_tokens,
         ),
       },
-      { label: "completion", value: formatCount(usageLike?.output_tokens) },
-      { label: "total", value: formatCount(getTotalTokens(usageLike, upstreamType)) },
+      { label: `completion${estimatedSuffix}`, value: formatCount(usageLike?.output_tokens) },
+      { label: `total${estimatedSuffix}`, value: formatCount(getTotalTokens(usageLike, upstreamType)) },
       { label: "输出速度", value: outputSpeed },
       {
         label: "cached prompt",
@@ -147,9 +148,9 @@ export function getUsageMetricRows(
   }
 
   return [
-    { label: "input", value: formatCount(usageLike?.input_tokens) },
-    { label: "output", value: formatCount(usageLike?.output_tokens) },
-    { label: "total", value: formatCount(getTotalTokens(usageLike, upstreamType)) },
+    { label: `input${estimatedSuffix}`, value: formatCount(usageLike?.input_tokens) },
+    { label: `output${estimatedSuffix}`, value: formatCount(usageLike?.output_tokens) },
+    { label: `total${estimatedSuffix}`, value: formatCount(getTotalTokens(usageLike, upstreamType)) },
     { label: "输出速度", value: outputSpeed },
     {
       label: "cache create",

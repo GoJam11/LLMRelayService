@@ -4,6 +4,7 @@ import { parseUsageForProvider, getProviderAdapter, type UpstreamType, type Usag
 import { elapsedPerfMs, nowPerfMs, shouldLogBackgroundPerf } from './perf-detail';
 import { toObservedEpochMs } from './perf-detail';
 import { recordBackgroundPerfSample } from './perf-monitor';
+import { estimateInputTokens, estimateOutputTokens } from './token-estimator';
 import {
   DEFAULT_RESPONSE_STREAM_LOG_MAX_BYTES,
   DEFAULT_RESPONSE_STREAM_LOG_MAX_DURATION_MS,
@@ -48,6 +49,7 @@ interface FinalizeProxyResponseOptions {
   createdAtPerf: number;
   upstreamType: UpstreamType;
   truncatePayloadForLog: (rawPayload: string) => { payload: string; originalBytes: number; loggedBytes: number; truncated: boolean };
+  requestBody?: string;
 }
 
 export async function waitForPendingResponseLogs(): Promise<void> {
@@ -392,12 +394,28 @@ function queueObservedResponseLog(
   createdAt: number,
   upstreamType: UpstreamType,
   truncatePayloadForLog: FinalizeProxyResponseOptions['truncatePayloadForLog'],
+  requestBody?: string,
 ): void {
   const task = Promise.resolve()
     .then(async () => {
       const { rawPayload, timing, payloadTruncated, truncationReason, observeMs } = observation;
       const payloadForLog = truncatePayloadForLog(rawPayload);
-      const usage = parseUsageForProvider(rawPayload, upstreamType);
+      let usage = parseUsageForProvider(rawPayload, upstreamType);
+
+      // Estimate tokens if upstream returned zeros
+      if (usage.input_tokens === 0 && usage.output_tokens === 0 && usage.total_tokens === 0) {
+        const estimatedInput = estimateInputTokens(requestBody);
+        const estimatedOutput = estimateOutputTokens(rawPayload);
+        if (estimatedInput > 0 || estimatedOutput > 0) {
+          usage = {
+            ...usage,
+            input_tokens: estimatedInput,
+            output_tokens: estimatedOutput,
+            total_tokens: estimatedInput + estimatedOutput,
+            estimated: true,
+          };
+        }
+      }
 
       // 合并截断原因：优先使用观测阶段的截断原因，其次使用日志输出阶段的截断原因
       const finalTruncationReason = truncationReason ?? (payloadForLog.truncated ? 'size_limit' : null);
@@ -464,10 +482,11 @@ function logResponseObservationAsync(
   createdAtPerf: number,
   upstreamType: UpstreamType,
   truncatePayloadForLog: FinalizeProxyResponseOptions['truncatePayloadForLog'],
+  requestBody?: string,
 ): void {
   const task = observationPromise
     .then((observation) => {
-      queueObservedResponseLog(observation, response, requestId, path, createdAt, upstreamType, truncatePayloadForLog);
+      queueObservedResponseLog(observation, response, requestId, path, createdAt, upstreamType, truncatePayloadForLog, requestBody);
     })
     .catch(async (error: unknown) => {
       console.warn('[RES_PAYLOAD_READ_ERR]', { request_id: requestId, path, error });
@@ -520,7 +539,7 @@ function logEmptyResponseAsync(
 }
 
 export function finalizeProxyResponse(options: FinalizeProxyResponseOptions): Response {
-  const { response, requestId, path, shouldLog, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog } = options;
+  const { response, requestId, path, shouldLog, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog, requestBody } = options;
   const provider = getProviderAdapter(upstreamType);
   const transformedResponse = provider.transformResponse(response);
   const headers = new Headers(transformedResponse.headers);
@@ -564,6 +583,7 @@ export function finalizeProxyResponse(options: FinalizeProxyResponseOptions): Re
         createdAtPerf,
         upstreamType,
         truncatePayloadForLog,
+        requestBody,
       );
     } else {
       logEmptyResponseAsync(transformedResponse, requestId, path, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog);
@@ -580,7 +600,7 @@ export function finalizeProxyResponse(options: FinalizeProxyResponseOptions): Re
     upstreamType,
     contentType,
   );
-  logResponseObservationAsync(observationPromise, transformedResponse, requestId, path, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog);
+  logResponseObservationAsync(observationPromise, transformedResponse, requestId, path, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog, requestBody);
 
   return new Response(observedBody, {
     status: transformedResponse.status,

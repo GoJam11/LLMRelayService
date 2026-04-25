@@ -8,6 +8,7 @@ import { startPerfMonitor } from './perf-monitor';
 import { warmModelCatalogFromDb } from './model-catalog';
 import { fetchModelsDevData } from './model-catalog';
 import { saveCatalogToDb } from './catalog-db';
+import { initializeTokenEstimator } from './token-estimator';
 
 const stubEnv = {
   LLM_STATUS: {
@@ -20,6 +21,9 @@ const IDLE_TIMEOUT_SECONDS = Number.parseInt(process.env.BUN_SERVER_IDLE_TIMEOUT
 
 // 启动前运行数据库迁移
 await runMigrations();
+
+// 初始化 token 估算器（WASM tiktoken 一次性初始化）
+initializeTokenEstimator();
 
 // 从 DB 预热 catalog 缓存（快速，不阻塞服务启动）
 const dbCatalogFresh = await warmModelCatalogFromDb();

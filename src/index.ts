@@ -16,6 +16,7 @@ import { recordRequestPerfSample, trackRequestStart, trackRequestEnd } from './p
 import { elapsedPerfMs, getMaxPerfPhase, nowPerfMs, roundPerfMs, shouldLogRequestPerf } from './perf-detail';
 import { PAYLOAD_LOG_LIMIT_BYTES } from './logging-constants';
 import { ensureModelCatalogLoaded, lookupModelContext } from './model-catalog';
+import { initializeTokenEstimator } from './token-estimator';
 
 const SYNTHETIC_MODEL_CREATED = 0;
 const SYNTHETIC_ANTHROPIC_MODEL_CREATED_AT = '1970-01-01T00:00:00Z';
@@ -613,6 +614,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
       createdAtPerf: requestCreatedPerfAt,
       upstreamType: route.type,
       truncatePayloadForLog,
+      requestBody: forwardedPayload,
     });
     addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
     emitRequestPerf(response.status);
@@ -630,6 +632,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
     createdAtPerf: requestCreatedPerfAt,
     upstreamType: route.type,
     truncatePayloadForLog,
+    requestBody: forwardedPayload,
   });
   addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
   const analyticsStart = nowPerfMs();

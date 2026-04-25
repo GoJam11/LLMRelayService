@@ -25,6 +25,7 @@
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@dqbd/tiktoken": "^1.0.14",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.12.6",
     "postgres": "^3.4.7"

@@ -1,0 +1,397 @@
+{
+  "id": "0014_token_estimated",
+  "prevId": "0013_model_catalog_cache",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "console_requests": {
+      "name": "console_requests",
+      "schema": "",
+      "columns": {
+        "request_id": {
+          "name": "request_id",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "bigint",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "route_prefix": {
+          "name": "route_prefix",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "upstream_type": {
+          "name": "upstream_type",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'anthropic'"
+        },
+        "method": {
+          "name": "method",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_url": {
+          "name": "target_url",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_model": {
+          "name": "request_model",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "api_key_id": {
+          "name": "api_key_id",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "api_key_name": {
+          "name": "api_key_name",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "original_payload": {
+          "name": "original_payload",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "original_payload_truncated": {
+          "name": "original_payload_truncated",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "original_summary_json": {
+          "name": "original_summary_json",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "forwarded_payload": {
+          "name": "forwarded_payload",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "forwarded_payload_truncated": {
+          "name": "forwarded_payload_truncated",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "forwarded_summary_json": {
+          "name": "forwarded_summary_json",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "original_headers_json": {
+          "name": "original_headers_json",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "forward_headers_json": {
+          "name": "forward_headers_json",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "response_headers_json": {
+          "name": "response_headers_json",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "response_status": {
+          "name": "response_status",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "response_status_text": {
+          "name": "response_status_text",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "response_payload": {
+          "name": "response_payload",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "response_payload_truncated": {
+          "name": "response_payload_truncated",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "response_payload_truncation_reason": {
+          "name": "response_payload_truncation_reason",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "response_body_bytes": {
+          "name": "response_body_bytes",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "first_chunk_at": {
+          "name": "first_chunk_at",
+          "type": "bigint",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_token_at": {
+          "name": "first_token_at",
+          "type": "bigint",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "bigint",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "has_streaming_content": {
+          "name": "has_streaming_content",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "response_model": {
+          "name": "response_model",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stop_reason": {
+          "name": "stop_reason",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "input_tokens": {
+          "name": "input_tokens",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "output_tokens": {
+          "name": "output_tokens",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "total_tokens": {
+          "name": "total_tokens",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "cache_creation_input_tokens": {
+          "name": "cache_creation_input_tokens",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "cache_read_input_tokens": {
+          "name": "cache_read_input_tokens",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "cached_input_tokens": {
+          "name": "cached_input_tokens",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "reasoning_output_tokens": {
+          "name": "reasoning_output_tokens",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "ephemeral_5m_input_tokens": {
+          "name": "ephemeral_5m_input_tokens",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "ephemeral_1h_input_tokens": {
+          "name": "ephemeral_1h_input_tokens",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "failover_from": {
+          "name": "failover_from",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failover_chain_json": {
+          "name": "failover_chain_json",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "original_route_prefix": {
+          "name": "original_route_prefix",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "original_request_model": {
+          "name": "original_request_model",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failover_reason": {
+          "name": "failover_reason",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_request_type": {
+          "name": "source_request_type",
+          "type": "text",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'unknown'"
+        },
+        "token_usage_estimated": {
+          "name": "token_usage_estimated",
+          "type": "integer",
+          "typeSchema": "",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "idx_console_requests_created_at": {
+          "name": "idx_console_requests_created_at",
+          "columns": ["created_at"],
+          "isUnique": false
+        },
+        "idx_console_requests_compare": {
+          "name": "idx_console_requests_compare",
+          "columns": ["route_prefix", "method", "path", "request_model", "created_at"],
+          "isUnique": false
+        },
+        "idx_console_requests_route_prefix": {
+          "name": "idx_console_requests_route_prefix",
+          "columns": ["route_prefix", "created_at"],
+          "isUnique": false
+        },
+        "idx_console_requests_response_model": {
+          "name": "idx_console_requests_response_model",
+          "columns": ["response_model", "created_at"],
+          "isUnique": false
+        },
+        "idx_console_requests_token_estimated": {
+          "name": "idx_console_requests_token_estimated",
+          "columns": ["token_usage_estimated"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
