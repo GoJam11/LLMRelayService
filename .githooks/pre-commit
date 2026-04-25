@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "pre-commit: bun is required to run the build check." >&2
+  exit 1
+fi
+
+echo "pre-commit: running bun run build"
+bun run build
