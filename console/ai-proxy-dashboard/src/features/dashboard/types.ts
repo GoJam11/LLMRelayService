@@ -57,6 +57,7 @@ export type ConsoleResponseUsage = {
   cost?: number
   cost_breakdown?: ConsoleCostBreakdown
   cost_pricing?: ConsoleModelPricing
+  estimated?: boolean
 }
 
 export type ConsoleAnalysis = {

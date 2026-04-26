@@ -47,6 +47,7 @@ import {
   copyText,
   formatCount,
   formatDuration,
+  formatPercent,
   formatTokensPerSecond,
   formatTime,
   getHttpStatusBadgeVariant,
@@ -57,6 +58,31 @@ import {
 
 function getSourceTypeLabel(clientLabel?: string, t?: (key: string) => string): string {
   return clientLabel || (t ? t('logTable.anonymous') : 'Anonymous')
+}
+
+function getNumericUsageValue(value: unknown): number {
+  const numeric = Number(value ?? 0)
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0
+}
+
+function getRequestCacheReadTokens(item: ConsoleRequestListItem): number {
+  return item.upstream_type === "openai"
+    ? getNumericUsageValue(item.response_usage?.cached_input_tokens)
+    : getNumericUsageValue(item.response_usage?.cache_read_input_tokens)
+}
+
+function calculateRequestCacheHitRate(item: ConsoleRequestListItem): number | undefined {
+  const usage = item.response_usage
+  const cacheReadTokens = getRequestCacheReadTokens(item)
+  const inputTokens = getNumericUsageValue(usage?.input_tokens ?? usage?.total_input_tokens)
+  const denominator = item.upstream_type === "openai"
+    ? inputTokens
+    : inputTokens
+      + getNumericUsageValue(usage?.cache_creation_input_tokens ?? usage?.total_cache_creation_tokens)
+      + cacheReadTokens
+
+  if (denominator <= 0) return undefined
+  return Math.min(100, (cacheReadTokens / denominator) * 100)
 }
 
 function getRuntimeStatusBadges(item: ConsoleRequestListItem, t: (key: string) => string): Array<{
@@ -245,11 +271,14 @@ export function RequestLogTable({
                     </TableHead>
                     <TableHead className="text-right">
                       <SortButton
-                        label="Tokens"
+                        label={t("logTable.colTokens")}
                         active={sortBy === "tokens"}
                         direction={sortOrder}
                         onClick={() => toggleSort("tokens")}
                       />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {t("logTable.colCacheHitRate")}
                     </TableHead>
                     <TableHead className="text-right">
                       {t("logTable.colOutputSpeed")}
@@ -267,6 +296,8 @@ export function RequestLogTable({
                     const outputSpeed = formatTokensPerSecond(
                       calculateOutputTokensPerSecond(item.response_usage, timing),
                     )
+                    const cacheHitRate = calculateRequestCacheHitRate(item)
+                    const cacheReadTokens = getRequestCacheReadTokens(item)
 
                     return (
                       <TableRow
@@ -373,8 +404,16 @@ export function RequestLogTable({
                             <span className="text-muted-foreground">{t("logTable.outputLabel")}</span>
                             <span>{formatCount(item.response_usage?.output_tokens ?? item.response_usage?.total_output_tokens ?? 0)}</span>
                             <span className="text-muted-foreground">{t("logTable.cacheLabel")}</span>
-                            <span>{formatCount(item.response_usage?.cache_read_input_tokens ?? item.response_usage?.cached_input_tokens ?? 0)}</span>
+                            <span>{formatCount(cacheReadTokens)}</span>
+                            {item.response_usage?.estimated ? (
+                              <span className="text-muted-foreground">
+                                ({t("logTable.estimated")})
+                              </span>
+                            ) : null}
                           </div>
+                        </TableCell>
+                        <TableCell className="text-right font-medium tabular-nums text-foreground">
+                          {formatPercent(cacheHitRate)}
                         </TableCell>
                         <TableCell className="text-right whitespace-nowrap text-muted-foreground">
                           {outputSpeed}
