@@ -17,6 +17,13 @@ import { elapsedPerfMs, getMaxPerfPhase, nowPerfMs, roundPerfMs, shouldLogReques
 import { PAYLOAD_LOG_LIMIT_BYTES } from './logging-constants';
 import { ensureModelCatalogLoaded, lookupModelContext } from './model-catalog';
 import { initializeTokenEstimator } from './token-estimator';
+import {
+  convertResponsesRequestToChatCompletions,
+  createResponsesChatCompatErrorResponse,
+  isOpenAiResponsesEndpointPath,
+  rewriteResponsesTargetUrlToChatCompletions,
+  transformChatCompletionsResponseToResponses,
+} from './openai-responses-chat-compat';
 
 const SYNTHETIC_MODEL_CREATED = 0;
 const SYNTHETIC_ANTHROPIC_MODEL_CREATED_AT = '1970-01-01T00:00:00Z';
@@ -443,6 +450,19 @@ async function handleProxyRequest(c: any): Promise<Response> {
   const matchedApiKey = gatewayAuth.apiKeyInfo;
   const route: RouteResult = initialRoute;
   resolvedChannelName = route.channelName;
+  const routeTargetPathname = (() => {
+    try {
+      return new URL(route.targetUrl).pathname;
+    } catch {
+      return '';
+    }
+  })();
+  const adaptResponsesToChatCompletions = c.req.method === 'POST'
+    && route.type === 'openai'
+    && (isOpenAiResponsesEndpointPath(lookupPathname) || routeTargetPathname.endsWith('/responses'));
+  const upstreamTargetUrl = adaptResponsesToChatCompletions
+    ? rewriteResponsesTargetUrlToChatCompletions(route.targetUrl)
+    : route.targetUrl;
 
   let body: BodyInit | null | undefined;
   let requestModel = originalRequestModel;
@@ -466,6 +486,17 @@ async function handleProxyRequest(c: any): Promise<Response> {
     if (prepared.body != null) {
       body = prepared.body;
       requestModel = prepared.requestModel;
+      if (adaptResponsesToChatCompletions) {
+        const converted = convertResponsesRequestToChatCompletions(body as string);
+        if (!converted.ok) {
+          const compatibilityErrorResponse = createResponsesChatCompatErrorResponse(converted.error);
+          applyCorsHeaders(compatibilityErrorResponse.headers);
+          emitRequestPerf(compatibilityErrorResponse.status);
+          return compatibilityErrorResponse;
+        }
+        body = converted.body;
+        requestModel = converted.requestModel;
+      }
       // 如果请求 model 是别名，改写请求体中的 model 字段为真实模型名
       if (route.resolvedModel && requestModel !== route.resolvedModel) {
         try {
@@ -500,7 +531,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
         request_id: requestId,
         method: c.req.method,
         path: url.pathname + url.search,
-        target_url: route.targetUrl,
+        target_url: upstreamTargetUrl,
         original_bytes: payloadForLog.originalBytes,
         logged_bytes: payloadForLog.loggedBytes,
         truncated: payloadForLog.truncated,
@@ -517,7 +548,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
         console.log('[REQ_PAYLOAD_FWD_SUMMARY]', {
           request_id: requestId,
           path: url.pathname + url.search,
-          target_url: route.targetUrl,
+          target_url: upstreamTargetUrl,
           ...payloadSummary,
         });
         addPerfPhase(requestPerfPhases, 'log_req_payload_fwd_summary_ms', elapsedPerfMs(logForwardedSummaryStart));
@@ -531,7 +562,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
     console.log('[REQ_HEADERS_FWD]', {
       request_id: requestId,
       path: url.pathname + url.search,
-      target_url: route.targetUrl,
+      target_url: upstreamTargetUrl,
       headers: headersSummary,
     });
     addPerfPhase(requestPerfPhases, 'log_req_headers_ms', elapsedPerfMs(logHeadersStart));
@@ -558,7 +589,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
       upstream_type: route.type,
       method: c.req.method,
       path: url.pathname + url.search,
-      target_url: route.targetUrl,
+      target_url: upstreamTargetUrl,
       request_model: requestModel,
       api_key_id: matchedApiKey?.id ?? null,
       api_key_name: matchedApiKey?.name ?? null,
@@ -580,7 +611,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
     addPerfPhase(requestPerfPhases, 'queue_console_request_ms', elapsedPerfMs(queueConsoleWriteStart));
   }
 
-  console.log('[REQ]', { request_id: requestId, method: c.req.method, path: url.pathname + url.search, target_url: route.targetUrl });
+  console.log('[REQ]', { request_id: requestId, method: c.req.method, path: url.pathname + url.search, target_url: upstreamTargetUrl });
 
   let upstreamResponse: Response;
   const proxyStart = nowPerfMs();
@@ -588,7 +619,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
     const upstreamTimeoutMs = getUpstreamRequestTimeoutMs();
     const upstreamResponseStartTimeout = createUpstreamResponseStartTimeout(upstreamTimeoutMs);
     try {
-      upstreamResponse = await proxy(route.targetUrl, {
+      upstreamResponse = await proxy(upstreamTargetUrl, {
         raw: c.req.raw.clone(),
         headers: forwardHeaders,
         body,
@@ -615,11 +646,15 @@ async function handleProxyRequest(c: any): Promise<Response> {
       createdAtPerf: requestCreatedPerfAt,
       upstreamType: route.type,
       truncatePayloadForLog,
-      requestBody: forwardedPayload,
+      requestBody: forwardedPayload ?? undefined,
     });
     addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
     emitRequestPerf(response.status);
     return response;
+  }
+
+  if (adaptResponsesToChatCompletions) {
+    upstreamResponse = transformChatCompletionsResponseToResponses(upstreamResponse);
   }
 
   console.log('[RES]', { request_id: requestId, status: upstreamResponse.status, status_text: upstreamResponse.statusText });
@@ -633,7 +668,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
     createdAtPerf: requestCreatedPerfAt,
     upstreamType: route.type,
     truncatePayloadForLog,
-    requestBody: forwardedPayload,
+    requestBody: forwardedPayload ?? undefined,
   });
   addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
   const analyticsStart = nowPerfMs();
