@@ -18,6 +18,10 @@ export type ResponsesChatCompatRequestResult =
       error: ResponsesChatCompatError;
     };
 
+export interface ResponsesChatCompatRequestOptions {
+  targetUrl?: string;
+}
+
 const encoder = new TextEncoder();
 
 const REQUEST_DIRECT_FIELDS = [
@@ -251,6 +255,44 @@ function convertResponsesInputToChatMessages(input: unknown): JsonRecord[] {
   return messages;
 }
 
+function contentToSystemText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (content == null) return '';
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (isRecord(part) && typeof part.text === 'string') return part.text;
+        return normalizeFunctionArguments(part);
+      })
+      .filter((part) => part.length > 0)
+      .join('\n\n');
+  }
+  return normalizeFunctionArguments(content);
+}
+
+function mergeLeadingSystemMessages(messages: JsonRecord[]): JsonRecord[] {
+  if (messages.length < 2 || messages[0]?.role !== 'system' || messages[1]?.role !== 'system') {
+    return messages;
+  }
+
+  const systemParts: string[] = [];
+  let index = 0;
+  while (messages[index]?.role === 'system') {
+    const text = contentToSystemText(messages[index]?.content);
+    if (text) systemParts.push(text);
+    index += 1;
+  }
+
+  return [
+    {
+      role: 'system',
+      content: systemParts.join('\n\n'),
+    },
+    ...messages.slice(index),
+  ];
+}
+
 function convertResponsesToolsToChatTools(tools: unknown): JsonRecord[] | undefined {
   if (tools == null) return undefined;
   if (!Array.isArray(tools)) {
@@ -285,6 +327,67 @@ function convertResponsesToolsToChatTools(tools: unknown): JsonRecord[] | undefi
   });
 
   return converted.length > 0 ? converted : undefined;
+}
+
+function isMiniMaxChatCompatTarget(body: JsonRecord, options?: ResponsesChatCompatRequestOptions): boolean {
+  const model = asString(body.model);
+  if (model && /^(codex-)?minimax-/i.test(model)) return true;
+
+  if (!options?.targetUrl) return false;
+  try {
+    return new URL(options.targetUrl).hostname.toLowerCase().includes('minimax');
+  } catch {
+    return options.targetUrl.toLowerCase().includes('minimax');
+  }
+}
+
+function sanitizeMiniMaxTools(tools: unknown): JsonRecord[] | undefined {
+  if (!Array.isArray(tools)) return undefined;
+
+  const sanitized = tools.flatMap((tool): JsonRecord[] => {
+    if (!isRecord(tool) || tool.type !== 'function' || !isRecord(tool.function)) return [];
+    const { strict: _strict, ...fn } = tool.function;
+    return [{
+      type: 'function',
+      function: fn,
+    }];
+  });
+
+  return sanitized.length > 0 ? sanitized : undefined;
+}
+
+function numberInRange(value: unknown, minExclusive: number, maxInclusive: number): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  if (value <= minExclusive || value > maxInclusive) return undefined;
+  return value;
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 1) return undefined;
+  return Math.trunc(value);
+}
+
+function sanitizeMiniMaxChatPayload(chatPayload: JsonRecord): JsonRecord {
+  const sanitized: JsonRecord = {};
+
+  if (typeof chatPayload.model === 'string') sanitized.model = chatPayload.model;
+  if (Array.isArray(chatPayload.messages)) sanitized.messages = chatPayload.messages;
+  if (typeof chatPayload.stream === 'boolean') sanitized.stream = chatPayload.stream;
+
+  const maxCompletionTokens = positiveInteger(chatPayload.max_completion_tokens)
+    ?? positiveInteger(chatPayload.max_tokens);
+  if (maxCompletionTokens !== undefined) sanitized.max_completion_tokens = maxCompletionTokens;
+
+  const temperature = numberInRange(chatPayload.temperature, 0, 1);
+  if (temperature !== undefined) sanitized.temperature = temperature;
+
+  const topP = numberInRange(chatPayload.top_p, 0, 1);
+  if (topP !== undefined) sanitized.top_p = topP;
+
+  const tools = sanitizeMiniMaxTools(chatPayload.tools);
+  if (tools) sanitized.tools = tools;
+
+  return sanitized;
 }
 
 function convertResponsesToolChoiceToChat(toolChoice: unknown, hasChatTools: boolean): unknown {
@@ -334,7 +437,10 @@ function convertResponsesTextFormatToChatResponseFormat(text: unknown): unknown 
   };
 }
 
-export function convertResponsesRequestToChatCompletions(rawBodyText: string): ResponsesChatCompatRequestResult {
+export function convertResponsesRequestToChatCompletions(
+  rawBodyText: string,
+  options?: ResponsesChatCompatRequestOptions,
+): ResponsesChatCompatRequestResult {
   let body: JsonRecord;
   try {
     const parsed = JSON.parse(rawBodyText) as unknown;
@@ -366,7 +472,7 @@ export function convertResponsesRequestToChatCompletions(rawBodyText: string): R
     if (typeof body.instructions === 'string' && body.instructions.length > 0) {
       messages.unshift({ role: 'system', content: body.instructions });
     }
-    chatPayload.messages = messages;
+    chatPayload.messages = mergeLeadingSystemMessages(messages);
 
     if (body.max_output_tokens !== undefined) {
       chatPayload.max_tokens = body.max_output_tokens;
@@ -392,10 +498,14 @@ export function convertResponsesRequestToChatCompletions(rawBodyText: string): R
       chatPayload.reasoning_effort = body.reasoning.effort;
     }
 
+    const finalPayload = isMiniMaxChatCompatTarget(body, options)
+      ? sanitizeMiniMaxChatPayload(chatPayload)
+      : chatPayload;
+
     return {
       ok: true,
-      body: JSON.stringify(chatPayload),
-      requestModel: typeof chatPayload.model === 'string' ? chatPayload.model : 'unknown',
+      body: JSON.stringify(finalPayload),
+      requestModel: typeof finalPayload.model === 'string' ? finalPayload.model : 'unknown',
     };
   } catch (error) {
     if (isRecord(error) && typeof error.status === 'number' && typeof error.message === 'string') {

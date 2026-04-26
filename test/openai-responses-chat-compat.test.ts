@@ -156,6 +156,81 @@ describe("openai responses chat compatibility", () => {
     expect(body.tool_choice).toBeUndefined();
   });
 
+  it("sanitizes converted Chat payloads for MiniMax compatibility", () => {
+    const converted = convertResponsesRequestToChatCompletions(JSON.stringify({
+      model: "MiniMax-M2.7",
+      instructions: "Follow the system rules.",
+      input: [
+        {
+          type: "message",
+          role: "developer",
+          content: [{ type: "input_text", text: "Use the workspace tools carefully." }],
+        },
+        {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "hello" }],
+        },
+      ],
+      tools: [
+        {
+          type: "function",
+          name: "exec_command",
+          strict: false,
+          parameters: {
+            type: "object",
+            properties: { cmd: { type: "string" } },
+            required: ["cmd"],
+            additionalProperties: false,
+          },
+        },
+        { type: "web_search" },
+      ],
+      tool_choice: "auto",
+      store: false,
+      metadata: { user_id: "debug" },
+      service_tier: "auto",
+      parallel_tool_calls: false,
+      logprobs: true,
+      stream: true,
+      max_output_tokens: 128,
+      temperature: 0,
+      top_p: 0.9,
+    }), {
+      targetUrl: "https://api.minimaxi.com/v1/chat/completions",
+    });
+
+    expect(converted.ok).toBe(true);
+    if (!converted.ok) throw new Error(converted.error.message);
+
+    const body = JSON.parse(converted.body);
+    expect(body).toEqual({
+      model: "MiniMax-M2.7",
+      messages: [
+        {
+          role: "system",
+          content: "Follow the system rules.\n\nUse the workspace tools carefully.",
+        },
+        { role: "user", content: "hello" },
+      ],
+      stream: true,
+      max_completion_tokens: 128,
+      top_p: 0.9,
+      tools: [{
+        type: "function",
+        function: {
+          name: "exec_command",
+          parameters: {
+            type: "object",
+            properties: { cmd: { type: "string" } },
+            required: ["cmd"],
+            additionalProperties: false,
+          },
+        },
+      }],
+    });
+  });
+
   it("converts Chat Completions payloads to Responses payloads", () => {
     const response = convertChatCompletionToResponsePayload({
       id: "chatcmpl_123",

@@ -593,7 +593,9 @@ async function handleProxyRequest(c: any): Promise<Response> {
       body = prepared.body;
       requestModel = prepared.requestModel;
       if (adaptResponsesToChatCompletions) {
-        const converted = convertResponsesRequestToChatCompletions(body as string);
+        const converted = convertResponsesRequestToChatCompletions(body as string, {
+          targetUrl: upstreamTargetUrl,
+        });
         if (!converted.ok) {
           const compatibilityErrorResponse = createResponsesChatCompatErrorResponse(converted.error);
           applyCorsHeaders(compatibilityErrorResponse.headers);
