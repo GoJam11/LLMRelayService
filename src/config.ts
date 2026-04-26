@@ -3,8 +3,12 @@ import { listModelAliases } from './console-model-alias-store';
 
 export type UpstreamType = 'anthropic' | 'openai';
 export type RouteAuthHeader = 'x-api-key' | 'authorization';
+export type OpenAiResponsesMode = 'native' | 'chat_compat' | 'disabled';
 
 const CHANNEL_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+export const DEFAULT_OPENAI_RESPONSES_MODE: OpenAiResponsesMode = 'native';
+const OPENAI_RESPONSES_MODES = new Set<OpenAiResponsesMode>(['native', 'chat_compat', 'disabled']);
+const RESPONSES_MODE_EXTRA_FIELD = 'responsesMode';
 
 export interface RouteAuthConfig {
   header: RouteAuthHeader;
@@ -25,6 +29,7 @@ export interface ConfigEntry {
   models?: ModelConfig[];
   priority?: number;
   enabled?: boolean;
+  responsesMode?: OpenAiResponsesMode;
   extraFields?: Record<string, unknown>;
   providerUuid?: string;
 }
@@ -35,6 +40,8 @@ export interface RouteResult {
   targetUrl: string;
   systemPrompt?: string;
   auth?: RouteAuthConfig;
+  /** OpenAI /v1/responses handling strategy for this provider. */
+  responsesMode?: OpenAiResponsesMode;
   /** 当请求 model 是一个别名时，此字段为真实的上游模型名，需要改写请求体 */
   resolvedModel?: string;
 }
@@ -54,6 +61,7 @@ export interface ProviderInfo {
   enabled: boolean;
   models: ModelConfig[];
   auth: ProviderAuthInfo | null;
+  responsesMode?: OpenAiResponsesMode;
   extraFields: Record<string, unknown> | null;
   providerUuid: string;
 }
@@ -71,6 +79,7 @@ export interface ProviderMutationInput {
   models?: Array<string | ModelConfig> | null;
   priority?: number;
   auth?: ProviderMutationAuthInput | null;
+  responsesMode?: OpenAiResponsesMode | null;
   extraFields?: Record<string, unknown> | null;
 }
 
@@ -149,6 +158,12 @@ export function validateConfigEntries(entries: Record<string, RawConfigEntry>): 
     const models = normalizeModels(entry.models);
     const priority = normalizePriority(entry.priority);
     const auth = normalizeStaticAuthInput(entry.auth, type);
+    const extraFields = normalizeExtraFields(entry.extraFields);
+    const responsesMode = normalizeOpenAiResponsesMode(
+      entry.responsesMode ?? extraFields?.[RESPONSES_MODE_EXTRA_FIELD],
+      type,
+    );
+    const normalizedExtraFields = mergeResponsesModeIntoExtraFields(extraFields, responsesMode, type);
 
     configs[channelName] = {
       type,
@@ -158,6 +173,8 @@ export function validateConfigEntries(entries: Record<string, RawConfigEntry>): 
       models,
       priority,
       enabled: entry.enabled !== false,
+      ...(responsesMode ? { responsesMode } : {}),
+      ...(normalizedExtraFields ? { extraFields: normalizedExtraFields } : {}),
     };
   }
 
@@ -310,10 +327,13 @@ function buildRouteResult(channelName: string, entry: ConfigEntry, path: string,
 
   return {
     channelName,
-    type: (entry.type ?? 'openai') as UpstreamType,
+    type: providerType,
     targetUrl: entry.targetBaseUrl + normalizedPath + search,
     systemPrompt: entry.systemPrompt,
     auth: entry.auth,
+    ...(providerType === 'openai'
+      ? { responsesMode: getOpenAiResponsesMode(entry, providerType) }
+      : {}),
   };
 }
 
@@ -330,9 +350,12 @@ function buildProviderInfo(
   entry: ConfigEntry,
   includeAuthValue = false,
 ): ProviderInfo {
+  const providerType = entry.type ?? 'openai';
+  const extraFields = stripResponsesModeFromExtraFields(entry.extraFields);
+
   return {
     channelName,
-    type: entry.type ?? 'openai',
+    type: providerType,
     targetBaseUrl: entry.targetBaseUrl,
     systemPrompt: entry.systemPrompt ?? null,
     priority: entry.priority ?? 0,
@@ -347,7 +370,10 @@ function buildProviderInfo(
             : {}),
         }
       : null,
-    extraFields: entry.extraFields ?? null,
+    ...(providerType === 'openai'
+      ? { responsesMode: getOpenAiResponsesMode(entry, providerType) }
+      : {}),
+    extraFields: extraFields ?? null,
     providerUuid: entry.providerUuid ?? '',
   };
 }
@@ -420,6 +446,49 @@ function normalizePriority(value: unknown): number {
     throw new Error('priority 必须是数字');
   }
   return Math.trunc(priority);
+}
+
+function normalizeExtraFields(value: unknown): Record<string, unknown> | undefined {
+  if (value == null) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('extraFields 必须是 JSON 对象或 null');
+  }
+  return { ...(value as Record<string, unknown>) };
+}
+
+function normalizeOpenAiResponsesMode(value: unknown, type: UpstreamType): OpenAiResponsesMode | undefined {
+  if (type !== 'openai') return undefined;
+  if (value == null || value === '') return undefined;
+  if (OPENAI_RESPONSES_MODES.has(value as OpenAiResponsesMode)) {
+    return value as OpenAiResponsesMode;
+  }
+  throw new Error('responsesMode 必须是 native、chat_compat 或 disabled');
+}
+
+function stripResponsesModeFromExtraFields(extraFields: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!extraFields || Object.keys(extraFields).length === 0) return undefined;
+  const { [RESPONSES_MODE_EXTRA_FIELD]: _responsesMode, ...rest } = extraFields;
+  return Object.keys(rest).length > 0 ? rest : undefined;
+}
+
+function mergeResponsesModeIntoExtraFields(
+  extraFields: Record<string, unknown> | undefined,
+  responsesMode: OpenAiResponsesMode | undefined,
+  type: UpstreamType,
+): Record<string, unknown> | undefined {
+  const stripped = stripResponsesModeFromExtraFields(extraFields) ?? {};
+  if (type === 'openai' && responsesMode) {
+    stripped[RESPONSES_MODE_EXTRA_FIELD] = responsesMode;
+  }
+  return Object.keys(stripped).length > 0 ? stripped : undefined;
+}
+
+function getOpenAiResponsesMode(entry: ConfigEntry, type: UpstreamType): OpenAiResponsesMode {
+  if (type !== 'openai') return DEFAULT_OPENAI_RESPONSES_MODE;
+  return normalizeOpenAiResponsesMode(
+    entry.responsesMode ?? entry.extraFields?.[RESPONSES_MODE_EXTRA_FIELD],
+    type,
+  ) ?? DEFAULT_OPENAI_RESPONSES_MODE;
 }
 
 function getDefaultAuthHeaderForType(type: UpstreamType): RouteAuthHeader {
@@ -497,9 +566,16 @@ function buildNormalizedEntry(payload: ProviderMutationInput, existingEntry?: Co
     ? (existingEntry?.priority ?? 0)
     : normalizePriority(payload.priority);
   const auth = normalizeStaticAuthInput(payload.auth, type, existingEntry?.auth);
-  const extraFields = payload.extraFields === undefined
+  const rawExtraFields = payload.extraFields === undefined
     ? existingEntry?.extraFields
-    : (payload.extraFields ?? undefined);
+    : normalizeExtraFields(payload.extraFields);
+  const responsesMode = normalizeOpenAiResponsesMode(
+    payload.responsesMode === undefined
+      ? (existingEntry?.responsesMode ?? existingEntry?.extraFields?.[RESPONSES_MODE_EXTRA_FIELD])
+      : payload.responsesMode,
+    type,
+  );
+  const extraFields = mergeResponsesModeIntoExtraFields(rawExtraFields, responsesMode, type);
 
   const normalized: ConfigEntry = {
     type,
@@ -510,6 +586,7 @@ function buildNormalizedEntry(payload: ProviderMutationInput, existingEntry?: Co
 
   if (systemPrompt) normalized.systemPrompt = systemPrompt;
   if (auth) normalized.auth = auth;
+  if (responsesMode) normalized.responsesMode = responsesMode;
   if (extraFields && Object.keys(extraFields).length > 0) normalized.extraFields = extraFields;
 
   return normalized;

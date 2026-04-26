@@ -18,4 +18,21 @@ describe('runtime config', () => {
       } as any,
     })).toThrow('Route "primary" uses removed field "fallbacks"; failover has been removed.');
   });
+
+  it('normalizes OpenAI responses handling mode', () => {
+    const configs = validateConfigEntries({
+      primary: {
+        type: 'openai',
+        targetBaseUrl: 'https://example.com/v1',
+        responsesMode: 'chat_compat',
+        extraFields: { vendor: 'internal' },
+      } as any,
+    });
+
+    expect(configs.primary?.responsesMode).toBe('chat_compat');
+    expect(configs.primary?.extraFields).toEqual({
+      vendor: 'internal',
+      responsesMode: 'chat_compat',
+    });
+  });
 });

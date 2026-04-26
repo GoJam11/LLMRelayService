@@ -251,21 +251,21 @@ function convertResponsesInputToChatMessages(input: unknown): JsonRecord[] {
   return messages;
 }
 
-function convertResponsesToolsToChatTools(tools: unknown): unknown {
+function convertResponsesToolsToChatTools(tools: unknown): JsonRecord[] | undefined {
   if (tools == null) return undefined;
   if (!Array.isArray(tools)) {
     throw createError('tools must be an array.', 'tools');
   }
 
-  return tools.map((tool, index) => {
+  const converted = tools.flatMap((tool, index): JsonRecord[] => {
     if (!isRecord(tool)) {
       throw createError('Each tool must be an object.', `tools[${index}]`);
     }
     if (tool.type !== 'function') {
-      throw createError(`Responses built-in tool "${String(tool.type)}" cannot be represented by Chat Completions.`, `tools[${index}].type`);
+      return [];
     }
     if (isRecord(tool.function)) {
-      return { type: 'function', function: tool.function };
+      return [{ type: 'function', function: tool.function }];
     }
 
     const name = asString(tool.name);
@@ -273,7 +273,7 @@ function convertResponsesToolsToChatTools(tools: unknown): unknown {
       throw createError('Function tool requires a name.', `tools[${index}].name`);
     }
 
-    return {
+    return [{
       type: 'function',
       function: {
         name,
@@ -281,20 +281,31 @@ function convertResponsesToolsToChatTools(tools: unknown): unknown {
         ...(isRecord(tool.parameters) ? { parameters: tool.parameters } : {}),
         ...(typeof tool.strict === 'boolean' ? { strict: tool.strict } : {}),
       },
-    };
+    }];
   });
+
+  return converted.length > 0 ? converted : undefined;
 }
 
-function convertResponsesToolChoiceToChat(toolChoice: unknown): unknown {
-  if (toolChoice == null || typeof toolChoice === 'string') return toolChoice;
-  if (!isRecord(toolChoice)) return toolChoice;
-  if (toolChoice.type === 'function' && typeof toolChoice.name === 'string') {
+function convertResponsesToolChoiceToChat(toolChoice: unknown, hasChatTools: boolean): unknown {
+  if (toolChoice == null) return undefined;
+  if (!hasChatTools) return undefined;
+  if (typeof toolChoice === 'string') return toolChoice;
+  if (!isRecord(toolChoice)) return undefined;
+
+  const name = typeof toolChoice.name === 'string'
+    ? toolChoice.name
+    : isRecord(toolChoice.function) && typeof toolChoice.function.name === 'string'
+      ? toolChoice.function.name
+      : null;
+
+  if (toolChoice.type === 'function' && name) {
     return {
       type: 'function',
-      function: { name: toolChoice.name },
+      function: { name },
     };
   }
-  return toolChoice;
+  return undefined;
 }
 
 function convertResponsesTextFormatToChatResponseFormat(text: unknown): unknown {
@@ -365,9 +376,10 @@ export function convertResponsesRequestToChatCompletions(rawBodyText: string): R
     }
 
     const tools = convertResponsesToolsToChatTools(body.tools);
-    if (tools !== undefined) chatPayload.tools = tools;
+    const hasChatTools = Array.isArray(tools) && tools.length > 0;
+    if (hasChatTools) chatPayload.tools = tools;
 
-    const toolChoice = convertResponsesToolChoiceToChat(body.tool_choice);
+    const toolChoice = convertResponsesToolChoiceToChat(body.tool_choice, hasChatTools);
     if (toolChoice !== undefined) chatPayload.tool_choice = toolChoice;
 
     const responseFormat = convertResponsesTextFormatToChatResponseFormat(body.text);

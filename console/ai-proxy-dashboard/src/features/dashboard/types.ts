@@ -215,6 +215,8 @@ export type ProviderAuthInfo = {
   value?: string
 }
 
+export type OpenAiResponsesMode = "native" | "chat_compat" | "disabled"
+
 export type ProviderInfo = {
   channelName: string
   type: "anthropic" | "openai"
@@ -224,6 +226,7 @@ export type ProviderInfo = {
   enabled: boolean
   models: ProviderModelInfo[]
   auth: ProviderAuthInfo | null
+  responsesMode?: OpenAiResponsesMode
   extraFields: Record<string, unknown> | null
   providerUuid: string
   healthStatus?: "healthy" | "degraded" | "down" | "no-data"
@@ -244,6 +247,7 @@ export type ProviderMutationPayload = {
     header?: "x-api-key" | "authorization"
     value?: string
   } | null
+  responsesMode?: OpenAiResponsesMode | null
   extraFields?: Record<string, unknown> | null
 }
 

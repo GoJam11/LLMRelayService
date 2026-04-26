@@ -80,6 +80,7 @@ import {
   updateProvider,
 } from "@/features/dashboard/api"
 import type {
+  OpenAiResponsesMode,
   ProviderInfo,
   ProviderModelInfo,
   ProviderMutationPayload,
@@ -96,6 +97,12 @@ const typeLabels: Record<string, string> = {
 const typeVariants: Record<string, "default" | "secondary" | "outline"> = {
   anthropic: "default",
   openai: "secondary",
+}
+
+const responseModeVariants: Record<OpenAiResponsesMode, "default" | "secondary" | "outline"> = {
+  native: "secondary",
+  chat_compat: "outline",
+  disabled: "outline",
 }
 
 const healthColors: Record<string, string> = {
@@ -126,6 +133,7 @@ type ProviderFormState = {
   priority: string
   systemPrompt: string
   authHeader: "auto" | "x-api-key" | "authorization"
+  responsesMode: OpenAiResponsesMode
   apiKey: string
   apiKeyDirty: boolean
   clearAuth: boolean
@@ -155,8 +163,15 @@ function formatProviderModel(model: ProviderInfo["models"][number]) {
   }
 }
 
+function stripResponsesModeFromExtraFields(extraFields: Record<string, unknown> | null | undefined) {
+  if (!extraFields) return null
+  const { responsesMode: _responsesMode, ...rest } = extraFields
+  return Object.keys(rest).length > 0 ? rest : null
+}
+
 function createFormState(provider?: ProviderInfo): ProviderFormState {
   const type = provider?.type ?? "anthropic"
+  const extraFields = stripResponsesModeFromExtraFields(provider?.extraFields)
 
   return {
     channelName: provider?.channelName ?? "",
@@ -168,13 +183,14 @@ function createFormState(provider?: ProviderInfo): ProviderFormState {
       if (!provider?.auth?.header) return "auto"
       return provider.auth.header === getDefaultAuthHeaderForType(type) ? "auto" : provider.auth.header
     })(),
+    responsesMode: provider?.responsesMode ?? "native",
     apiKey: provider?.auth?.value ?? "",
     apiKeyDirty: false,
     clearAuth: false,
     extraFieldsJson: (() => {
-      if (!provider?.extraFields) return ""
-      return Object.keys(provider.extraFields).length > 0
-        ? JSON.stringify(provider.extraFields, null, 2)
+      if (!extraFields) return ""
+      return Object.keys(extraFields).length > 0
+        ? JSON.stringify(extraFields, null, 2)
         : ""
     })(),
     models: provider?.models.length
@@ -228,6 +244,7 @@ function buildProviderPayload(
     systemPrompt: state.systemPrompt.trim() || null,
     models: buildModels(state.models),
     priority: priorityText ? Number(priorityText) : 0,
+    responsesMode: state.type === "openai" ? state.responsesMode : null,
     extraFields: parseExtraJson(state.extraFieldsJson),
   }
 
@@ -711,6 +728,37 @@ export function ProvidersPage({
                         : t("providers.targetUrlAnthropicHint")}
                     </FieldDescription>
                   </Field>
+
+                  {formState.type === "openai" ? (
+                    <Field>
+                      <FieldLabel htmlFor="provider-responses-mode">
+                        {t("providers.responsesModeLabel")}
+                      </FieldLabel>
+                      <Select
+                        value={formState.responsesMode}
+                        onValueChange={(value) =>
+                          setFormState((current) => ({
+                            ...current,
+                            responsesMode: value as OpenAiResponsesMode,
+                          }))
+                        }
+                      >
+                        <SelectTrigger id="provider-responses-mode" className="w-full">
+                          <SelectValue placeholder={t("providers.responsesModeLabel")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value="native">{t("providers.responsesModeNative")}</SelectItem>
+                            <SelectItem value="chat_compat">{t("providers.responsesModeChatCompat")}</SelectItem>
+                            <SelectItem value="disabled">{t("providers.responsesModeDisabled")}</SelectItem>
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <FieldDescription>
+                        {t("providers.responsesModeHint")}
+                      </FieldDescription>
+                    </Field>
+                  ) : null}
 
                   <Field>
                     <FieldLabel htmlFor="provider-priority">Priority</FieldLabel>
@@ -1252,6 +1300,11 @@ function ProviderCard({
           <Badge variant={typeVariants[provider.type] ?? "outline"}>
             {typeLabels[provider.type] ?? provider.type}
           </Badge>
+          {provider.type === "openai" ? (
+            <Badge variant={responseModeVariants[provider.responsesMode ?? "native"]}>
+              {t(`providers.responsesModeBadge.${provider.responsesMode ?? "native"}`)}
+            </Badge>
+          ) : null}
           <Badge variant="outline">priority {provider.priority}</Badge>
         </div>
       </CardHeader>

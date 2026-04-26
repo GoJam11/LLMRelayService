@@ -115,16 +115,45 @@ describe("openai responses chat compatibility", () => {
     });
   });
 
-  it("rejects Responses-only built-in tools", () => {
+  it("drops Responses-only built-in tools during Chat compatibility conversion", () => {
     const converted = convertResponsesRequestToChatCompletions(JSON.stringify({
       model: "gpt-test",
       input: "hello",
-      tools: [{ type: "web_search_preview" }],
+      tools: [
+        { type: "web_search_preview" },
+        { type: "function", name: "lookup", parameters: { type: "object" } },
+      ],
+      tool_choice: { type: "web_search_preview" },
     }));
 
-    expect(converted.ok).toBe(false);
-    if (converted.ok) throw new Error("expected conversion failure");
-    expect(converted.error.param).toBe("tools[0].type");
+    expect(converted.ok).toBe(true);
+    if (!converted.ok) throw new Error(converted.error.message);
+
+    const body = JSON.parse(converted.body);
+    expect(body.tools).toEqual([{
+      type: "function",
+      function: {
+        name: "lookup",
+        parameters: { type: "object" },
+      },
+    }]);
+    expect(body.tool_choice).toBeUndefined();
+  });
+
+  it("omits tool fields when all Responses tools are built-in only", () => {
+    const converted = convertResponsesRequestToChatCompletions(JSON.stringify({
+      model: "gpt-test",
+      input: "hello",
+      tools: [{ type: "web_search" }],
+      tool_choice: "required",
+    }));
+
+    expect(converted.ok).toBe(true);
+    if (!converted.ok) throw new Error(converted.error.message);
+
+    const body = JSON.parse(converted.body);
+    expect(body.tools).toBeUndefined();
+    expect(body.tool_choice).toBeUndefined();
   });
 
   it("converts Chat Completions payloads to Responses payloads", () => {

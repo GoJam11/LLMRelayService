@@ -5,7 +5,7 @@
 
 import { Hono } from 'hono';
 import { proxy } from 'hono/proxy';
-import { ensureProviderConfigsLoaded, getModels, resolveRoute, resolveRouteByModel, type RouteResult } from './config';
+import { DEFAULT_OPENAI_RESPONSES_MODE, ensureProviderConfigsLoaded, getModels, resolveRoute, resolveRouteByModel, type RouteResult } from './config';
 import { trackPendingConsoleRequestWrite } from './console-log-tasks';
 import { saveConsoleRequest, type ForwardHeadersSummary, type PayloadSummaryForConsole } from './console-store';
 import { registerConsoleRoutes } from './console-ui';
@@ -457,9 +457,14 @@ async function handleProxyRequest(c: any): Promise<Response> {
       return '';
     }
   })();
-  const adaptResponsesToChatCompletions = c.req.method === 'POST'
+  const isOpenAiResponsesRequest = c.req.method === 'POST'
     && route.type === 'openai'
     && (isOpenAiResponsesEndpointPath(lookupPathname) || routeTargetPathname.endsWith('/responses'));
+  const responsesMode = route.type === 'openai'
+    ? (route.responsesMode ?? DEFAULT_OPENAI_RESPONSES_MODE)
+    : DEFAULT_OPENAI_RESPONSES_MODE;
+  const adaptResponsesToChatCompletions = isOpenAiResponsesRequest && responsesMode === 'chat_compat';
+  const responsesDisabled = isOpenAiResponsesRequest && responsesMode === 'disabled';
   const upstreamTargetUrl = adaptResponsesToChatCompletions
     ? rewriteResponsesTargetUrlToChatCompletions(route.targetUrl)
     : route.targetUrl;
@@ -483,6 +488,95 @@ async function handleProxyRequest(c: any): Promise<Response> {
   const headersSummary = summarizeHeadersForLog(forwardHeaders);
   addPerfPhase(requestPerfPhases, 'summarize_headers_ms', elapsedPerfMs(summarizeHeadersStart));
 
+  const returnLoggedLocalResponse = (
+    localResponse: Response,
+    logTag: string,
+    logDetails: Record<string, unknown>,
+  ): Response => {
+    const detectRequestTypeStart = nowPerfMs();
+    sourceRequestType = detectRequestKindForProvider(
+      originalPayloadForStore,
+      route.type,
+      c.req.raw.headers,
+    );
+    addPerfPhase(requestPerfPhases, 'detect_request_type_ms', elapsedPerfMs(detectRequestTypeStart));
+
+    const queueConsoleWriteStart = nowPerfMs();
+    const originalPayloadForRecord = originalPayloadForStore == null
+      ? null
+      : truncatePayloadForLog(originalPayloadForStore);
+    trackPendingConsoleRequestWrite(requestId, () => saveConsoleRequest({
+      request_id: requestId,
+      created_at: requestCreatedAt,
+      route_prefix: route.channelName,
+      upstream_type: route.type,
+      method: c.req.method,
+      path: url.pathname + url.search,
+      target_url: upstreamTargetUrl,
+      request_model: requestModel,
+      api_key_id: matchedApiKey?.id ?? null,
+      api_key_name: matchedApiKey?.name ?? null,
+      original_payload: originalPayloadForRecord?.payload ?? null,
+      original_payload_truncated: originalPayloadForRecord?.truncated ?? false,
+      original_summary: originalSummaryForLog,
+      forwarded_payload: null,
+      forwarded_payload_truncated: false,
+      forwarded_summary: null,
+      original_headers: captureOriginalHeaders(c.req.raw.headers),
+      forward_headers: headersSummary,
+      failover_from: null,
+      failover_chain: [],
+      original_route_prefix: null,
+      original_request_model: null,
+      failover_reason: null,
+      source_request_type: sourceRequestType as any,
+    }));
+    addPerfPhase(requestPerfPhases, 'queue_console_request_ms', elapsedPerfMs(queueConsoleWriteStart));
+
+    console.warn(logTag, {
+      request_id: requestId,
+      path: url.pathname + url.search,
+      target_url: upstreamTargetUrl,
+      ...logDetails,
+    });
+    console.log('[REQ_HEADERS_FWD]', {
+      request_id: requestId,
+      path: url.pathname + url.search,
+      target_url: upstreamTargetUrl,
+      headers: headersSummary,
+    });
+    console.log('[RES]', { request_id: requestId, status: localResponse.status, status_text: localResponse.statusText || 'Error' });
+
+    const finalizeStart = nowPerfMs();
+    const response = finalizeProxyResponse({
+      response: localResponse,
+      requestId,
+      path: url.pathname + url.search,
+      shouldLog: true,
+      createdAt: requestCreatedAt,
+      createdAtPerf: requestCreatedPerfAt,
+      upstreamType: route.type,
+      truncatePayloadForLog,
+      requestBody: rawPayloadForLog ?? undefined,
+    });
+    addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
+    emitRequestPerf(response.status);
+    return response;
+  };
+
+  if (responsesDisabled) {
+    const disabledResponse = createResponsesChatCompatErrorResponse({
+      status: 400,
+      message: 'Responses endpoint is disabled for this provider.',
+      code: 'responses_disabled',
+      param: null,
+    });
+    applyCorsHeaders(disabledResponse.headers);
+    return returnLoggedLocalResponse(disabledResponse, '[REQ_RESPONSES_DISABLED]', {
+      responses_mode: responsesMode,
+    });
+  }
+
   if (c.req.method === 'POST' && rawPayloadForLog != null) {
     const prepareStart = nowPerfMs();
     const prepared = prepareRequestForProvider({
@@ -503,78 +597,11 @@ async function handleProxyRequest(c: any): Promise<Response> {
         if (!converted.ok) {
           const compatibilityErrorResponse = createResponsesChatCompatErrorResponse(converted.error);
           applyCorsHeaders(compatibilityErrorResponse.headers);
-
-          const detectRequestTypeStart = nowPerfMs();
-          sourceRequestType = detectRequestKindForProvider(
-            originalPayloadForStore,
-            route.type,
-            c.req.raw.headers,
-          );
-          addPerfPhase(requestPerfPhases, 'detect_request_type_ms', elapsedPerfMs(detectRequestTypeStart));
-
-          const queueConsoleWriteStart = nowPerfMs();
-          const originalPayloadForRecord = originalPayloadForStore == null
-            ? null
-            : truncatePayloadForLog(originalPayloadForStore);
-          trackPendingConsoleRequestWrite(requestId, () => saveConsoleRequest({
-            request_id: requestId,
-            created_at: requestCreatedAt,
-            route_prefix: route.channelName,
-            upstream_type: route.type,
-            method: c.req.method,
-            path: url.pathname + url.search,
-            target_url: upstreamTargetUrl,
-            request_model: requestModel,
-            api_key_id: matchedApiKey?.id ?? null,
-            api_key_name: matchedApiKey?.name ?? null,
-            original_payload: originalPayloadForRecord?.payload ?? null,
-            original_payload_truncated: originalPayloadForRecord?.truncated ?? false,
-            original_summary: originalSummaryForLog,
-            forwarded_payload: null,
-            forwarded_payload_truncated: false,
-            forwarded_summary: null,
-            original_headers: captureOriginalHeaders(c.req.raw.headers),
-            forward_headers: headersSummary,
-            failover_from: null,
-            failover_chain: [],
-            original_route_prefix: null,
-            original_request_model: null,
-            failover_reason: null,
-            source_request_type: sourceRequestType as any,
-          }));
-          addPerfPhase(requestPerfPhases, 'queue_console_request_ms', elapsedPerfMs(queueConsoleWriteStart));
-
-          console.warn('[REQ_COMPAT_ERR]', {
-            request_id: requestId,
-            path: url.pathname + url.search,
-            target_url: upstreamTargetUrl,
+          return returnLoggedLocalResponse(compatibilityErrorResponse, '[REQ_COMPAT_ERR]', {
             message: converted.error.message,
             param: converted.error.param ?? null,
             code: converted.error.code ?? null,
           });
-          console.log('[REQ_HEADERS_FWD]', {
-            request_id: requestId,
-            path: url.pathname + url.search,
-            target_url: upstreamTargetUrl,
-            headers: headersSummary,
-          });
-          console.log('[RES]', { request_id: requestId, status: compatibilityErrorResponse.status, status_text: compatibilityErrorResponse.statusText || 'Error' });
-
-          const finalizeStart = nowPerfMs();
-          const response = finalizeProxyResponse({
-            response: compatibilityErrorResponse,
-            requestId,
-            path: url.pathname + url.search,
-            shouldLog: true,
-            createdAt: requestCreatedAt,
-            createdAtPerf: requestCreatedPerfAt,
-            upstreamType: route.type,
-            truncatePayloadForLog,
-            requestBody: rawPayloadForLog ?? undefined,
-          });
-          addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
-          emitRequestPerf(response.status);
-          return response;
         }
         body = converted.body;
         requestModel = converted.requestModel;
