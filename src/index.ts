@@ -471,6 +471,18 @@ async function handleProxyRequest(c: any): Promise<Response> {
   let forwardedSummaryForLog: PayloadSummaryForLog | null = null;
   let sourceRequestType = 'unknown';
 
+  const buildHeadersStart = nowPerfMs();
+  const forwardHeaders = buildForwardHeadersForProvider(
+    c.req.raw.headers,
+    route.type,
+    route.auth,
+  );
+  addPerfPhase(requestPerfPhases, 'build_forward_headers_ms', elapsedPerfMs(buildHeadersStart));
+
+  const summarizeHeadersStart = nowPerfMs();
+  const headersSummary = summarizeHeadersForLog(forwardHeaders);
+  addPerfPhase(requestPerfPhases, 'summarize_headers_ms', elapsedPerfMs(summarizeHeadersStart));
+
   if (c.req.method === 'POST' && rawPayloadForLog != null) {
     const prepareStart = nowPerfMs();
     const prepared = prepareRequestForProvider({
@@ -491,8 +503,78 @@ async function handleProxyRequest(c: any): Promise<Response> {
         if (!converted.ok) {
           const compatibilityErrorResponse = createResponsesChatCompatErrorResponse(converted.error);
           applyCorsHeaders(compatibilityErrorResponse.headers);
-          emitRequestPerf(compatibilityErrorResponse.status);
-          return compatibilityErrorResponse;
+
+          const detectRequestTypeStart = nowPerfMs();
+          sourceRequestType = detectRequestKindForProvider(
+            originalPayloadForStore,
+            route.type,
+            c.req.raw.headers,
+          );
+          addPerfPhase(requestPerfPhases, 'detect_request_type_ms', elapsedPerfMs(detectRequestTypeStart));
+
+          const queueConsoleWriteStart = nowPerfMs();
+          const originalPayloadForRecord = originalPayloadForStore == null
+            ? null
+            : truncatePayloadForLog(originalPayloadForStore);
+          trackPendingConsoleRequestWrite(requestId, () => saveConsoleRequest({
+            request_id: requestId,
+            created_at: requestCreatedAt,
+            route_prefix: route.channelName,
+            upstream_type: route.type,
+            method: c.req.method,
+            path: url.pathname + url.search,
+            target_url: upstreamTargetUrl,
+            request_model: requestModel,
+            api_key_id: matchedApiKey?.id ?? null,
+            api_key_name: matchedApiKey?.name ?? null,
+            original_payload: originalPayloadForRecord?.payload ?? null,
+            original_payload_truncated: originalPayloadForRecord?.truncated ?? false,
+            original_summary: originalSummaryForLog,
+            forwarded_payload: null,
+            forwarded_payload_truncated: false,
+            forwarded_summary: null,
+            original_headers: captureOriginalHeaders(c.req.raw.headers),
+            forward_headers: headersSummary,
+            failover_from: null,
+            failover_chain: [],
+            original_route_prefix: null,
+            original_request_model: null,
+            failover_reason: null,
+            source_request_type: sourceRequestType as any,
+          }));
+          addPerfPhase(requestPerfPhases, 'queue_console_request_ms', elapsedPerfMs(queueConsoleWriteStart));
+
+          console.warn('[REQ_COMPAT_ERR]', {
+            request_id: requestId,
+            path: url.pathname + url.search,
+            target_url: upstreamTargetUrl,
+            message: converted.error.message,
+            param: converted.error.param ?? null,
+            code: converted.error.code ?? null,
+          });
+          console.log('[REQ_HEADERS_FWD]', {
+            request_id: requestId,
+            path: url.pathname + url.search,
+            target_url: upstreamTargetUrl,
+            headers: headersSummary,
+          });
+          console.log('[RES]', { request_id: requestId, status: compatibilityErrorResponse.status, status_text: compatibilityErrorResponse.statusText || 'Error' });
+
+          const finalizeStart = nowPerfMs();
+          const response = finalizeProxyResponse({
+            response: compatibilityErrorResponse,
+            requestId,
+            path: url.pathname + url.search,
+            shouldLog: true,
+            createdAt: requestCreatedAt,
+            createdAtPerf: requestCreatedPerfAt,
+            upstreamType: route.type,
+            truncatePayloadForLog,
+            requestBody: rawPayloadForLog ?? undefined,
+          });
+          addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
+          emitRequestPerf(response.status);
+          return response;
         }
         body = converted.body;
         requestModel = converted.requestModel;
@@ -511,14 +593,6 @@ async function handleProxyRequest(c: any): Promise<Response> {
       requestModel = originalSummaryForLog.model;
     }
   }
-
-  const buildHeadersStart = nowPerfMs();
-  const forwardHeaders = buildForwardHeadersForProvider(
-    c.req.raw.headers,
-    route.type,
-    route.auth,
-  );
-  addPerfPhase(requestPerfPhases, 'build_forward_headers_ms', elapsedPerfMs(buildHeadersStart));
 
   if (c.req.method === 'POST') {
     forwardedPayload = typeof body === 'string' ? body : rawPayloadForLog;
@@ -555,9 +629,6 @@ async function handleProxyRequest(c: any): Promise<Response> {
       }
     }
 
-    const summarizeHeadersStart = nowPerfMs();
-    const headersSummary = summarizeHeadersForLog(forwardHeaders);
-    addPerfPhase(requestPerfPhases, 'summarize_headers_ms', elapsedPerfMs(summarizeHeadersStart));
     const logHeadersStart = nowPerfMs();
     console.log('[REQ_HEADERS_FWD]', {
       request_id: requestId,
