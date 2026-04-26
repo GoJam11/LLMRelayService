@@ -252,6 +252,8 @@ export default {
     outputLabel: "出",
     cacheLabel: "缓存",
     estimated: "估算",
+    responsesChatCompat: "已转 Chat",
+    responsesChatCompatTip: "该请求原始进入 Responses 端点，网关已按渠道配置转换为上游 Chat Completions 请求。",
     actionLabel: "操作",
     actionMenuTitle: "日志动作",
     viewDetail: "查看详情",

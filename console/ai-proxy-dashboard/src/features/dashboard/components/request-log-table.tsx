@@ -85,6 +85,26 @@ function calculateRequestCacheHitRate(item: ConsoleRequestListItem): number | un
   return Math.min(100, (cacheReadTokens / denominator) * 100)
 }
 
+function getPathname(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return ""
+
+  try {
+    return new URL(trimmed).pathname
+  } catch {
+    return trimmed.split("?")[0] ?? trimmed
+  }
+}
+
+function isResponsesChatCompatConverted(item: ConsoleRequestListItem): boolean {
+  if (item.upstream_type !== "openai") return false
+
+  const requestPath = getPathname(item.path)
+  const targetPath = getPathname(item.target_url)
+
+  return requestPath.endsWith("/responses") && targetPath.endsWith("/chat/completions")
+}
+
 function getRuntimeStatusBadges(item: ConsoleRequestListItem, t: (key: string) => string): Array<{
   label: string
   variant: ReturnType<typeof getHttpStatusBadgeVariant>
@@ -293,6 +313,7 @@ export function RequestLogTable({
                   {requests.map((item) => {
                     const timing = item.response_timing ?? {}
                     const isSelected = item.request_id === selectedId
+                    const responsesChatConverted = isResponsesChatCompatConverted(item)
                     const outputSpeed = formatTokensPerSecond(
                       calculateOutputTokensPerSecond(item.response_usage, timing),
                     )
@@ -315,8 +336,30 @@ export function RequestLogTable({
                           </div>
                         </TableCell>
                         <TableCell className="whitespace-normal">
-                          <div className="font-medium text-foreground">
-                            {item.path}
+                          <div className="flex flex-col gap-1.5">
+                            <div className="font-medium text-foreground">
+                              {item.path}
+                            </div>
+                            {responsesChatConverted ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge
+                                      variant="outline"
+                                      className="w-fit cursor-help border-dashed border-muted-foreground/50"
+                                    >
+                                      {t("logTable.responsesChatCompat")}
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs">
+                                    <p>{t("logTable.responsesChatCompatTip")}</p>
+                                    <p className="break-all font-mono text-[11px] text-muted-foreground">
+                                      {item.target_url}
+                                    </p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : null}
                           </div>
                         </TableCell>
                         <TableCell className="whitespace-normal">

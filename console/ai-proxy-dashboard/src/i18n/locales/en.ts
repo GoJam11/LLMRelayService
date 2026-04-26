@@ -252,6 +252,8 @@ export default {
     outputLabel: "Out",
     cacheLabel: "Cache",
     estimated: "estimated",
+    responsesChatCompat: "Converted to Chat",
+    responsesChatCompatTip: "This request entered a Responses endpoint and the gateway converted it to an upstream Chat Completions request according to the provider setting.",
     actionLabel: "Actions",
     actionMenuTitle: "Log Actions",
     viewDetail: "View Detail",
