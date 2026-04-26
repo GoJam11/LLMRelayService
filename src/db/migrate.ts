@@ -4,7 +4,7 @@ import postgres from 'postgres';
 import { getDatabaseUrl } from './config';
 import { TEST_DATABASE_URL } from './test-database';
 
-// Inline migration: add enabled column to console_providers
+// Inline migrations keep deployed databases compatible with the running code at startup.
 async function runInlineMigrations(db: ReturnType<typeof drizzle>) {
   // 0011_provider_enabled: add enabled column
   await db.execute(drizzleSql`
@@ -42,6 +42,29 @@ async function runInlineMigrations(db: ReturnType<typeof drizzle>) {
   // 0014_provider_uuid: add stable provider_uuid column
   await db.execute(drizzleSql`
     ALTER TABLE console_providers ADD COLUMN IF NOT EXISTS provider_uuid text NOT NULL DEFAULT '';
+  `);
+
+  // 0014_token_estimated: track whether token usage was estimated
+  await db.execute(drizzleSql`
+    ALTER TABLE "console_requests"
+    ADD COLUMN IF NOT EXISTS "token_usage_estimated" integer DEFAULT 0
+  `);
+  await db.execute(drizzleSql`
+    UPDATE "console_requests"
+    SET "token_usage_estimated" = 0
+    WHERE "token_usage_estimated" IS NULL
+  `);
+  await db.execute(drizzleSql`
+    ALTER TABLE "console_requests"
+    ALTER COLUMN "token_usage_estimated" SET DEFAULT 0
+  `);
+  await db.execute(drizzleSql`
+    ALTER TABLE "console_requests"
+    ALTER COLUMN "token_usage_estimated" SET NOT NULL
+  `);
+  await db.execute(drizzleSql`
+    CREATE INDEX IF NOT EXISTS "idx_console_requests_token_estimated"
+    ON "console_requests"("token_usage_estimated")
   `);
 }
 

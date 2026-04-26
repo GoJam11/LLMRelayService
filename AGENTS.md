@@ -18,6 +18,7 @@
   - `cd console/ai-proxy-dashboard && bun run typecheck`
   - `cd console/ai-proxy-dashboard && bun run build`
 - **push 前必须先启动本地后端服务验证无报错**：`bun run dev:server`，确认服务正常启动（无崩溃、无 ReferenceError 等启动时错误）后再 push。服务启动后可用 Ctrl-C 停止。
+- 后端运行期依赖的数据库 schema 变更必须同步加入 `src/db/migrate.ts` 的启动 inline migrations，确保服务启动时自动补齐兼容性字段/索引；不要要求线上或用户手动执行 `bun run db:migrate` 才能恢复基础功能。
 - 对项目的功能/行为改动，默认**同步更新 changelog**；不要只改代码不记变更。
 - 如果根目录 lockfile 因依赖变化被修改（例如 `bun.lock`），不要漏提、漏 push。
 
