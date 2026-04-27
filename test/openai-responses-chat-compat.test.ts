@@ -279,6 +279,43 @@ describe("openai responses chat compatibility", () => {
     });
   });
 
+  it("converts think-tagged Chat Completions content into Responses reasoning items", () => {
+    const response = convertChatCompletionToResponsePayload({
+      id: "chatcmpl_think",
+      object: "chat.completion",
+      created: 321,
+      model: "gpt-test",
+      choices: [{
+        index: 0,
+        message: {
+          role: "assistant",
+          content: "<think>Plan the answer first.</think>Hello",
+        },
+        finish_reason: "stop",
+      }],
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 8,
+        total_tokens: 18,
+      },
+    });
+
+    expect(response.output_text).toBe("Hello");
+    expect((response.output as any[])[0]).toEqual({
+      id: "rs_chatcmpl_think_0",
+      type: "reasoning",
+      content: [{ type: "reasoning_text", text: "Plan the answer first." }],
+      summary: [],
+    });
+    expect((response.output as any[])[1]).toMatchObject({
+      id: "msg_chatcmpl_think_1",
+      type: "message",
+      status: "completed",
+      role: "assistant",
+      content: [{ type: "output_text", text: "Hello", annotations: [] }],
+    });
+  });
+
   it("transforms non-streaming Chat responses into Responses JSON", async () => {
     const transformed = transformChatCompletionsResponseToResponses(new Response(JSON.stringify({
       id: "chatcmpl_456",
@@ -329,6 +366,48 @@ describe("openai responses chat compatibility", () => {
       total_tokens: 7,
       input_tokens_details: { cached_tokens: 0 },
       output_tokens_details: { reasoning_tokens: 0 },
+    });
+  });
+
+  it("transforms think-tagged streaming Chat SSE into Responses reasoning events", async () => {
+    const chatSse = [
+      'data: {"id":"chatcmpl_think_stream","object":"chat.completion.chunk","created":790,"model":"gpt-test","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}',
+      "",
+      'data: {"id":"chatcmpl_think_stream","object":"chat.completion.chunk","created":790,"model":"gpt-test","choices":[{"index":0,"delta":{"content":"<think>pla"},"finish_reason":null}]}',
+      "",
+      'data: {"id":"chatcmpl_think_stream","object":"chat.completion.chunk","created":790,"model":"gpt-test","choices":[{"index":0,"delta":{"content":"n</think>Hel"},"finish_reason":null}]}',
+      "",
+      'data: {"id":"chatcmpl_think_stream","object":"chat.completion.chunk","created":790,"model":"gpt-test","choices":[{"index":0,"delta":{"content":"lo"},"finish_reason":null}]}',
+      "",
+      'data: {"id":"chatcmpl_think_stream","object":"chat.completion.chunk","created":790,"model":"gpt-test","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":6,"total_tokens":11}}',
+      "",
+      "data: [DONE]",
+      "",
+    ].join("\n");
+
+    const transformed = transformChatCompletionsResponseToResponses(new Response(chatSse, {
+      headers: { "content-type": "text/event-stream" },
+    }));
+
+    const text = await transformed.text();
+    expect(text).toContain("event: response.reasoning_text.delta");
+    expect(text).toContain("event: response.output_text.delta");
+    expect(text).not.toContain("<think>");
+    expect(text).not.toContain("</think>");
+
+    const completed = parseSseEvent(text, "response.completed");
+    expect(completed.response.output_text).toBe("Hello");
+    expect(completed.response.output[0]).toEqual({
+      id: "rs_chatcmpl_think_stream_0",
+      type: "reasoning",
+      content: [{ type: "reasoning_text", text: "plan" }],
+      summary: [],
+    });
+    expect(completed.response.output[1]).toMatchObject({
+      id: "msg_chatcmpl_think_stream_1",
+      type: "message",
+      role: "assistant",
+      content: [{ type: "output_text", text: "Hello", annotations: [] }],
     });
   });
 });

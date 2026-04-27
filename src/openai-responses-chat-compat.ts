@@ -578,29 +578,139 @@ function statusFromFinishReason(finishReason: unknown): { status: string; incomp
   return { status: 'completed', incompleteDetails: null };
 }
 
-function convertChatMessageContentToResponseParts(message: JsonRecord): JsonRecord[] {
-  const content = message.content;
-  const annotations = Array.isArray(message.annotations) ? message.annotations : [];
+const THINK_OPEN_TAG = '<think>';
+const THINK_CLOSE_TAG = '</think>';
 
-  if (typeof content === 'string' && content.length > 0) {
-    return [{ type: 'output_text', text: content, annotations }];
+type ThinkTextSegmentKind = 'message' | 'reasoning';
+
+interface ThinkTextSegment {
+  kind: ThinkTextSegmentKind;
+  text: string;
+}
+
+interface ThinkTagParserState {
+  buffer: string;
+  inThink: boolean;
+}
+
+function pushThinkTextSegment(segments: ThinkTextSegment[], kind: ThinkTextSegmentKind, text: string): void {
+  if (!text) return;
+
+  const previous = segments.at(-1);
+  if (previous?.kind === kind) {
+    previous.text += text;
+    return;
   }
+
+  segments.push({ kind, text });
+}
+
+function splitThinkTaggedText(text: string): ThinkTextSegment[] {
+  const segments: ThinkTextSegment[] = [];
+  let cursor = 0;
+  let inThink = false;
+
+  while (cursor < text.length) {
+    const tag = inThink ? THINK_CLOSE_TAG : THINK_OPEN_TAG;
+    const nextTagIndex = text.indexOf(tag, cursor);
+    if (nextTagIndex === -1) {
+      pushThinkTextSegment(segments, inThink ? 'reasoning' : 'message', text.slice(cursor));
+      break;
+    }
+
+    pushThinkTextSegment(segments, inThink ? 'reasoning' : 'message', text.slice(cursor, nextTagIndex));
+    cursor = nextTagIndex + tag.length;
+    inThink = !inThink;
+  }
+
+  return segments;
+}
+
+function longestTagSuffixPrefix(value: string, tag: string): number {
+  const maxLength = Math.min(value.length, tag.length - 1);
+  for (let length = maxLength; length > 0; length -= 1) {
+    if (value.endsWith(tag.slice(0, length))) return length;
+  }
+  return 0;
+}
+
+function consumeThinkTaggedTextChunk(parser: ThinkTagParserState, chunk: string): ThinkTextSegment[] {
+  const segments: ThinkTextSegment[] = [];
+  parser.buffer += chunk;
+
+  while (parser.buffer.length > 0) {
+    const tag = parser.inThink ? THINK_CLOSE_TAG : THINK_OPEN_TAG;
+    const nextTagIndex = parser.buffer.indexOf(tag);
+    if (nextTagIndex !== -1) {
+      pushThinkTextSegment(segments, parser.inThink ? 'reasoning' : 'message', parser.buffer.slice(0, nextTagIndex));
+      parser.buffer = parser.buffer.slice(nextTagIndex + tag.length);
+      parser.inThink = !parser.inThink;
+      continue;
+    }
+
+    const heldPrefixLength = longestTagSuffixPrefix(parser.buffer, tag);
+    const safeText = parser.buffer.slice(0, parser.buffer.length - heldPrefixLength);
+    pushThinkTextSegment(segments, parser.inThink ? 'reasoning' : 'message', safeText);
+    parser.buffer = parser.buffer.slice(parser.buffer.length - heldPrefixLength);
+    break;
+  }
+
+  return segments;
+}
+
+function flushThinkTaggedText(parser: ThinkTagParserState): ThinkTextSegment[] {
+  const segments: ThinkTextSegment[] = [];
+  pushThinkTextSegment(segments, parser.inThink ? 'reasoning' : 'message', parser.buffer);
+  parser.buffer = '';
+  return segments;
+}
+
+function extractChatMessageTextContent(content: unknown): string {
+  if (typeof content === 'string') return content;
 
   if (Array.isArray(content)) {
-    return content.flatMap((part) => {
-      if (typeof part === 'string') return [{ type: 'output_text', text: part, annotations }];
-      if (isRecord(part) && part.type === 'text' && typeof part.text === 'string') {
-        return [{ type: 'output_text', text: part.text, annotations }];
-      }
-      return [];
-    });
+    return content.map((part) => {
+      if (typeof part === 'string') return part;
+      if (isRecord(part) && part.type === 'text' && typeof part.text === 'string') return part.text;
+      return '';
+    }).join('');
   }
 
+  return '';
+}
+
+function convertChatMessageToResponseItems(message: JsonRecord, responseId: string): JsonRecord[] {
   if (typeof message.refusal === 'string' && message.refusal.length > 0) {
-    return [{ type: 'refusal', refusal: message.refusal }];
+    return [{
+      id: generatedItemId('msg', responseId, 0),
+      type: 'message',
+      status: 'completed',
+      role: 'assistant',
+      content: [{ type: 'refusal', refusal: message.refusal }],
+    }];
   }
 
-  return [];
+  const annotations = Array.isArray(message.annotations) ? message.annotations : [];
+  const segments = splitThinkTaggedText(extractChatMessageTextContent(message.content));
+
+  return segments.map((segment, index) => {
+    if (segment.kind === 'reasoning') {
+      return {
+        id: generatedItemId('rs', responseId, index),
+        type: 'reasoning',
+        content: [{ type: 'reasoning_text', text: segment.text }],
+        summary: [],
+      };
+    }
+
+    return {
+      id: generatedItemId('msg', responseId, index),
+      type: 'message',
+      status: 'completed',
+      role: 'assistant',
+      content: [{ type: 'output_text', text: segment.text, annotations }],
+    };
+  });
 }
 
 function convertChatToolCallsToResponseItems(toolCalls: unknown, responseId: string, startIndex: number): JsonRecord[] {
@@ -643,18 +753,7 @@ export function convertChatCompletionToResponsePayload(chatCompletion: unknown):
   const message = isRecord(firstChoice.message) ? firstChoice.message : {};
   const finishReason = firstChoice.finish_reason;
   const { status, incompleteDetails } = statusFromFinishReason(finishReason);
-  const output: JsonRecord[] = [];
-
-  const content = convertChatMessageContentToResponseParts(message);
-  if (content.length > 0) {
-    output.push({
-      id: generatedItemId('msg', responseId, 0),
-      type: 'message',
-      status: 'completed',
-      role: 'assistant',
-      content,
-    });
-  }
+  const output = convertChatMessageToResponseItems(message, responseId);
 
   output.push(...convertChatToolCallsToResponseItems(message.tool_calls, responseId, output.length));
 
@@ -714,18 +813,28 @@ interface StreamToolCallState {
   arguments: string;
 }
 
+type StreamOutputItemKind = 'message' | 'reasoning';
+
+interface StreamOutputItemState {
+  kind: StreamOutputItemKind;
+  outputIndex: number;
+  id: string;
+  text: string;
+  finalized: boolean;
+}
+
 interface StreamState {
   responseId: string;
   model: string;
   createdAt: number;
   created: boolean;
-  messageStarted: boolean;
-  contentStarted: boolean;
   finalized: boolean;
-  text: string;
   finishReason: unknown;
   usage: unknown;
   toolCalls: Map<number, StreamToolCallState>;
+  items: StreamOutputItemState[];
+  activeItemIndex: number | null;
+  thinkParser: ThinkTagParserState;
 }
 
 function createEmptyStreamState(): StreamState {
@@ -734,13 +843,16 @@ function createEmptyStreamState(): StreamState {
     model: '',
     createdAt: Math.floor(Date.now() / 1000),
     created: false,
-    messageStarted: false,
-    contentStarted: false,
     finalized: false,
-    text: '',
     finishReason: null,
     usage: null,
     toolCalls: new Map(),
+    items: [],
+    activeItemIndex: null,
+    thinkParser: {
+      buffer: '',
+      inThink: false,
+    },
   };
 }
 
@@ -764,14 +876,49 @@ function streamResponseSkeleton(state: StreamState, status = 'in_progress', outp
   };
 }
 
-function messageItemForStream(state: StreamState): JsonRecord {
-  const content = [{ type: 'output_text', text: state.text, annotations: [] }];
+function responseContentPartForStreamItem(item: StreamOutputItemState): JsonRecord {
+  if (item.kind === 'reasoning') {
+    return { type: 'reasoning_text', text: item.text };
+  }
+
+  return { type: 'output_text', text: item.text, annotations: [] };
+}
+
+function responseOutputItemForStream(item: StreamOutputItemState): JsonRecord {
+  if (item.kind === 'reasoning') {
+    return {
+      id: item.id,
+      type: 'reasoning',
+      content: [responseContentPartForStreamItem(item)],
+      summary: [],
+    };
+  }
+
   return {
-    id: generatedItemId('msg', state.responseId, 0),
+    id: item.id,
     type: 'message',
     status: 'completed',
     role: 'assistant',
-    content,
+    content: [responseContentPartForStreamItem(item)],
+  };
+}
+
+function responseOutputItemAddedForStream(item: StreamOutputItemState): JsonRecord {
+  if (item.kind === 'reasoning') {
+    return {
+      id: item.id,
+      type: 'reasoning',
+      content: [],
+      summary: [],
+    };
+  }
+
+  return {
+    id: item.id,
+    type: 'message',
+    status: 'in_progress',
+    role: 'assistant',
+    content: [],
   };
 }
 
@@ -800,34 +947,109 @@ function ensureStreamCreated(controller: TransformStreamDefaultController<Uint8A
   }));
 }
 
-function ensureMessageStarted(controller: TransformStreamDefaultController<Uint8Array>, state: StreamState): void {
+function getActiveStreamItem(state: StreamState): StreamOutputItemState | null {
+  if (state.activeItemIndex == null) return null;
+  return state.items[state.activeItemIndex] ?? null;
+}
+
+function finalizeActiveStreamItem(controller: TransformStreamDefaultController<Uint8Array>, state: StreamState): void {
+  const activeItem = getActiveStreamItem(state);
+  if (!activeItem || activeItem.finalized) return;
+
+  const part = responseContentPartForStreamItem(activeItem);
+  const doneEvent = activeItem.kind === 'reasoning' ? 'response.reasoning_text.done' : 'response.output_text.done';
+  const donePayload = activeItem.kind === 'reasoning'
+    ? {
+        type: doneEvent,
+        item_id: activeItem.id,
+        output_index: activeItem.outputIndex,
+        content_index: 0,
+        text: activeItem.text,
+      }
+    : {
+        type: doneEvent,
+        item_id: activeItem.id,
+        output_index: activeItem.outputIndex,
+        content_index: 0,
+        text: activeItem.text,
+      };
+
+  controller.enqueue(sseEvent(doneEvent, donePayload));
+  controller.enqueue(sseEvent('response.content_part.done', {
+    type: 'response.content_part.done',
+    item_id: activeItem.id,
+    output_index: activeItem.outputIndex,
+    content_index: 0,
+    part,
+  }));
+  controller.enqueue(sseEvent('response.output_item.done', {
+    type: 'response.output_item.done',
+    output_index: activeItem.outputIndex,
+    item: responseOutputItemForStream(activeItem),
+  }));
+
+  activeItem.finalized = true;
+  state.activeItemIndex = null;
+}
+
+function ensureStreamItemStarted(
+  controller: TransformStreamDefaultController<Uint8Array>,
+  state: StreamState,
+  kind: StreamOutputItemKind,
+): StreamOutputItemState {
   ensureStreamCreated(controller, state, {});
-  if (!state.messageStarted) {
-    state.messageStarted = true;
-    const item = {
-      id: generatedItemId('msg', state.responseId, 0),
-      type: 'message',
-      status: 'in_progress',
-      role: 'assistant',
-      content: [],
-    };
-    controller.enqueue(sseEvent('response.output_item.added', {
-      type: 'response.output_item.added',
-      output_index: 0,
-      item,
-    }));
+  const activeItem = getActiveStreamItem(state);
+  if (activeItem && !activeItem.finalized) {
+    if (activeItem.kind === kind) return activeItem;
+    finalizeActiveStreamItem(controller, state);
   }
 
-  if (!state.contentStarted) {
-    state.contentStarted = true;
-    controller.enqueue(sseEvent('response.content_part.added', {
-      type: 'response.content_part.added',
-      item_id: generatedItemId('msg', state.responseId, 0),
-      output_index: 0,
-      content_index: 0,
-      part: { type: 'output_text', text: '', annotations: [] },
-    }));
-  }
+  const outputIndex = state.items.length;
+  const item: StreamOutputItemState = {
+    kind,
+    outputIndex,
+    id: generatedItemId(kind === 'reasoning' ? 'rs' : 'msg', state.responseId, outputIndex),
+    text: '',
+    finalized: false,
+  };
+  state.items.push(item);
+  state.activeItemIndex = outputIndex;
+
+  controller.enqueue(sseEvent('response.output_item.added', {
+    type: 'response.output_item.added',
+    output_index: outputIndex,
+    item: responseOutputItemAddedForStream(item),
+  }));
+  controller.enqueue(sseEvent('response.content_part.added', {
+    type: 'response.content_part.added',
+    item_id: item.id,
+    output_index: outputIndex,
+    content_index: 0,
+    part: responseContentPartForStreamItem(item),
+  }));
+
+  return item;
+}
+
+function appendStreamTextDelta(
+  controller: TransformStreamDefaultController<Uint8Array>,
+  state: StreamState,
+  segment: ThinkTextSegment,
+): void {
+  if (!segment.text) return;
+
+  const kind = segment.kind === 'reasoning' ? 'reasoning' : 'message';
+  const item = ensureStreamItemStarted(controller, state, kind);
+  item.text += segment.text;
+
+  const event = kind === 'reasoning' ? 'response.reasoning_text.delta' : 'response.output_text.delta';
+  controller.enqueue(sseEvent(event, {
+    type: event,
+    item_id: item.id,
+    output_index: item.outputIndex,
+    content_index: 0,
+    delta: segment.text,
+  }));
 }
 
 function appendToolCallDelta(state: StreamState, toolCallDelta: unknown): void {
@@ -863,15 +1085,10 @@ function processChatCompletionChunk(
     const contentDelta = typeof delta.content === 'string' ? delta.content : '';
     if (!contentDelta) continue;
 
-    ensureMessageStarted(controller, state);
-    state.text += contentDelta;
-    controller.enqueue(sseEvent('response.output_text.delta', {
-      type: 'response.output_text.delta',
-      item_id: generatedItemId('msg', state.responseId, 0),
-      output_index: 0,
-      content_index: 0,
-      delta: contentDelta,
-    }));
+    const segments = consumeThinkTaggedTextChunk(state.thinkParser, contentDelta);
+    for (const segment of segments) {
+      appendStreamTextDelta(controller, state, segment);
+    }
   }
 }
 
@@ -880,31 +1097,14 @@ function finalizeStream(controller: TransformStreamDefaultController<Uint8Array>
   state.finalized = true;
   ensureStreamCreated(controller, state, {});
 
-  const output: JsonRecord[] = [];
-  if (state.messageStarted || state.text.length > 0) {
-    ensureMessageStarted(controller, state);
-    const message = messageItemForStream(state);
-    controller.enqueue(sseEvent('response.output_text.done', {
-      type: 'response.output_text.done',
-      item_id: message.id,
-      output_index: 0,
-      content_index: 0,
-      text: state.text,
-    }));
-    controller.enqueue(sseEvent('response.content_part.done', {
-      type: 'response.content_part.done',
-      item_id: message.id,
-      output_index: 0,
-      content_index: 0,
-      part: (message.content as JsonRecord[])[0] as JsonRecord,
-    }));
-    controller.enqueue(sseEvent('response.output_item.done', {
-      type: 'response.output_item.done',
-      output_index: 0,
-      item: message,
-    }));
-    output.push(message);
+  const trailingSegments = flushThinkTaggedText(state.thinkParser);
+  for (const segment of trailingSegments) {
+    appendStreamTextDelta(controller, state, segment);
   }
+
+  finalizeActiveStreamItem(controller, state);
+
+  const output = state.items.map((item) => responseOutputItemForStream(item));
 
   const functionCalls = functionCallItemsForStream(state, output.length);
   for (const [offset, item] of functionCalls.entries()) {
