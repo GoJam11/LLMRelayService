@@ -3,6 +3,7 @@ import { and, desc, eq, ne } from 'drizzle-orm';
 import { consoleApiKeys } from './db/schema';
 import { createDbClient } from './db/client';
 import { runMigrations } from './db/migrate';
+export { isModelAllowed } from './api-key-model-filter';
 
 const db = createDbClient();
 const storeReady = runMigrations();
@@ -44,7 +45,14 @@ function parseAllowedModels(json: string | null | undefined): string[] {
   try {
     const parsed = JSON.parse(json);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+    return Array.from(
+      new Set(
+        parsed
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0),
+      ),
+    );
   } catch {
     return [];
   }
@@ -191,9 +199,13 @@ export async function setApiKeyAllowedModels(id: string, models: string[]): Prom
   const normalizedId = id.trim();
   if (!normalizedId) return null;
 
-  const cleanedModels = models
-    .map((m) => m.trim())
-    .filter((m) => m.length > 0);
+  const cleanedModels = Array.from(
+    new Set(
+      models
+        .map((m) => m.trim())
+        .filter((m) => m.length > 0),
+    ),
+  );
 
   const rows = await db.update(consoleApiKeys)
     .set({ allowedModelsJson: JSON.stringify(cleanedModels) })

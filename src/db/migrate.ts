@@ -50,7 +50,7 @@ async function runInlineMigrations(db: ReturnType<typeof drizzle>) {
     ADD COLUMN IF NOT EXISTS "allowed_models_json" text NOT NULL DEFAULT '[]'
   `);
 
-  // 0014_token_estimated: track whether token usage was estimated
+  // 0016_token_estimated: track whether token usage was estimated
   await db.execute(drizzleSql`
     ALTER TABLE "console_requests"
     ADD COLUMN IF NOT EXISTS "token_usage_estimated" integer DEFAULT 0
