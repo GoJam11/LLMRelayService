@@ -70,6 +70,7 @@ export const consoleApiKeys = pgTable('console_api_keys', {
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   lastUsedAt: bigint('last_used_at', { mode: 'number' }),
   revoked: integer('revoked').notNull().default(0),
+  allowedModelsJson: text('allowed_models_json').notNull().default('[]'),
 }, (table) => ({
   keyHashIdx: index('idx_console_api_keys_key_hash').on(table.keyHash),
   createdAtIdx: index('idx_console_api_keys_created_at').on(table.createdAt),

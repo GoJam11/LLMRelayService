@@ -509,6 +509,17 @@ export default {
     viewDialogTitle: "View Full API Key",
     viewDialogDesc: "The full value for \"{{name}}\" is shown below. You can view and copy it anytime.",
     copyKey: "Copy Key",
+    allowedModelsCol: "Model Restriction",
+    allowedModelsNone: "Unrestricted",
+    allowedModelsCount: "{{count}} model(s)",
+    manageModels: "Models",
+    manageModelsDialogTitle: "Manage Allowed Models",
+    manageModelsDialogDesc: "Set the model allowlist for \"{{name}}\". Leave empty to allow all models. Supports * wildcard (e.g. claude-*).",
+    allowedModelsInputPlaceholder: "Type a model name and press Enter",
+    allowedModelsEmptyHint: "No restriction — this key can use all models",
+    allowedModelsSave: "Save",
+    allowedModelsSaving: "Saving...",
+    allowedModelsUpdated: "Model restrictions updated",
   },
 
   // ── Bucket Table ──

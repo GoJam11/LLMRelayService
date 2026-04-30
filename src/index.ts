@@ -11,7 +11,8 @@ import { saveConsoleRequest, type ForwardHeadersSummary, type PayloadSummaryForC
 import { registerConsoleRoutes } from './console-ui';
 import { buildForwardHeadersForProvider, prepareRequestForProvider, type UpstreamType, type UsageData, parseUsageForProvider, summarizePayloadForProvider, detectRequestKindForProvider } from './providers';
 import { finalizeProxyResponse } from './response-observer';
-import { authenticateManagedApiKey } from './api-keys';
+import { authenticateManagedApiKey, type AuthenticatedApiKeyInfo } from './api-keys';
+import { isModelAllowed } from './api-key-model-filter';
 import { recordRequestPerfSample, trackRequestStart, trackRequestEnd } from './perf-monitor';
 import { elapsedPerfMs, getMaxPerfPhase, nowPerfMs, roundPerfMs, shouldLogRequestPerf } from './perf-detail';
 import { PAYLOAD_LOG_LIMIT_BYTES } from './logging-constants';
@@ -90,7 +91,7 @@ function readGatewayCredentials(headers: Headers): GatewayCredentialCandidate[] 
   return candidates;
 }
 
-async function authenticateGateway(headers: Headers, upstreamType: UpstreamType): Promise<{ ok: true; apiKeyInfo: { id: string; name: string } | null } | { ok: false; response: Response }> {
+async function authenticateGateway(headers: Headers, upstreamType: UpstreamType): Promise<{ ok: true; apiKeyInfo: AuthenticatedApiKeyInfo | null } | { ok: false; response: Response }> {
   const adminGatewayKey = process.env.GATEWAY_API_KEY;
   const providedCredentials = readGatewayCredentials(headers);
 
@@ -448,6 +449,37 @@ async function handleProxyRequest(c: any): Promise<Response> {
     return gatewayAuth.response;
   }
   const matchedApiKey = gatewayAuth.apiKeyInfo;
+
+  // Enforce per-key model restrictions against the client-requested model name.
+  // This intentionally checks the pre-resolution model/alias, not route.resolvedModel,
+  // so admins can allow public aliases (e.g. "fast") while preventing direct access
+  // to the underlying model (e.g. "gpt-4o").
+  if (matchedApiKey && matchedApiKey.allowed_models.length > 0) {
+    const clientRequestedModel = originalRequestModel;
+
+    if (clientRequestedModel === 'unknown') {
+      const restrictedResponse = buildGatewayErrorResponse(
+        initialRoute.type,
+        403,
+        '无法确定请求模型，此 API key 配置了模型限制',
+      );
+      applyCorsHeaders(restrictedResponse.headers);
+      emitRequestPerf(restrictedResponse.status);
+      return restrictedResponse;
+    }
+
+    if (!isModelAllowed(clientRequestedModel, matchedApiKey.allowed_models)) {
+      const restrictedResponse = buildGatewayErrorResponse(
+        initialRoute.type,
+        403,
+        `模型 '${clientRequestedModel}' 不在此 API key 的允许列表中`,
+      );
+      applyCorsHeaders(restrictedResponse.headers);
+      emitRequestPerf(restrictedResponse.status);
+      return restrictedResponse;
+    }
+  }
+
   const route: RouteResult = initialRoute;
   resolvedChannelName = route.channelName;
   const routeTargetPathname = (() => {

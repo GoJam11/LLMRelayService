@@ -7,6 +7,7 @@ import type {
   ConsoleRequestDetail,
   ConsoleSession,
   ConsoleUsageStatsPayload,
+  ManagedApiKey,
   ManagedApiKeyDetail,
   ModelAlias,
   ModelAliasesPayload,
@@ -214,6 +215,16 @@ export function renameKey(id: string, name: string): Promise<{ id: string; name:
 export function deleteKey(id: string): Promise<{ ok: true }> {
   return requestJson(`/__console/api/keys/${encodeURIComponent(id)}`, {
     method: "DELETE",
+  })
+}
+
+export function setKeyAllowedModels(id: string, models: string[]): Promise<ManagedApiKey> {
+  return requestJson(`/__console/api/keys/${encodeURIComponent(id)}/allowed-models`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ models }),
   })
 }
 

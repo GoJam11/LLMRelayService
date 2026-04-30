@@ -257,6 +257,7 @@ export type ManagedApiKey = {
   prefix: string
   created_at: number
   last_used_at: number | null
+  allowed_models: string[]
 }
 
 export type ConsoleKeysPayload = {

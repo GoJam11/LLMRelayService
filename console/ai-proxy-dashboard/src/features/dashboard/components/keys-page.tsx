@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Copy, Eye, KeyRound, Pencil, Plus, Trash2 } from "lucide-react"
+import { Copy, Eye, Filter, KeyRound, Pencil, Plus, Trash2, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -31,7 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { createKey, deleteKey, fetchKeys, getKey, renameKey } from "@/features/dashboard/api"
+import { createKey, deleteKey, fetchKeys, getKey, renameKey, setKeyAllowedModels } from "@/features/dashboard/api"
 import type { ManagedApiKey, ManagedApiKeyDetail } from "@/features/dashboard/types"
 
 function formatDateTime(timestamp: number | null) {
@@ -55,14 +55,19 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [feedback, setFeedback] = useState("")
   const [createOpen, setCreateOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
+  const [modelsOpen, setModelsOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [revealingId, setRevealingId] = useState<string | null>(null)
+  const [savingModelsId, setSavingModelsId] = useState<string | null>(null)
   const [newKeyName, setNewKeyName] = useState("")
   const [renameDraft, setRenameDraft] = useState("")
   const [renameTarget, setRenameTarget] = useState<ManagedApiKey | null>(null)
   const [visibleKey, setVisibleKey] = useState<ManagedApiKeyDetail | null>(null)
+  const [modelsTarget, setModelsTarget] = useState<ManagedApiKey | null>(null)
+  const [modelsDraft, setModelsDraft] = useState<string[]>([])
+  const [modelsInput, setModelsInput] = useState("")
 
   const showFeedback = (message: string) => {
     setFeedback(message)
@@ -146,7 +151,7 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
     try {
       setRenamingId(target.id)
       const updated = await renameKey(target.id, nextName)
-      setKeys((current) => (current ?? []).map((item) => item.id === target.id ? updated : item))
+      setKeys((current) => (current ?? []).map((item) => item.id === target.id ? { ...item, ...updated } : item))
       setVisibleKey((current) => current?.id === target.id ? { ...current, name: updated.name } : current)
       setRenameOpen(false)
       setRenameTarget(null)
@@ -178,6 +183,49 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
       setError(message)
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const openModelsDialog = (key: ManagedApiKey) => {
+    setModelsTarget(key)
+    setModelsDraft([...(key.allowed_models ?? [])])
+    setModelsInput("")
+    setModelsOpen(true)
+  }
+
+  const handleModelsInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      const value = modelsInput.trim()
+      if (value && !modelsDraft.includes(value)) {
+        setModelsDraft((prev) => [...prev, value])
+      }
+      setModelsInput("")
+    }
+  }
+
+  const removeModel = (model: string) => {
+    setModelsDraft((prev) => prev.filter((m) => m !== model))
+  }
+
+  const handleSaveModels = async () => {
+    const target = modelsTarget
+    if (!target) return
+
+    try {
+      setSavingModelsId(target.id)
+      const updated = await setKeyAllowedModels(target.id, modelsDraft)
+      setKeys((current) => (current ?? []).map((item) => item.id === target.id ? { ...item, ...updated } : item))
+      setModelsOpen(false)
+      setModelsTarget(null)
+      setError("")
+      showFeedback(t("keys.allowedModelsUpdated"))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (handleUnauthorized(message)) return
+      setError(message)
+    } finally {
+      setSavingModelsId(null)
     }
   }
 
@@ -235,6 +283,7 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
               <TableRow>
                 <TableHead>{t("keys.nameCol")}</TableHead>
                 <TableHead>{t("keys.prefixCol")}</TableHead>
+                <TableHead>{t("keys.allowedModelsCol")}</TableHead>
                 <TableHead>{t("keys.createdCol")}</TableHead>
                 <TableHead>{t("keys.lastUsedCol")}</TableHead>
                 <TableHead className="text-right">{t("keys.actionsCol")}</TableHead>
@@ -245,6 +294,15 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
                 <TableRow key={key.id}>
                   <TableCell className="font-medium text-foreground">{key.name}</TableCell>
                   <TableCell><Badge variant="outline" className="font-mono">{key.prefix}</Badge></TableCell>
+                  <TableCell>
+                    {(key.allowed_models ?? []).length === 0 ? (
+                      <span className="text-muted-foreground text-xs">{t("keys.allowedModelsNone")}</span>
+                    ) : (
+                      <Badge variant="secondary" className="font-mono text-xs">
+                        {t("keys.allowedModelsCount", { count: key.allowed_models.length })}
+                      </Badge>
+                    )}
+                  </TableCell>
                   <TableCell>{formatDateTime(key.created_at)}</TableCell>
                   <TableCell>{formatDateTime(key.last_used_at)}</TableCell>
                   <TableCell className="text-right">
@@ -265,6 +323,9 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
                         setRenameOpen(true)
                       }}>
                         <Pencil data-icon="inline-start" />{t("keys.rename")}
+                      </Button>
+                      <Button type="button" size="xs" variant="ghost" onClick={() => openModelsDialog(key)}>
+                        <Filter data-icon="inline-start" />{t("keys.manageModels")}
                       </Button>
                       <Button type="button" size="xs" variant="ghost" disabled={deletingId === key.id} onClick={() => void handleDelete(key)}>
                         <Trash2 data-icon="inline-start" />{deletingId === key.id ? t("common.deleting") : t("common.delete")}
@@ -327,6 +388,52 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={modelsOpen} onOpenChange={(open) => { if (!open) { setModelsOpen(false); setModelsTarget(null) } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("keys.manageModelsDialogTitle")}</DialogTitle>
+            <DialogDescription>{t("keys.manageModelsDialogDesc", { name: modelsTarget?.name ?? "" })}</DialogDescription>
+          </DialogHeader>
+          <Field>
+            <FieldLabel htmlFor="models-input">{t("keys.allowedModelsInputPlaceholder")}</FieldLabel>
+            <FieldContent>
+              <Input
+                id="models-input"
+                placeholder={t("keys.allowedModelsInputPlaceholder")}
+                value={modelsInput}
+                onChange={(e) => setModelsInput(e.target.value)}
+                onKeyDown={handleModelsInputKeyDown}
+              />
+            </FieldContent>
+          </Field>
+          {modelsDraft.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{t("keys.allowedModelsEmptyHint")}</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {modelsDraft.map((model) => (
+                <Badge key={model} variant="secondary" className="font-mono text-xs gap-1 pr-1">
+                  {model}
+                  <button
+                    type="button"
+                    className="ml-0.5 rounded-full hover:bg-muted-foreground/20 p-0.5"
+                    onClick={() => removeModel(model)}
+                    aria-label={`Remove ${model}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => { setModelsOpen(false); setModelsTarget(null) }}>{t("common.cancel")}</Button>
+            <Button type="button" disabled={savingModelsId === modelsTarget?.id} onClick={() => void handleSaveModels()}>
+              {savingModelsId === modelsTarget?.id ? t("keys.allowedModelsSaving") : t("keys.allowedModelsSave")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={visibleKey !== null} onOpenChange={(open) => { if (!open) setVisibleKey(null) }}>
         <DialogContent>
           <DialogHeader>
@@ -349,3 +456,4 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
     </div>
   )
 }
+

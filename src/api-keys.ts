@@ -3,6 +3,8 @@ import { and, desc, eq, ne } from 'drizzle-orm';
 import { consoleApiKeys } from './db/schema';
 import { createDbClient } from './db/client';
 import { runMigrations } from './db/migrate';
+import { isModelAllowed, parseAllowedModels } from './api-key-model-filter';
+export { isModelAllowed, parseAllowedModels } from './api-key-model-filter';
 
 const db = createDbClient();
 const storeReady = runMigrations();
@@ -14,6 +16,7 @@ export interface StoredApiKeyRecord {
   prefix: string;
   created_at: number;
   last_used_at: number | null;
+  allowed_models: string[];
 }
 
 export interface StoredApiKeyDetail extends StoredApiKeyRecord {
@@ -23,6 +26,7 @@ export interface StoredApiKeyDetail extends StoredApiKeyRecord {
 export interface AuthenticatedApiKeyInfo {
   id: string;
   name: string;
+  allowed_models: string[];
 }
 
 function hashKey(rawKey: string): string {
@@ -44,6 +48,7 @@ function toRecord(row: typeof consoleApiKeys.$inferSelect): StoredApiKeyRecord {
     prefix: row.prefix,
     created_at: row.createdAt,
     last_used_at: row.lastUsedAt,
+    allowed_models: parseAllowedModels(row.allowedModelsJson),
   };
 }
 
@@ -168,5 +173,30 @@ export async function authenticateManagedApiKey(rawKey: string): Promise<Authent
   return {
     id: row.id,
     name: row.name,
+    allowed_models: parseAllowedModels(row.allowedModelsJson),
   };
+}
+
+export async function setApiKeyAllowedModels(id: string, models: string[]): Promise<StoredApiKeyRecord | null> {
+  await storeReady;
+  const normalizedId = id.trim();
+  if (!normalizedId) return null;
+
+  const cleanedModels = Array.from(
+    new Set(
+      models
+        .map((m) => m.trim())
+        .filter((m) => m.length > 0),
+    ),
+  );
+
+  const rows = await db.update(consoleApiKeys)
+    .set({ allowedModelsJson: JSON.stringify(cleanedModels) })
+    .where(and(
+      eq(consoleApiKeys.id, normalizedId),
+      eq(consoleApiKeys.revoked, 0),
+    ))
+    .returning();
+
+  return rows[0] ? toRecord(rows[0]) : null;
 }
