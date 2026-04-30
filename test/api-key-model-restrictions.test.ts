@@ -38,11 +38,9 @@ describe('isModelAllowed', () => {
     expect(isModelAllowed('gpt-4o', ['claude-3-5-sonnet', 'gpt-4o'])).toBe(true);
   });
 
-  test('wildcard does not match pattern prefix itself without suffix', () => {
-    // "claude-" (pattern prefix only) should not match "claude-" exactly via wildcard
-    // because the pattern "claude-*" requires at least one char after "claude-"
-    // Actually "claude-" + "" starts with "claude-" so this is allowed — that is expected
-    // The boundary test here is that the wildcard is a prefix match, not a glob
+  test('suffix wildcard uses prefix match and allows the bare prefix', () => {
+    // "claude-*" is treated as a simple startsWith("claude-") check, not a glob
+    // that requires a non-empty suffix after the prefix.
     expect(isModelAllowed('claude-', ['claude-*'])).toBe(true); // startsWith("claude-") is true
   });
 
