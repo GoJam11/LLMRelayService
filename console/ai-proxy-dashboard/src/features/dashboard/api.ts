@@ -7,6 +7,7 @@ import type {
   ConsoleRequestDetail,
   ConsoleSession,
   ConsoleUsageStatsPayload,
+  ManagedApiKey,
   ManagedApiKeyDetail,
   ModelAlias,
   ModelAliasesPayload,
