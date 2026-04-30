@@ -123,42 +123,11 @@ Railway / Render 等平台部署时构建命令同上。
 
 ### Docker 部署
 
-每次推送到 `main` 分支或发布版本 tag 时，CI 会自动将镜像推送到 GHCR：
-
-```
-ghcr.io/gojam11/llmrelayservice:main          # 最新 main 分支
-ghcr.io/gojam11/llmrelayservice:1.2.3         # 指定版本
-ghcr.io/gojam11/llmrelayservice:1.2           # 最新 1.2.x
-```
-
-#### 使用预构建镜像（推荐）
-
-将 `docker-compose.yml` 中的 `build: .` 替换为 GHCR 镜像地址：
-
-```yaml
-# docker-compose.yml
-services:
-  app:
-    image: ghcr.io/gojam11/llmrelayservice:main  # 替换这一行
-    # build: .  # 注释掉本地构建
-```
-
-然后启动：
-
 ```bash
+# 1. 复制并配置环境变量（至少设置 GATEWAY_API_KEY，PASSWORD 可选）
 cp .env.example .env
-# 至少设置 GATEWAY_API_KEY（PASSWORD 可选）
-GATEWAY_API_KEY=your-key docker compose up -d
-```
 
-#### 从源码本地构建
-
-```bash
-# 复制并配置环境变量
-cp .env.example .env
-# 至少设置 GATEWAY_API_KEY（PASSWORD 可选）
-
-# 启动服务（包含内置 PostgreSQL，自动本地构建镜像）
+# 2. 启动服务（包含内置 PostgreSQL）
 GATEWAY_API_KEY=your-key docker compose up -d
 ```
 
