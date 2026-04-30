@@ -7,7 +7,7 @@
  * while preventing direct access to the underlying model (e.g. "gpt-4o").
  */
 import { describe, expect, test } from 'bun:test';
-import { isModelAllowed } from '../src/api-key-model-filter';
+import { isModelAllowed, parseAllowedModels } from '../src/api-key-model-filter';
 
 // ---------------------------------------------------------------------------
 // isModelAllowed — pure matcher tests
@@ -53,87 +53,43 @@ describe('isModelAllowed', () => {
 // ---------------------------------------------------------------------------
 // parseAllowedModels — normalization on read
 // ---------------------------------------------------------------------------
-// Note: parseAllowedModels is an internal (non-exported) function in api-keys.ts.
-// Importing api-keys.ts directly in tests would pull in drizzle-orm/postgres-js
-// which are unavailable in the unit-test environment. Instead, we test the
-// normalization logic inline — this mirrors the exact code in parseAllowedModels
-// and will fail if the implementation diverges.
 
-describe('parseAllowedModels (via isModelAllowed with trimmed inputs)', () => {
-  // We test normalization indirectly through the exported function behaviour.
-  // Direct tests use the internal logic described in the spec.
-
+describe('parseAllowedModels', () => {
   test('trims whitespace when reading', () => {
-    // parseAllowedModels is internal; test via a roundtrip through setApiKeyAllowedModels
-    // For a pure unit test, simulate what parseAllowedModels should do
-    const rawJson = JSON.stringify([' gpt-4o ', '  claude-3-5-sonnet  ']);
-    const parsed = JSON.parse(rawJson) as string[];
-    const normalized = Array.from(
-      new Set(
-        parsed
-          .filter((item): item is string => typeof item === 'string')
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0),
-      ),
-    );
-    expect(normalized).toEqual(['gpt-4o', 'claude-3-5-sonnet']);
-    // After normalization, isModelAllowed should work correctly
-    expect(isModelAllowed('gpt-4o', normalized)).toBe(true);
+    const result = parseAllowedModels(JSON.stringify([' gpt-4o ', '  claude-3-5-sonnet  ']));
+    expect(result).toEqual(['gpt-4o', 'claude-3-5-sonnet']);
   });
 
   test('removes empty strings when reading', () => {
-    const rawJson = JSON.stringify(['', '  ', 'gpt-4o', '']);
-    const parsed = JSON.parse(rawJson) as string[];
-    const normalized = Array.from(
-      new Set(
-        parsed
-          .filter((item): item is string => typeof item === 'string')
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0),
-      ),
-    );
-    expect(normalized).toEqual(['gpt-4o']);
+    const result = parseAllowedModels(JSON.stringify(['', '  ', 'gpt-4o', '']));
+    expect(result).toEqual(['gpt-4o']);
   });
 
   test('deduplicates when reading', () => {
-    const rawJson = JSON.stringify(['gpt-4o', 'gpt-4o', 'claude-3-5-sonnet', 'gpt-4o']);
-    const parsed = JSON.parse(rawJson) as string[];
-    const normalized = Array.from(
-      new Set(
-        parsed
-          .filter((item): item is string => typeof item === 'string')
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0),
-      ),
-    );
-    expect(normalized).toEqual(['gpt-4o', 'claude-3-5-sonnet']);
+    const result = parseAllowedModels(JSON.stringify(['gpt-4o', 'gpt-4o', 'claude-3-5-sonnet', 'gpt-4o']));
+    expect(result).toEqual(['gpt-4o', 'claude-3-5-sonnet']);
   });
 
   test('non-array JSON returns empty array', () => {
-    const rawJson = JSON.stringify({ model: 'gpt-4o' });
-    let result: string[];
-    try {
-      const parsed = JSON.parse(rawJson);
-      if (!Array.isArray(parsed)) {
-        result = [];
-      } else {
-        result = parsed;
-      }
-    } catch {
-      result = [];
-    }
-    expect(result).toEqual([]);
+    expect(parseAllowedModels(JSON.stringify({ model: 'gpt-4o' }))).toEqual([]);
   });
 
   test('invalid JSON returns empty array', () => {
-    let result: string[];
-    try {
-      JSON.parse('not valid json {{{');
-      result = [];
-    } catch {
-      result = [];
-    }
-    expect(result).toEqual([]);
+    expect(parseAllowedModels('not valid json {{{')).toEqual([]);
+  });
+
+  test('null returns empty array', () => {
+    expect(parseAllowedModels(null)).toEqual([]);
+  });
+
+  test('undefined returns empty array', () => {
+    expect(parseAllowedModels(undefined)).toEqual([]);
+  });
+
+  test('normalized result works correctly with isModelAllowed', () => {
+    const models = parseAllowedModels(JSON.stringify([' gpt-4o ', '  claude-3-5-sonnet  ']));
+    expect(isModelAllowed('gpt-4o', models)).toBe(true);
+    expect(isModelAllowed('gemini-pro', models)).toBe(false);
   });
 });
 

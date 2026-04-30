@@ -36,3 +36,33 @@ export function isModelAllowed(model: string, patterns: string[]): boolean {
     return model === pattern;
   });
 }
+
+/**
+ * Parses the `allowed_models_json` column value stored in the DB.
+ *
+ * Normalises the list on read:
+ *   - Drops non-string elements (defensive against corrupt data)
+ *   - Trims surrounding whitespace
+ *   - Drops empty strings
+ *   - Deduplicates (preserves first-seen order)
+ *
+ * Returns an empty array when the input is falsy, not a JSON array, or
+ * contains invalid JSON.
+ */
+export function parseAllowedModels(json: string | null | undefined): string[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json);
+    if (!Array.isArray(parsed)) return [];
+    return Array.from(
+      new Set(
+        parsed
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0),
+      ),
+    );
+  } catch {
+    return [];
+  }
+}

@@ -3,7 +3,8 @@ import { and, desc, eq, ne } from 'drizzle-orm';
 import { consoleApiKeys } from './db/schema';
 import { createDbClient } from './db/client';
 import { runMigrations } from './db/migrate';
-export { isModelAllowed } from './api-key-model-filter';
+import { isModelAllowed, parseAllowedModels } from './api-key-model-filter';
+export { isModelAllowed, parseAllowedModels } from './api-key-model-filter';
 
 const db = createDbClient();
 const storeReady = runMigrations();
@@ -38,24 +39,6 @@ function createRawKey(): string {
 
 function createKeyId(): string {
   return randomBytes(16).toString('hex');
-}
-
-function parseAllowedModels(json: string | null | undefined): string[] {
-  if (!json) return [];
-  try {
-    const parsed = JSON.parse(json);
-    if (!Array.isArray(parsed)) return [];
-    return Array.from(
-      new Set(
-        parsed
-          .filter((item): item is string => typeof item === 'string')
-          .map((item) => item.trim())
-          .filter((item) => item.length > 0),
-      ),
-    );
-  } catch {
-    return [];
-  }
 }
 
 function toRecord(row: typeof consoleApiKeys.$inferSelect): StoredApiKeyRecord {
