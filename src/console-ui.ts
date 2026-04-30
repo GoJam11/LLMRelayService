@@ -5,7 +5,7 @@ import { existsSync, statSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { createProvider, deleteProvider, ensureProviderConfigsLoaded, getModels, getProviderConfig, getProviderInfo, getProviders, resolveRoute, toggleProvider, updateProvider } from './config';
 import { getConsoleRequest, listConsoleRequests, getProviderHealthStatuses, getConsoleUsageStats, getConsoleFilterOptions, type RequestSortKey, type SortDirection } from './console-store';
-import { createManagedApiKey, deleteManagedApiKey, getManagedApiKey, listManagedApiKeys, renameManagedApiKey } from './api-keys';
+import { createManagedApiKey, deleteManagedApiKey, getManagedApiKey, listManagedApiKeys, renameManagedApiKey, setApiKeyAllowedModels } from './api-keys';
 import { createModelAlias, deleteModelAlias, listModelAliases, toggleModelAlias, updateModelAlias } from './console-model-alias-store';
 import { ensureModelCatalogLoaded, lookupModelContext } from './model-catalog';
 import { ensurePricingLoaded, getModelPricing } from './pricing';
@@ -1023,6 +1023,28 @@ export function registerConsoleRoutes(app: Hono<any>): void {
     }
 
     return c.json({ ok: true });
+  });
+
+  app.patch('/__console/api/keys/:id/allowed-models', async (c) => {
+    if (!isPasswordConfigured()) {
+      return c.json({ error: 'PASSWORD 未设置' }, 503);
+    }
+    if (!isAuthenticated(c)) {
+      return c.json({ error: '未授权' }, 401);
+    }
+
+    const payload = await c.req.json().catch(() => ({}));
+    const models = (payload as { models?: unknown }).models;
+    if (!Array.isArray(models) || models.some((m) => typeof m !== 'string')) {
+      return c.json({ error: 'models 必须是字符串数组' }, 400);
+    }
+
+    const updated = await setApiKeyAllowedModels(c.req.param('id'), models as string[]);
+    if (!updated) {
+      return c.json({ error: '未找到 API key' }, 404);
+    }
+
+    return c.json(updated);
   });
 
   // ── Model Aliases ────────────────────────────────────────────────────────
