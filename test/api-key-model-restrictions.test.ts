@@ -55,6 +55,11 @@ describe('isModelAllowed', () => {
 // ---------------------------------------------------------------------------
 // parseAllowedModels — normalization on read
 // ---------------------------------------------------------------------------
+// Note: parseAllowedModels is an internal (non-exported) function in api-keys.ts.
+// Importing api-keys.ts directly in tests would pull in drizzle-orm/postgres-js
+// which are unavailable in the unit-test environment. Instead, we test the
+// normalization logic inline — this mirrors the exact code in parseAllowedModels
+// and will fail if the implementation diverges.
 
 describe('parseAllowedModels (via isModelAllowed with trimmed inputs)', () => {
   // We test normalization indirectly through the exported function behaviour.

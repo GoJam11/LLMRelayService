@@ -215,7 +215,7 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
     try {
       setSavingModelsId(target.id)
       const updated = await setKeyAllowedModels(target.id, modelsDraft)
-      setKeys((current) => (current ?? []).map((item) => item.id === target.id ? { ...item, allowed_models: updated.allowed_models } : item))
+      setKeys((current) => (current ?? []).map((item) => item.id === target.id ? { ...item, ...updated } : item))
       setModelsOpen(false)
       setModelsTarget(null)
       setError("")
