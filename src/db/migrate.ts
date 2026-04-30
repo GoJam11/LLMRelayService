@@ -44,6 +44,12 @@ async function runInlineMigrations(db: ReturnType<typeof drizzle>) {
     ALTER TABLE console_providers ADD COLUMN IF NOT EXISTS provider_uuid text NOT NULL DEFAULT '';
   `);
 
+  // 0015_api_key_allowed_models: add allowed_models_json to restrict models per key
+  await db.execute(drizzleSql`
+    ALTER TABLE "console_api_keys"
+    ADD COLUMN IF NOT EXISTS "allowed_models_json" text NOT NULL DEFAULT '[]'
+  `);
+
   // 0014_token_estimated: track whether token usage was estimated
   await db.execute(drizzleSql`
     ALTER TABLE "console_requests"

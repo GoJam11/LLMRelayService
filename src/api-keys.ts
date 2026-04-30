@@ -14,6 +14,7 @@ export interface StoredApiKeyRecord {
   prefix: string;
   created_at: number;
   last_used_at: number | null;
+  allowed_models: string[];
 }
 
 export interface StoredApiKeyDetail extends StoredApiKeyRecord {
@@ -23,6 +24,7 @@ export interface StoredApiKeyDetail extends StoredApiKeyRecord {
 export interface AuthenticatedApiKeyInfo {
   id: string;
   name: string;
+  allowed_models: string[];
 }
 
 function hashKey(rawKey: string): string {
@@ -37,6 +39,17 @@ function createKeyId(): string {
   return randomBytes(16).toString('hex');
 }
 
+function parseAllowedModels(json: string | null | undefined): string[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
 function toRecord(row: typeof consoleApiKeys.$inferSelect): StoredApiKeyRecord {
   return {
     id: row.id,
@@ -44,6 +57,7 @@ function toRecord(row: typeof consoleApiKeys.$inferSelect): StoredApiKeyRecord {
     prefix: row.prefix,
     created_at: row.createdAt,
     last_used_at: row.lastUsedAt,
+    allowed_models: parseAllowedModels(row.allowedModelsJson),
   };
 }
 
@@ -168,5 +182,26 @@ export async function authenticateManagedApiKey(rawKey: string): Promise<Authent
   return {
     id: row.id,
     name: row.name,
+    allowed_models: parseAllowedModels(row.allowedModelsJson),
   };
+}
+
+export async function setApiKeyAllowedModels(id: string, models: string[]): Promise<StoredApiKeyRecord | null> {
+  await storeReady;
+  const normalizedId = id.trim();
+  if (!normalizedId) return null;
+
+  const cleanedModels = models
+    .map((m) => m.trim())
+    .filter((m) => m.length > 0);
+
+  const rows = await db.update(consoleApiKeys)
+    .set({ allowedModelsJson: JSON.stringify(cleanedModels) })
+    .where(and(
+      eq(consoleApiKeys.id, normalizedId),
+      eq(consoleApiKeys.revoked, 0),
+    ))
+    .returning();
+
+  return rows[0] ? toRecord(rows[0]) : null;
 }

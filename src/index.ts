@@ -448,6 +448,28 @@ async function handleProxyRequest(c: any): Promise<Response> {
     return gatewayAuth.response;
   }
   const matchedApiKey = gatewayAuth.apiKeyInfo;
+
+  // Enforce per-key model restrictions (non-empty allowed_models list acts as whitelist)
+  if (matchedApiKey && matchedApiKey.allowed_models.length > 0 && originalRequestModel !== 'unknown') {
+    const requestedModel = originalRequestModel;
+    const isAllowed = matchedApiKey.allowed_models.some((pattern) => {
+      if (pattern.endsWith('*')) {
+        return requestedModel.startsWith(pattern.slice(0, -1));
+      }
+      return requestedModel === pattern;
+    });
+    if (!isAllowed) {
+      const restrictedResponse = buildGatewayErrorResponse(
+        initialRoute.type,
+        403,
+        `模型 '${requestedModel}' 不在此 API key 的允许列表中`,
+      );
+      applyCorsHeaders(restrictedResponse.headers);
+      emitRequestPerf(restrictedResponse.status);
+      return restrictedResponse;
+    }
+  }
+
   const route: RouteResult = initialRoute;
   resolvedChannelName = route.channelName;
   const routeTargetPathname = (() => {

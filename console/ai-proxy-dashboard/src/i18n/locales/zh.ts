@@ -509,6 +509,17 @@ export default {
     viewDialogTitle: "查看完整 API key",
     viewDialogDesc: "「{{name}}」的完整值如下，可以重复查看和复制。",
     copyKey: "复制 Key",
+    allowedModelsCol: "模型限制",
+    allowedModelsNone: "不限制",
+    allowedModelsCount: "限{{count}}个",
+    manageModels: "模型限制",
+    manageModelsDialogTitle: "设置模型限制",
+    manageModelsDialogDesc: "为「{{name}}」配置允许使用的模型白名单。留空则不限制，可使用 * 通配符（如 claude-*）。",
+    allowedModelsInputPlaceholder: "输入模型名，回车添加",
+    allowedModelsEmptyHint: "暂无限制，该 key 可使用所有模型",
+    allowedModelsSave: "保存",
+    allowedModelsSaving: "保存中...",
+    allowedModelsUpdated: "模型限制已更新",
   },
 
   // ── Bucket Table ──

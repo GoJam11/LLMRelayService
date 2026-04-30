@@ -217,6 +217,16 @@ export function deleteKey(id: string): Promise<{ ok: true }> {
   })
 }
 
+export function setKeyAllowedModels(id: string, models: string[]): Promise<ManagedApiKey> {
+  return requestJson(`/__console/api/keys/${encodeURIComponent(id)}/allowed-models`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ models }),
+  })
+}
+
 export interface ConsoleFilterOptions {
   routes: string[]
   models: string[]
