@@ -5,6 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/runtime-Bun-black)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/language-TypeScript-blue)](https://www.typescriptlang.org)
+[![Docker Image](https://img.shields.io/badge/ghcr.io-gojam11%2Fllmrelayservice-blue?logo=docker)](https://github.com/GoJam11/LLMRelayService/pkgs/container/llmrelayservice)
 
 LRS 是一个基于 **Bun + Hono** 的轻量 LLM 中继服务。它将多个 AI 服务商统一在单一入口下，配合内置的 Web 控制台，让你精确观测每一笔请求的延迟、Token 用量与缓存命中情况。
 
@@ -122,16 +123,43 @@ Railway / Render 等平台部署时构建命令同上。
 
 ### Docker 部署
 
+每次推送到 `main` 分支或发布版本 tag 时，CI 会自动将镜像推送到 GHCR：
+
+```
+ghcr.io/gojam11/llmrelayservice:main          # 最新 main 分支
+ghcr.io/gojam11/llmrelayservice:1.2.3         # 指定版本
+ghcr.io/gojam11/llmrelayservice:1.2           # 最新 1.2.x
+```
+
+#### 使用预构建镜像（推荐）
+
+将 `docker-compose.yml` 中的 `build: .` 替换为 GHCR 镜像地址：
+
+```yaml
+# docker-compose.yml
+services:
+  app:
+    image: ghcr.io/gojam11/llmrelayservice:main  # 替换这一行
+    # build: .  # 注释掉本地构建
+```
+
+然后启动：
+
 ```bash
-# 1. 复制并配置环境变量
+cp .env.example .env
+# 至少设置 GATEWAY_API_KEY（PASSWORD 可选）
+GATEWAY_API_KEY=your-key docker compose up -d
+```
+
+#### 从源码本地构建
+
+```bash
+# 复制并配置环境变量
 cp .env.example .env
 # 至少设置 GATEWAY_API_KEY（PASSWORD 可选）
 
-# 2. 启动服务（包含内置 PostgreSQL）
+# 启动服务（包含内置 PostgreSQL，自动本地构建镜像）
 GATEWAY_API_KEY=your-key docker compose up -d
-
-# 或者使用 .env 文件
-docker compose up -d
 ```
 
 访问 `http://localhost:3000` 打开控制台。
