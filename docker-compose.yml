@@ -1,6 +1,6 @@
 services:
   app:
-    build: .
+    image: ghcr.io/gojam11/llmrelayservice:main
     ports:
       - "3000:3000"
     environment:
