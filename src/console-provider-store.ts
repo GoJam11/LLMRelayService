@@ -1,7 +1,6 @@
 import { asc, eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { createDbClient } from './db/client';
-import { runMigrations } from './db/migrate';
 import { consoleProviders } from './db/schema';
 
 type UpstreamType = 'anthropic' | 'openai';
@@ -31,7 +30,7 @@ interface ConfigEntry {
 }
 
 const db = createDbClient();
-const storeReady = runMigrations();
+const storeReady = Promise.resolve();
 
 function getDefaultAuthHeaderForType(type: UpstreamType): RouteAuthHeader {
   return type === 'anthropic' ? 'x-api-key' : 'authorization';

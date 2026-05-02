@@ -2,12 +2,11 @@ import { createHash, randomBytes } from 'node:crypto';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import { consoleApiKeys } from './db/schema';
 import { createDbClient } from './db/client';
-import { runMigrations } from './db/migrate';
 import { isModelAllowed, parseAllowedModels } from './api-key-model-filter';
 export { isModelAllowed, parseAllowedModels } from './api-key-model-filter';
 
 const db = createDbClient();
-const storeReady = runMigrations();
+const storeReady = Promise.resolve();
 const KEY_PREFIX = 'ak';
 
 export interface StoredApiKeyRecord {

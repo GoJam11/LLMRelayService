@@ -1,6 +1,5 @@
 import { asc, eq } from 'drizzle-orm';
 import { createDbClient } from './db/client';
-import { runMigrations } from './db/migrate';
 import { modelAliases } from './db/schema';
 
 export interface ModelAliasEntry {
@@ -23,7 +22,7 @@ export interface ModelAliasMutationInput {
 }
 
 const db = createDbClient();
-const storeReady = runMigrations();
+const storeReady = Promise.resolve();
 
 function rowToEntry(row: typeof modelAliases.$inferSelect): ModelAliasEntry {
   return {

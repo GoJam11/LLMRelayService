@@ -3,7 +3,6 @@
  */
 
 import app from './index';
-import { runMigrations } from './db/migrate';
 import { startPerfMonitor } from './perf-monitor';
 import { warmModelCatalogFromDb } from './model-catalog';
 import { fetchModelsDevData } from './model-catalog';
@@ -18,9 +17,6 @@ const stubEnv = {
 
 const PORT = parseInt(process.env.PORT || '3300');
 const IDLE_TIMEOUT_SECONDS = Number.parseInt(process.env.BUN_SERVER_IDLE_TIMEOUT_SECONDS || '0', 10);
-
-// 启动前运行数据库迁移
-await runMigrations();
 
 // 初始化 token 估算器（WASM tiktoken 一次性初始化）
 initializeTokenEstimator();

@@ -4,7 +4,7 @@ import type { DetectedRequestKind } from './providers';
 import { createDbClient } from './db/client';
 import { getDatabaseUrl } from './db/config';
 import { isTrustedTestDatabaseUrl } from './db/test-database';
-import { runMigrations } from './db/migrate';
+
 import { consoleRequests } from './db/schema';
 import { eq, desc, asc, and, or, sql, count, gte, isNotNull, isNull, like, notInArray, type SQL } from 'drizzle-orm';
 import { elapsedPerfMs, getMaxPerfPhase, nowPerfMs, shouldLogBackgroundPerf } from './perf-detail';
@@ -350,7 +350,7 @@ export interface ConsoleUsageStatsPayload {
 
 const MAX_DEBUG_RECORDS = Math.max(200, Number.parseInt(process.env.DEBUG_DB_MAX_RECORDS || '50000', 10) || 50000);
 const db = createDbClient();
-const consoleStoreReady = runMigrations();
+const consoleStoreReady = Promise.resolve();
 
 function assertConsoleClearAllowed(): void {
   if (process.env.ALLOW_CONSOLE_DB_CLEAR === '1') return;

@@ -1,8 +1,8 @@
 services:
   app:
-    image: ghcr.io/gojam11/llmrelayservice:main
+    build: .
     ports:
-      - "3000:3000"
+      - "3001:3000"
     environment:
       PORT: 3000
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/lrs
