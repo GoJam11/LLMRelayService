@@ -28,4 +28,4 @@ COPY --from=builder /app/drizzle.config.ts ./
 ENV PORT=3000
 EXPOSE 3000
 
-CMD ["sh", "-c", "bun run db:migrate && bun run src/server.ts"]
+CMD ["bun", "run", "src/server.ts"]
