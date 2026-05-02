@@ -1,4 +1,4 @@
-import { bigint, index, integer, pgTable, primaryKey, serial, text } from 'drizzle-orm/pg-core';
+import { bigint, index, integer, pgTable, serial, text } from 'drizzle-orm/pg-core';
 
 export const consoleRequests = pgTable('console_requests', {
   requestId: text('request_id').primaryKey(),
@@ -93,34 +93,6 @@ export const consoleProviders = pgTable('console_providers', {
 }, (table) => ({
   createdAtIdx: index('idx_console_providers_created_at').on(table.createdAt),
   updatedAtIdx: index('idx_console_providers_updated_at').on(table.updatedAt),
-}));
-
-export const consoleRequestCachePoints = pgTable('console_request_cache_points', {
-  requestId: text('request_id').notNull().references(() => consoleRequests.requestId, { onDelete: 'cascade' }),
-  pointIndex: integer('point_index').notNull(),
-  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
-  routePrefix: text('route_prefix').notNull(),
-  upstreamType: text('upstream_type').notNull().default('anthropic'),
-  method: text('method').notNull(),
-  path: text('path').notNull(),
-  targetUrl: text('target_url').notNull(),
-  requestModel: text('request_model').notNull(),
-  metadataUserId: text('metadata_user_id').notNull().default(''),
-  anthropicBeta: text('anthropic_beta').notNull().default(''),
-  anthropicVersion: text('anthropic_version').notNull().default(''),
-  cacheKey: text('cache_key').notNull(),
-  pointLocation: text('point_location').notNull(),
-  pointType: text('point_type').notNull(),
-  pointHead: text('point_head').notNull(),
-  pointHash: text('point_hash').notNull(),
-  prefixHash: text('prefix_hash').notNull(),
-  prefixLength: integer('prefix_length').notNull().default(0),
-  cacheCreated: integer('cache_created').notNull().default(0),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.requestId, table.pointIndex], name: 'console_request_cache_points_pk' }),
-  requestIdIdx: index('idx_debug_cache_points_request_id').on(table.requestId, table.pointIndex),
-  cacheKeyIdx: index('idx_debug_cache_points_cache_key').on(table.cacheKey, table.createdAt),
-  createdIdx: index('idx_debug_cache_points_created').on(table.cacheCreated, table.createdAt),
 }));
 
 export const modelAliases = pgTable('model_aliases', {
