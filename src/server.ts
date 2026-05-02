@@ -169,22 +169,9 @@ function showMigrationGuide(status: Extract<MigrationStatus, { state: 'failed' }
     <h1>数据库迁移失败</h1>
     <div class="error-box">${escapeHtml(status.error)}</div>
 
-    <h2>可能原因</h2>
-    <ol>
-      <li>现有数据库与新迁移不兼容</li>
-      <li>迁移文件损坏或缺失</li>
-      <li>数据库连接问题</li>
-    </ol>
-
-    <h2>解决方案</h2>
-    <ol>
-      <li>查看日志排查问题
-        <pre>docker logs llm-relay</pre>
-      </li>
-      <li>手动执行迁移检查错误
-        <pre>bun run db:migrate</pre>
-      </li>
-    </ol>
+    <div class="note" style="margin-bottom: 20px;">
+      <strong>建议：</strong>执行重置前，请先备份数据库。
+    </div>
 
     <div class="danger-zone">
       <h2>快速修复</h2>
