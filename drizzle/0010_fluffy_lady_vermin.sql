@@ -1,1 +1,0 @@
-ALTER TABLE "console_providers" DROP COLUMN "enable_cc_masquerade";
