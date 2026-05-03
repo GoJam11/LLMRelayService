@@ -19,7 +19,8 @@
   - `cd console/ai-proxy-dashboard && bun run build`
 - **push 前必须先启动本地后端服务验证无报错**：`bun run dev:server`，确认服务正常启动（无崩溃、无 ReferenceError 等启动时错误）后再 push。服务启动后可用 Ctrl-C 停止。
 - **数据库迁移：只用 drizzle-kit，禁用 inline migrations。**
-  - 改 schema 后运行 `drizzle-kit generate` 生成迁移文件
+  - 改 schema 后必须运行 `drizzle-kit generate` 生成迁移文件
+  - **schema 改动和迁移文件必须在同一个 commit 中提交**，禁止只 push schema 不 push 迁移
   - 部署时自动执行 `drizzle-kit migrate`（Dockerfile CMD 已配置）
   - **禁止**在 `src/db/migrate.ts` 或 store 文件中写内联迁移
   - 如果 snapshot 损坏，从 git 历史恢复，不要删除后重新生成
