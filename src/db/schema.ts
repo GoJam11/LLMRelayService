@@ -59,6 +59,7 @@ export const consoleRequests = pgTable('console_requests', {
   ),
   routePrefixIdx: index('idx_console_requests_route_prefix').on(table.routePrefix, table.createdAt),
   responseModelIdx: index('idx_console_requests_response_model').on(table.responseModel, table.createdAt),
+  apiKeyIdIdx: index('idx_console_requests_api_key_id').on(table.apiKeyId),
 }));
 
 export const consoleApiKeys = pgTable('console_api_keys', {
