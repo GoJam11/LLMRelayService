@@ -21,8 +21,8 @@ export function NavBar({
   logoutPending,
   onLogout,
 }: {
-  activePage: "monitor" | "usage" | "providers" | "models" | "routes" | "keys" | "logs"
-  onNavigate: (page: "monitor" | "usage" | "providers" | "models" | "routes" | "keys" | "logs") => void
+  activePage: "monitor" | "usage" | "providers" | "models" | "routes" | "keys" | "logs" | "api"
+  onNavigate: (page: "monitor" | "usage" | "providers" | "models" | "routes" | "keys" | "logs" | "api") => void
   logoutPending: boolean
   onLogout: () => void
 }) {
@@ -98,6 +98,14 @@ export function NavBar({
             onClick={() => onNavigate("logs")}
           >
             {t("nav.logs")}
+          </Button>
+          <Button
+            type="button"
+            variant={activePage === "api" ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => onNavigate("api")}
+          >
+            API
           </Button>
         </div>
       </div>
