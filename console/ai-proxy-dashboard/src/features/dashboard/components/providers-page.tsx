@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
+  Copy,
   Download,
   Eye,
   EyeOff,
   Globe,
+  Import,
   Plus,
   RefreshCw,
   Server,
   SquarePen,
   Trash2,
+  Upload,
   Wifi,
   X,
 } from "lucide-react"
@@ -294,6 +297,12 @@ export function ProvidersPage({
   const [syncError, setSyncError] = useState("")
   const [syncModels, setSyncModels] = useState<Array<{ id: string }>>([])
   const [syncSelected, setSyncSelected] = useState<Set<string>>(new Set())
+
+  // 配置导入/导出弹窗
+  const [configDialogOpen, setConfigDialogOpen] = useState(false)
+  const [configDialogMode, setConfigDialogMode] = useState<"import" | "export">("export")
+  const [configJson, setConfigJson] = useState("")
+  const [configError, setConfigError] = useState("")
 
   const loadProviders = useCallback(async () => {
     try {
@@ -600,6 +609,50 @@ export function ProvidersPage({
                   className={testingAll ? "animate-spin" : ""}
                 />
                 {testingAll ? t("common.testing") : t("providers.testAll")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setConfigDialogMode("export")
+                  setConfigError("")
+                  const exportData = {
+                    version: 1,
+                    exportedAt: Date.now(),
+                    providers: providers.map((p) => ({
+                      channelName: p.channelName,
+                      type: p.type,
+                      targetBaseUrl: p.targetBaseUrl,
+                      systemPrompt: p.systemPrompt,
+                      priority: p.priority,
+                      enabled: p.enabled,
+                      models: p.models,
+                      auth: p.auth,
+                      responsesMode: p.responsesMode,
+                      extraFields: p.extraFields,
+                    })),
+                  }
+                  setConfigJson(JSON.stringify(exportData, null, 2))
+                  setConfigDialogOpen(true)
+                }}
+              >
+                <Download data-icon="inline-start" />
+                {t("common.export")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setConfigDialogMode("import")
+                  setConfigJson("")
+                  setConfigError("")
+                  setConfigDialogOpen(true)
+                }}
+              >
+                <Upload data-icon="inline-start" />
+                {t("common.import")}
               </Button>
             </>
           }
@@ -1177,6 +1230,96 @@ export function ProvidersPage({
             >
               {t("providers.addSelectedModels")}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 配置导入/导出弹窗 */}
+      <Dialog open={configDialogOpen} onOpenChange={setConfigDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {configDialogMode === "import" ? t("providers.importConfigTitle") : t("providers.exportConfigTitle")}
+            </DialogTitle>
+            <DialogDescription>
+              {configDialogMode === "import" ? t("providers.importConfigDesc") : t("providers.exportConfigDesc")}
+            </DialogDescription>
+          </DialogHeader>
+
+          {configError ? (
+            <Alert variant="destructive">
+              <AlertTitle>{t("common.errorOccurred")}</AlertTitle>
+              <AlertDescription>{configError}</AlertDescription>
+            </Alert>
+          ) : null}
+
+          <Textarea
+            value={configJson}
+            onChange={(e) => setConfigJson(e.target.value)}
+            readOnly={configDialogMode === "export"}
+            rows={16}
+            className="font-mono text-xs"
+            placeholder={configDialogMode === "import" ? t("providers.importConfigPlaceholder") : undefined}
+          />
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConfigDialogOpen(false)}>
+              {t("common.close")}
+            </Button>
+            {configDialogMode === "import" ? (
+              <Button
+                type="button"
+                onClick={async () => {
+                  setConfigError("")
+                  try {
+                    const trimmed = configJson.trim()
+                    if (!trimmed) {
+                      throw new Error(t("providers.importConfigEmpty"))
+                    }
+                    const parsed = JSON.parse(trimmed)
+                    if (parsed.version !== 1) {
+                      throw new Error(t("providers.importConfigVersionMismatch", { version: parsed.version ?? "unknown" }))
+                    }
+                    if (!Array.isArray(parsed.providers)) {
+                      throw new Error(t("providers.importConfigInvalid"))
+                    }
+                    // 逐个创建 provider
+                    for (const p of parsed.providers) {
+                      const payload: ProviderMutationPayload = {
+                        channelName: p.channelName,
+                        type: p.type,
+                        targetBaseUrl: p.targetBaseUrl,
+                        systemPrompt: p.systemPrompt ?? null,
+                        models: p.models ?? [],
+                        priority: p.priority ?? 0,
+                        responsesMode: p.type === "openai" ? (p.responsesMode ?? "native") : null,
+                        extraFields: p.extraFields ?? null,
+                        auth: p.auth ?? null,
+                      }
+                      await createProvider(payload)
+                    }
+                    await loadProviders()
+                    setConfigDialogOpen(false)
+                  } catch (err) {
+                    setConfigError(err instanceof Error ? err.message : String(err))
+                  }
+                }}
+                disabled={!configJson.trim()}
+              >
+                <Import data-icon="inline-start" />
+                {t("providers.importConfigConfirm")}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(configJson).catch(() => {})
+                }}
+              >
+                <Copy data-icon="inline-start" />
+                {t("common.copy")}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
