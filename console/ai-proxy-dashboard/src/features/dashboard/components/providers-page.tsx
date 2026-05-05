@@ -886,17 +886,16 @@ export function ProvidersPage({
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Models</span>
                   <div className="flex gap-1">
-                    {dialogMode === "edit" && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => void openSyncDialog()}
-                      >
-                        <Download data-icon="inline-start" />
-                        Sync
-                      </Button>
-                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => void openSyncDialog()}
+                      disabled={!formState.targetBaseUrl.trim()}
+                    >
+                      <Download data-icon="inline-start" />
+                      Sync
+                    </Button>
                     <Button type="button" variant="ghost" size="sm" onClick={addModelRow}>
                       <Plus data-icon="inline-start" />
                       Add

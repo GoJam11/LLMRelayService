@@ -403,7 +403,7 @@ export default {
     syncFailed: "Fetch failed",
     syncEmpty: "No models returned from upstream.",
     syncCount: "{{total}} models found, {{selected}} selected",
-    syncNeedUrl: "Please fill in Target Base URL and Credential first",
+    syncNeedUrl: "Please fill in Target Base URL first",  // Credential is optional for preview in create mode
     addSelectedModels: "Add Selected Models",
     healthy: "Healthy",
     degraded: "Degraded",

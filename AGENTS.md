@@ -25,6 +25,7 @@
   - **禁止**在 `src/db/migrate.ts` 或 store 文件中写内联迁移
   - 如果 snapshot 损坏，从 git 历史恢复，不要删除后重新生成
 - 对项目的功能/行为改动，默认**同步更新 changelog**；不要只改代码不记变更。
+- **代码改动和对应的 changelog 更新必须在同一个 commit 中提交**，禁止拆分成多个 commit。
 - 如果根目录 lockfile 因依赖变化被修改（例如 `bun.lock`），不要漏提、漏 push。
 
 ### Changelog 规范

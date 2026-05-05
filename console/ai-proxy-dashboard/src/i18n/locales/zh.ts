@@ -403,7 +403,7 @@ export default {
     syncFailed: "拉取失败",
     syncEmpty: "上游未返回任何模型。",
     syncCount: "共 {{total}} 个模型，已选 {{selected}} 个",
-    syncNeedUrl: "请先填写 Target Base URL 和 Credential",
+    syncNeedUrl: "请先填写 Target Base URL",  // 创建模式下只需填 URL，Credential 可选用于预览认证
     addSelectedModels: "添加所选模型",
     healthy: "健康",
     degraded: "降级",
