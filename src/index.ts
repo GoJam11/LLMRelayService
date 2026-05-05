@@ -9,6 +9,7 @@ import { DEFAULT_OPENAI_RESPONSES_MODE, ensureProviderConfigsLoaded, getModels, 
 import { trackPendingConsoleRequestWrite } from './console-log-tasks';
 import { saveConsoleRequest, type ForwardHeadersSummary, type PayloadSummaryForConsole } from './console-store';
 import { registerConsoleRoutes } from './console-ui';
+import { registerOpenApiRoutes } from './openapi-routes';
 import { buildForwardHeadersForProvider, prepareRequestForProvider, type UpstreamType, type UsageData, parseUsageForProvider, summarizePayloadForProvider, detectRequestKindForProvider } from './providers';
 import { finalizeProxyResponse } from './response-observer';
 import { authenticateManagedApiKey, type AuthenticatedApiKeyInfo } from './api-keys';
@@ -305,6 +306,7 @@ app.get('/anthropic/v1/models', async (c) => {
   return c.json(buildAnthropicModelsPayload('anthropic'));
 });
 
+registerOpenApiRoutes(app);
 registerConsoleRoutes(app);
 
 app.use('*', async (c, next) => {

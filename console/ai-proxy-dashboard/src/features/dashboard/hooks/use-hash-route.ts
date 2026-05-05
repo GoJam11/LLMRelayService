@@ -8,6 +8,7 @@ export type PageRoute =
   | { page: "routes" }
   | { page: "keys" }
   | { page: "logs" }
+  | { page: "api" }
   | { page: "detail"; requestId: string }
 
 function parseHash(): PageRoute {
@@ -19,6 +20,7 @@ function parseHash(): PageRoute {
   if (hash === "models") return { page: "models" }
   if (hash === "routes") return { page: "routes" }
   if (hash === "keys") return { page: "keys" }
+  if (hash === "api") return { page: "api" }
   if (hash.startsWith("detail/")) {
     const requestId = decodeURIComponent(hash.slice("detail/".length))
     if (requestId) return { page: "detail", requestId }

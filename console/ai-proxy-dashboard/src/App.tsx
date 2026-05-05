@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react"
 import { fetchSession, login, logout } from "@/features/dashboard/api"
 import { DashboardPage } from "@/features/dashboard/components/dashboard-page"
 import { DetailPage } from "@/features/dashboard/components/detail-page"
+import { ApiDocsPage } from "@/features/dashboard/components/api-docs-page"
 import { KeysPage } from "@/features/dashboard/components/keys-page"
 import { LogsPage } from "@/features/dashboard/components/logs-page"
 import { ModelsPage } from "@/features/dashboard/components/models-page"
@@ -130,6 +131,8 @@ export function App() {
             onBack={() => navigate({ page: "logs" })}
           />
         )
+      case "api":
+        return <ApiDocsPage />
       case "logs":
       default:
         return (
