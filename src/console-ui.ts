@@ -47,16 +47,16 @@ function hashSecret(secret: string): string {
   return hash.toString(16).padStart(8, '0');
 }
 
-function getPassword(): string {
-  return process.env.PASSWORD ?? '';
+function getConsolePassword(): string {
+  return process.env.GATEWAY_API_KEY ?? '';
 }
 
 function isPasswordConfigured(): boolean {
-  return getPassword().length > 0;
+  return getConsolePassword().length > 0;
 }
 
 function getAuthToken(): string {
-  return `v1:${hashSecret(getPassword())}`;
+  return `v1:${hashSecret(getConsolePassword())}`;
 }
 
 function isAuthenticated(c: Context): boolean {
@@ -80,6 +80,18 @@ async function readPassword(c: Context): Promise<string> {
 
   const form = await c.req.formData().catch(() => null);
   return String(form?.get('password') ?? '');
+}
+
+async function readGatewayKey(c: Context): Promise<string> {
+  const contentType = c.req.header('content-type') ?? '';
+
+  if (contentType.includes('application/json')) {
+    const payload = await c.req.json().catch(() => ({}));
+    return String((payload as { gatewayKey?: unknown }).gatewayKey ?? '');
+  }
+
+  const form = await c.req.formData().catch(() => null);
+  return String(form?.get('gatewayKey') ?? '');
 }
 
 function resolveStaticFilePath(requestPath: string): string | null {
@@ -235,13 +247,15 @@ async function maybeServeFrontend(c: Context, next: () => Promise<void>): Promis
 async function handleLogin(c: Context): Promise<Response> {
   if (!isPasswordConfigured()) {
     if (wantsJson(c)) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     return c.redirect('/');
   }
 
   const password = await readPassword(c);
-  if (password !== getPassword()) {
+  const gatewayKey = await readGatewayKey(c);
+  const credential = password || gatewayKey;
+  if (credential !== getConsolePassword()) {
     if (wantsJson(c)) {
       return c.json({ error: '密码不正确。' }, 401);
     }
@@ -344,7 +358,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.get('/__console/api/requests', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -366,7 +380,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.get('/__console/api/stats', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -379,7 +393,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.get('/__console/api/filters', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -391,7 +405,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.get('/__console/api/requests/:requestId', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -408,7 +422,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.get('/__console/api/providers', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -428,7 +442,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.get('/__console/api/providers/:channelName', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -445,7 +459,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.get('/__console/api/models', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -472,7 +486,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.post('/__console/api/providers', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -490,7 +504,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.patch('/__console/api/providers/:channelName', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -508,7 +522,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.delete('/__console/api/providers/:channelName', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -524,7 +538,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.patch('/__console/api/providers/:channelName/enabled', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -545,7 +559,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.get('/__console/api/providers/:channelName/upstream-models', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -620,7 +634,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
   // 临时拉取：用表单里的参数（不需要先保存）
   app.post('/__console/api/upstream-models-preview', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -699,8 +713,8 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.post('/__console/api/providers/:channelName/test', async (c) => {
     if (!isPasswordConfigured()) {
-      console.log(`[ProviderTest] ${c.req.param('channelName')}: PASSWORD 未设置`)
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      console.log(`[ProviderTest] ${c.req.param('channelName')}: GATEWAY_API_KEY 未设置`)
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       console.log(`[ProviderTest] ${c.req.param('channelName')}: 未授权`)
@@ -939,7 +953,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.get('/__console/api/keys', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -951,7 +965,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.post('/__console/api/keys', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -973,7 +987,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.get('/__console/api/keys/:id', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -989,7 +1003,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.patch('/__console/api/keys/:id', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -1011,7 +1025,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.delete('/__console/api/keys/:id', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -1027,7 +1041,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
   app.patch('/__console/api/keys/:id/allowed-models', async (c) => {
     if (!isPasswordConfigured()) {
-      return c.json({ error: 'PASSWORD 未设置' }, 503);
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     }
     if (!isAuthenticated(c)) {
       return c.json({ error: '未授权' }, 401);
@@ -1050,14 +1064,14 @@ export function registerConsoleRoutes(app: Hono<any>): void {
   // ── Model Aliases ────────────────────────────────────────────────────────
 
   app.get('/__console/api/model-aliases', async (c) => {
-    if (!isPasswordConfigured()) return c.json({ error: 'PASSWORD 未设置' }, 503);
+    if (!isPasswordConfigured()) return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     if (!isAuthenticated(c)) return c.json({ error: '未授权' }, 401);
     const aliases = await listModelAliases();
     return c.json({ aliases });
   });
 
   app.post('/__console/api/model-aliases', async (c) => {
-    if (!isPasswordConfigured()) return c.json({ error: 'PASSWORD 未设置' }, 503);
+    if (!isPasswordConfigured()) return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     if (!isAuthenticated(c)) return c.json({ error: '未授权' }, 401);
     const payload = await c.req.json().catch(() => ({}));
     try {
@@ -1069,7 +1083,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
   });
 
   app.patch('/__console/api/model-aliases/:id', async (c) => {
-    if (!isPasswordConfigured()) return c.json({ error: 'PASSWORD 未设置' }, 503);
+    if (!isPasswordConfigured()) return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     if (!isAuthenticated(c)) return c.json({ error: '未授权' }, 401);
     const id = Number.parseInt(c.req.param('id'), 10);
     if (!Number.isFinite(id)) return c.json({ error: '无效的 id' }, 400);
@@ -1083,7 +1097,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
   });
 
   app.patch('/__console/api/model-aliases/:id/enabled', async (c) => {
-    if (!isPasswordConfigured()) return c.json({ error: 'PASSWORD 未设置' }, 503);
+    if (!isPasswordConfigured()) return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     if (!isAuthenticated(c)) return c.json({ error: '未授权' }, 401);
     const id = Number.parseInt(c.req.param('id'), 10);
     if (!Number.isFinite(id)) return c.json({ error: '无效的 id' }, 400);
@@ -1098,7 +1112,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
   });
 
   app.delete('/__console/api/model-aliases/:id', async (c) => {
-    if (!isPasswordConfigured()) return c.json({ error: 'PASSWORD 未设置' }, 503);
+    if (!isPasswordConfigured()) return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
     if (!isAuthenticated(c)) return c.json({ error: '未授权' }, 401);
     const id = Number.parseInt(c.req.param('id'), 10);
     if (!Number.isFinite(id)) return c.json({ error: '无效的 id' }, 400);

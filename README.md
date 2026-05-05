@@ -68,7 +68,7 @@ LRS 是一个基于 **Bun + Hono** 的轻量 LLM 中继服务。它将多个 AI 
 - **API Key 管理** — 创建和管理网关访问 key
 - **Monitor** — 实时流量概览
 
-> 设置 `PASSWORD` 环境变量可开启登录保护。
+> 设置 `GATEWAY_API_KEY` 环境变量同时作为网关认证密钥和控制台登录密码。
 
 ---
 
@@ -124,7 +124,7 @@ Railway / Render 等平台部署时构建命令同上。
 ### Docker 部署
 
 ```bash
-# 1. 复制并配置环境变量（至少设置 GATEWAY_API_KEY，PASSWORD 可选）
+# 1. 复制并配置环境变量（至少设置 GATEWAY_API_KEY）
 cp .env.example .env
 
 # 2. 启动服务（包含内置 PostgreSQL）
@@ -142,8 +142,7 @@ GATEWAY_API_KEY=your-key docker compose up -d
 | 变量 | 必填 | 说明 |
 |------|------|------|
 | `DATABASE_URL` | ✅ | PostgreSQL 连接字符串 |
-| `GATEWAY_API_KEY` | ✅ | 客户端访问网关所需的 key |
-| `PASSWORD` | — | 控制台登录密码（不设则无需登录）|
+| `GATEWAY_API_KEY` | ✅ | 客户端访问网关所需的 key，同时用作控制台登录密码 |
 | `PORT` | — | 监听端口，默认 `3300` |
 | `DEBUG_DB_MAX_RECORDS` | — | 最大保留请求记录数，默认 `50000` |
 
