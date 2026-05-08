@@ -38,6 +38,8 @@ export default {
     searchRoute: "搜索渠道...",
     searchModel: "搜索模型...",
     searchTimeRange: "搜索时间范围...",
+    export: "导出",
+    import: "导入",
   },
 
   // ── Language names ──

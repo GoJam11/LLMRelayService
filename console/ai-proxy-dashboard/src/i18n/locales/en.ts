@@ -38,6 +38,8 @@ export default {
     searchRoute: "Search routes...",
     searchModel: "Search models...",
     searchTimeRange: "Search time range...",
+    export: "Export",
+    import: "Import",
   },
 
   // ── Language ──
