@@ -173,3 +173,5 @@ data/
 
 # Personal test scripts (not for public distribution)
 scripts/
+
+.idea

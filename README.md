@@ -121,19 +121,45 @@ bun install && bun run build && bun start
 
 Railway / Render 等平台部署时构建命令同上。
 
-### Docker 部署
+### Docker Compose 部署（推荐）
+
+GHCR 预构建镜像：`ghcr.io/gojam11/llmrelayservice:main`，每次主分支推送自动更新，无需本地构建。
 
 ```bash
-# 1. 复制并配置环境变量（至少设置 GATEWAY_API_KEY）
+# 1. 复制并配置环境变量
 cp .env.example .env
+# 编辑 .env，填写 GATEWAY_API_KEY（必填）
 
-# 2. 启动服务（包含内置 PostgreSQL）
+# 2. 拉取镜像并启动服务（含内置 PostgreSQL）
 GATEWAY_API_KEY=your-key docker compose up -d
 ```
 
-访问 `http://localhost:3000` 打开控制台。
+访问 `http://localhost:3001` 打开控制台（docker-compose.yml 默认将 3000 端口映射到宿主机 3001）。
 
-> **提示**：如已有外部 PostgreSQL，只需在 `docker-compose.yml` 中删除 `postgres` 服务，并将 `DATABASE_URL` 改为对应连接字符串。
+**后续更新**：
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+> **提示**：如已有外部 PostgreSQL，只需删除 `docker-compose.yml` 中的 `postgres` 服务，并将 `DATABASE_URL` 改为对应连接字符串。
+
+---
+
+### 单容器 Docker 部署
+
+如果你已经有自己的 PostgreSQL，可以直接运行单个容器：
+
+```bash
+docker run -d \
+  --name lrs \
+  -p 3000:3000 \
+  -e GATEWAY_API_KEY=your-key \
+  -e DATABASE_URL=postgresql://user:password@host:5432/lrs \
+  ghcr.io/gojam11/llmrelayservice:main
+```
+
+访问 `http://localhost:3000` 打开控制台。
 
 ---
 
