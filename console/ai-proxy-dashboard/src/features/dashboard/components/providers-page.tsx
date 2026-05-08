@@ -638,7 +638,7 @@ export function ProvidersPage({
                 }}
               >
                 <Download data-icon="inline-start" />
-                {t("common.export")}
+                {t("providers.exportConfigButton")}
               </Button>
               <Button
                 type="button"
@@ -652,7 +652,7 @@ export function ProvidersPage({
                 }}
               >
                 <Upload data-icon="inline-start" />
-                {t("common.import")}
+                {t("providers.importConfigButton")}
               </Button>
             </>
           }
@@ -1236,7 +1236,7 @@ export function ProvidersPage({
 
       {/* 配置导入/导出弹窗 */}
       <Dialog open={configDialogOpen} onOpenChange={setConfigDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="grid max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>
               {configDialogMode === "import" ? t("providers.importConfigTitle") : t("providers.exportConfigTitle")}
@@ -1246,21 +1246,27 @@ export function ProvidersPage({
             </DialogDescription>
           </DialogHeader>
 
-          {configError ? (
-            <Alert variant="destructive">
-              <AlertTitle>{t("common.errorOccurred")}</AlertTitle>
-              <AlertDescription>{configError}</AlertDescription>
-            </Alert>
-          ) : null}
+          <div className="flex min-h-0 flex-col gap-3">
+            {configError ? (
+              <Alert variant="destructive">
+                <AlertTitle>{t("common.errorOccurred")}</AlertTitle>
+                <AlertDescription>{configError}</AlertDescription>
+              </Alert>
+            ) : null}
 
-          <Textarea
-            value={configJson}
-            onChange={(e) => setConfigJson(e.target.value)}
-            readOnly={configDialogMode === "export"}
-            rows={16}
-            className="font-mono text-xs"
-            placeholder={configDialogMode === "import" ? t("providers.importConfigPlaceholder") : undefined}
-          />
+            <Field className="min-h-0 flex-1">
+              <FieldLabel htmlFor="provider-config-json">{t("providers.configJsonLabel")}</FieldLabel>
+              <Textarea
+                id="provider-config-json"
+                value={configJson}
+                onChange={(e) => setConfigJson(e.target.value)}
+                readOnly={configDialogMode === "export"}
+                rows={12}
+                className="h-[min(52dvh,28rem)] min-h-40 resize-none overflow-auto font-mono text-xs [field-sizing:fixed]"
+                placeholder={configDialogMode === "import" ? t("providers.importConfigPlaceholder") : undefined}
+              />
+            </Field>
+          </div>
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setConfigDialogOpen(false)}>
@@ -1317,7 +1323,7 @@ export function ProvidersPage({
                 }}
               >
                 <Copy data-icon="inline-start" />
-                {t("common.copy")}
+                {t("providers.copyExportConfig")}
               </Button>
             )}
           </DialogFooter>
