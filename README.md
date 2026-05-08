@@ -9,7 +9,7 @@
 
 LRS 是一个基于 **Bun + Hono** 的轻量 LLM 中继服务。它将多个 AI 服务商统一在单一入口下，配合内置的 Web 控制台，让你精确观测每一笔请求的延迟、Token 用量与缓存命中情况。
 
-**LRS 的核心设计原则是"纯中继"**：默认不做任何请求格式转换，客户端发什么就转发什么（仅替换认证头）。这意味着不会出现格式转换引入的字段丢失、流式协议错位等问题，上游支持的所有功能对客户端都是透明可用的。
+LRS 秉持**轻量设计**原则：默认不引入格式转换，客户端发什么就转发什么（仅替换认证头）。这意味着不会出现格式转换引入的字段丢失、流式协议错位等问题，上游支持的所有功能对客户端都是透明可用的。
 
 对于需要格式兼容的场景，LRS 也提供了可选的**协议转换层**：当渠道配置 `responsesMode: chat_compat` 时，网关会将客户端发来的 OpenAI Responses API（`/v1/responses`）请求自动转换为 Chat Completions 格式转发给上游，并将响应转换回 Responses 格式返回。这样，即使上游不支持 Responses API，也可以接入 **Codex CLI / Codex App** 等只支持 Responses 协议的客户端。
 
@@ -33,14 +33,14 @@ LRS 是一个基于 **Bun + Hono** 的轻量 LLM 中继服务。它将多个 AI 
 | 多个渠道配置了相同模型，希望优先级可控 | 按 `priority` 字段自动选优先级最高的渠道 |
 | 想给特定渠道预置系统提示 | 在 Provider 配置中填写 `systemPrompt`，自动注入 |
 | 多个应用共用同一个网关，希望分别统计用量 | 为每个应用生成独立 Key，按 Key 维度过滤用量与日志 |
-| 用过其他代理，遇到格式转换导致的兼容性问题 | LRS 不做格式转换，纯透传，上游有什么能力客户端就能用什么 |
+| 用过其他代理，遇到格式转换导致的兼容性问题 | LRS 默认不引入格式转换，上游有什么能力客户端就能用什么 |
 | 想用 Codex CLI / Codex App 接入不支持 Responses API 的上游 | 渠道设置 `responsesMode: chat_compat`，网关自动完成 Responses ↔ Chat Completions 互转 |
 
 ---
 
 ## 功能
 
-- **纯中继，无格式转换** — 默认请求原样转发，不引入格式兼容问题
+- **轻量设计，默认不引入格式转换** — 请求原样转发，不引入格式兼容问题
 - **全文请求记录** — 保存原始请求体与转发请求体，方便 Debug 和问题排查
 - **双协议支持** — 同时兼容 Anthropic 和 OpenAI 格式的上游服务
 - **Responses API 兼容层** — 渠道可配置 `responsesMode: chat_compat`，将 `/v1/responses` 请求自动转换为 Chat Completions 转发，用于接入 Codex CLI / Codex App 等 Responses API 客户端
