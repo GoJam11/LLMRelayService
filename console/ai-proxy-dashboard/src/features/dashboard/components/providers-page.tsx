@@ -148,10 +148,18 @@ function getDefaultAuthHeaderForType(type: ProviderFormState["type"]): ProviderF
   return type === "anthropic" ? "x-api-key" : "authorization"
 }
 
+function generateId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID()
+  }
+  // Fallback for non-secure contexts (HTTP over LAN)
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
 function createModelRow(model?: ProviderModelInfo): ModelRowState {
   const { model: modelName = "" } = model ?? {}
   return {
-    id: crypto.randomUUID(),
+    id: generateId(),
     model: modelName,
   }
 }
