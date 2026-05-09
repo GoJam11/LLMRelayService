@@ -439,7 +439,7 @@ export default {
   // ── Routes Page ──
   routes: {
     title: "模型路由",
-    description: "为虚拟模型名配置路由目标。客户端发送 model: \"Auto\" 时，网关会将请求转发至此处绑定的 Provider 和真实模型。",
+    description: "为虚拟模型名配置路由目标。客户端发送对应别名时，网关会将请求转发至此处绑定的 Provider 和真实模型。",
     newAlias: "新建别名",
     emptyTitle: "暂无路由别名",
     emptyDescription: "点击「新建别名」创建第一个虚拟模型名路由",
