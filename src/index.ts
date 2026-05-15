@@ -133,7 +133,7 @@ async function authenticateGateway(headers: Headers, upstreamType: UpstreamType)
 
 const utf8Encoder = new TextEncoder();
 const utf8Decoder = new TextDecoder();
-const DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS = 120_000;
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
