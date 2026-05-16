@@ -19,6 +19,7 @@ import { elapsedPerfMs, getMaxPerfPhase, nowPerfMs, roundPerfMs, shouldLogReques
 import { PAYLOAD_LOG_LIMIT_BYTES } from './logging-constants';
 import { ensureModelCatalogLoaded, lookupModelContext } from './model-catalog';
 import { initializeTokenEstimator } from './token-estimator';
+import { applyCorsHeaders, createCorsPreflightResponse, withCorsHeaders } from './cors';
 import {
   convertResponsesRequestToChatCompletions,
   createResponsesChatCompatErrorResponse,
@@ -135,13 +136,6 @@ const utf8Encoder = new TextEncoder();
 const utf8Decoder = new TextDecoder();
 const DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS = 300_000;
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
-  'Access-Control-Max-Age': '86400',
-};
-
 interface TruncatedPayloadForLog {
   payload: string;
   originalBytes: number;
@@ -196,10 +190,6 @@ function captureOriginalHeaders(headers: Headers): Record<string, string> {
   return result;
 }
 
-function applyCorsHeaders(headers: Headers): void {
-  Object.entries(CORS_HEADERS).forEach(([key, value]) => headers.set(key, value));
-}
-
 function getUpstreamRequestTimeoutMs(): number {
   const parsed = Number.parseInt(process.env.UPSTREAM_REQUEST_TIMEOUT_MS || `${DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS}`, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS;
@@ -243,6 +233,16 @@ function addPerfPhase(phases: Record<string, number>, name: string, durationMs: 
 }
 
 const app = new Hono<{ Bindings: Env }>();
+
+app.use('*', async (c, next) => {
+  if (c.req.method === 'OPTIONS') {
+    return createCorsPreflightResponse(c.req.raw);
+  }
+
+  await next();
+  c.res = withCorsHeaders(c.res, c.req.raw);
+  applyCorsHeaders(c.res.headers, c.req.raw);
+});
 
 export function parseResponseUsage(body: string, upstreamType: UpstreamType = 'anthropic'): UsageData {
   return parseUsageForProvider(body, upstreamType);
@@ -308,18 +308,6 @@ app.get('/anthropic/v1/models', async (c) => {
 
 registerOpenApiRoutes(app);
 registerConsoleRoutes(app);
-
-app.use('*', async (c, next) => {
-  if (c.req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 200,
-      headers: CORS_HEADERS,
-    });
-  }
-
-  await next();
-  applyCorsHeaders(c.res.headers);
-});
 
 app.all('*', async (c) => {
   trackRequestStart();

@@ -11,6 +11,7 @@ import { initializeTokenEstimator } from './token-estimator';
 import { runMigrations, type MigrationStatus } from './db/migrate';
 import { getDatabaseUrl } from './db/config';
 import postgres from 'postgres';
+import { createCorsPreflightResponse, withCorsHeaders } from './cors';
 
 const stubEnv = {
   LLM_STATUS: {
@@ -102,35 +103,39 @@ Bun.serve({
   fetch: async (req) => {
     const url = new URL(req.url);
 
+    if (req.method === 'OPTIONS') {
+      return createCorsPreflightResponse(req);
+    }
+
     // 健康检查端点
     if (url.pathname === '/health') {
       const isHealthy = migrationStatus.state === 'success' || migrationStatus.state === 'skipped';
-      return Response.json({
+      return withCorsHeaders(Response.json({
         status: isHealthy ? 'ok' : 'degraded',
         database: migrationStatus,
-      }, { status: isHealthy ? 200 : 503 });
+      }, { status: isHealthy ? 200 : 503 }), req);
     }
 
     // 迁移失败时根路径显示指引页
     if (url.pathname === '/' && migrationStatus.state === 'failed') {
-      return showMigrationGuide(migrationStatus as Extract<MigrationStatus, { state: 'failed' }>);
+      return withCorsHeaders(showMigrationGuide(migrationStatus as Extract<MigrationStatus, { state: 'failed' }>), req);
     }
 
     // 数据库重置 API（仅在降级模式下可用）
     if (url.pathname === '/api/db/reset' && req.method === 'POST') {
       if (migrationStatus.state !== 'failed') {
-        return Response.json({ error: '数据库状态正常，无需重置' }, { status: 400 });
+        return withCorsHeaders(Response.json({ error: '数据库状态正常，无需重置' }, { status: 400 }), req);
       }
       const result = await resetDatabase();
       if (result.success) {
         // 更新迁移状态
         migrationStatus = { state: 'success' };
-        return Response.json({ message: result.message });
+        return withCorsHeaders(Response.json({ message: result.message }), req);
       }
-      return Response.json({ error: result.error }, { status: 500 });
+      return withCorsHeaders(Response.json({ error: result.error }, { status: 500 }), req);
     }
 
-    return app.fetch(req, stubEnv as any);
+    return withCorsHeaders(await app.fetch(req, stubEnv as any), req);
   },
 });
 
@@ -148,4 +153,3 @@ if (!dbCatalogFresh) {
     }
   }).catch(() => {});
 }
-
