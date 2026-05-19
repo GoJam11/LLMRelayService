@@ -50,6 +50,7 @@ interface FinalizeProxyResponseOptions {
   upstreamType: UpstreamType;
   truncatePayloadForLog: (rawPayload: string) => { payload: string; originalBytes: number; loggedBytes: number; truncated: boolean };
   requestBody?: string;
+  bodyIdleTimeoutMs?: number;
 }
 
 export async function waitForPendingResponseLogs(): Promise<void> {
@@ -82,6 +83,87 @@ function captureResponseHeaders(headers: Headers): Record<string, string> {
 
 function isEventStreamContentType(contentType: string | null | undefined): boolean {
   return Boolean(contentType?.toLowerCase().includes('text/event-stream'));
+}
+
+function normalizeIdleTimeoutMs(timeoutMs: number | null | undefined): number {
+  return typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 0;
+}
+
+function createBodyIdleTimeoutError(timeoutMs: number): DOMException {
+  return new DOMException(
+    `Upstream response body idle timeout after ${Math.round(timeoutMs / 1000)}s`,
+    'TimeoutError',
+  );
+}
+
+function createTimeoutGuardedBody(
+  sourceBody: ReadableStream<Uint8Array>,
+  timeoutMs: number | null | undefined,
+  requestId: string,
+  path: string,
+): ReadableStream<Uint8Array> {
+  const normalizedTimeoutMs = normalizeIdleTimeoutMs(timeoutMs);
+  if (normalizedTimeoutMs <= 0) return sourceBody;
+
+  const sourceReader = sourceBody.getReader();
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  let closed = false;
+
+  function clearIdleTimer(): void {
+    if (!idleTimer) return;
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+
+  function armIdleTimer(controller: ReadableStreamDefaultController<Uint8Array>): void {
+    clearIdleTimer();
+    idleTimer = setTimeout(() => {
+      if (closed) return;
+      closed = true;
+      idleTimer = null;
+      const error = createBodyIdleTimeoutError(normalizedTimeoutMs);
+      console.warn('[UPSTREAM_BODY_IDLE_TIMEOUT]', {
+        request_id: requestId,
+        path,
+        timeout_ms: normalizedTimeoutMs,
+      });
+      void sourceReader.cancel(error).catch(() => undefined);
+      try {
+        controller.error(error);
+      } catch {}
+    }, normalizedTimeoutMs);
+    if (idleTimer && typeof idleTimer === 'object' && 'unref' in idleTimer) {
+      (idleTimer as NodeJS.Timeout).unref();
+    }
+  }
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (closed) return;
+      armIdleTimer(controller);
+      try {
+        const { value, done } = await sourceReader.read();
+        clearIdleTimer();
+        if (closed) return;
+        if (done) {
+          closed = true;
+          controller.close();
+          return;
+        }
+        if (value) controller.enqueue(value);
+      } catch (error) {
+        clearIdleTimer();
+        if (closed) return;
+        closed = true;
+        controller.error(error);
+      }
+    },
+    cancel(reason) {
+      closed = true;
+      clearIdleTimer();
+      return sourceReader.cancel(reason);
+    },
+  });
 }
 
 function createObservationCollector(
@@ -561,7 +643,7 @@ function logEmptyResponseAsync(
 }
 
 export function finalizeProxyResponse(options: FinalizeProxyResponseOptions): Response {
-  const { response, requestId, path, shouldLog, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog, requestBody } = options;
+  const { response, requestId, path, shouldLog, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog, requestBody, bodyIdleTimeoutMs } = options;
   const provider = getProviderAdapter(upstreamType);
   const transformedResponse = provider.transformResponse(response);
   const headers = new Headers(transformedResponse.headers);
@@ -581,12 +663,15 @@ export function finalizeProxyResponse(options: FinalizeProxyResponseOptions): Re
     });
   }
 
-  if (!shouldLog) {
-    if (!isEventStream) {
-      return transformedResponse;
-    }
+  const guardedBody = createTimeoutGuardedBody(
+    transformedResponse.body,
+    bodyIdleTimeoutMs,
+    requestId,
+    path,
+  );
 
-    return new Response(transformedResponse.body, {
+  if (!shouldLog) {
+    return new Response(guardedBody, {
       status: transformedResponse.status,
       statusText: transformedResponse.statusText,
       headers,
@@ -594,11 +679,16 @@ export function finalizeProxyResponse(options: FinalizeProxyResponseOptions): Re
   }
 
   if (!isEventStream) {
-    const detachedBody = transformedResponse.clone().body;
+    const responseWithGuardedBody = new Response(guardedBody, {
+      status: transformedResponse.status,
+      statusText: transformedResponse.statusText,
+      headers,
+    });
+    const detachedBody = responseWithGuardedBody.clone().body;
     if (detachedBody) {
       logResponseObservationAsync(
         observeDetachedResponseBody(detachedBody, createdAt, createdAtPerf, upstreamType, contentType),
-        transformedResponse,
+        responseWithGuardedBody,
         requestId,
         path,
         createdAt,
@@ -608,15 +698,15 @@ export function finalizeProxyResponse(options: FinalizeProxyResponseOptions): Re
         requestBody,
       );
     } else {
-      logEmptyResponseAsync(transformedResponse, requestId, path, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog, requestBody);
+      logEmptyResponseAsync(responseWithGuardedBody, requestId, path, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog, requestBody);
     }
-    return transformedResponse;
+    return responseWithGuardedBody;
   }
 
   // SSE responses stay on the client-driven read cadence so logging never owns
   // the upstream lifecycle for long-lived streams.
   const { stream: observedBody, observationPromise } = createObservingPassthrough(
-    transformedResponse.body,
+    guardedBody,
     createdAt,
     createdAtPerf,
     upstreamType,

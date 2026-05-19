@@ -135,6 +135,7 @@ async function authenticateGateway(headers: Headers, upstreamType: UpstreamType)
 const utf8Encoder = new TextEncoder();
 const utf8Decoder = new TextDecoder();
 const DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS = 300_000;
+const DEFAULT_UPSTREAM_RESPONSE_IDLE_TIMEOUT_MS = DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS;
 
 interface TruncatedPayloadForLog {
   payload: string;
@@ -193,6 +194,16 @@ function captureOriginalHeaders(headers: Headers): Record<string, string> {
 function getUpstreamRequestTimeoutMs(): number {
   const parsed = Number.parseInt(process.env.UPSTREAM_REQUEST_TIMEOUT_MS || `${DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS}`, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS;
+}
+
+function getUpstreamResponseIdleTimeoutMs(): number {
+  const raw = process.env.UPSTREAM_RESPONSE_IDLE_TIMEOUT_MS;
+  if (raw == null || raw.trim() === '') return DEFAULT_UPSTREAM_RESPONSE_IDLE_TIMEOUT_MS;
+
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_UPSTREAM_RESPONSE_IDLE_TIMEOUT_MS;
+  if (parsed === 0) return 0;
+  return parsed > 0 ? parsed : DEFAULT_UPSTREAM_RESPONSE_IDLE_TIMEOUT_MS;
 }
 
 function createUpstreamResponseStartTimeout(timeoutMs: number): { signal: AbortSignal; clear: () => void } {
@@ -737,6 +748,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
 
   let upstreamResponse: Response;
   const proxyStart = nowPerfMs();
+  const upstreamBodyIdleTimeoutMs = getUpstreamResponseIdleTimeoutMs();
   try {
     const upstreamTimeoutMs = getUpstreamRequestTimeoutMs();
     const upstreamResponseStartTimeout = createUpstreamResponseStartTimeout(upstreamTimeoutMs);
@@ -791,6 +803,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
     upstreamType: route.type,
     truncatePayloadForLog,
     requestBody: forwardedPayload ?? undefined,
+    bodyIdleTimeoutMs: upstreamBodyIdleTimeoutMs,
   });
   addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
   const analyticsStart = nowPerfMs();

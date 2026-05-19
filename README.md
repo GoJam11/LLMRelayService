@@ -170,6 +170,8 @@ docker run -d \
 | `DATABASE_URL` | ✅ | PostgreSQL 连接字符串 |
 | `GATEWAY_API_KEY` | ✅ | 客户端访问网关所需的 key，同时用作控制台登录密码 |
 | `PORT` | — | 监听端口，默认 `3300` |
+| `UPSTREAM_REQUEST_TIMEOUT_MS` | — | 等待上游响应头的超时时间，默认 `300000` 毫秒 |
+| `UPSTREAM_RESPONSE_IDLE_TIMEOUT_MS` | — | 上游响应 body 空闲超时时间，默认 `300000` 毫秒；设为 `0` 可关闭 |
 | `DEBUG_DB_MAX_RECORDS` | — | 最大保留请求记录数，默认 `50000` |
 
 参考 [`.env.example`](.env.example)。
