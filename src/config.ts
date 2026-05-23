@@ -235,6 +235,10 @@ async function refreshProviderConfigs(): Promise<void> {
   await ensureProviderConfigsLoaded();
 }
 
+export async function refreshRoutingConfigCache(): Promise<void> {
+  await refreshProviderConfigs();
+}
+
 function getConfigs(): Record<string, ConfigEntry> {
   return providerConfigs;
 }

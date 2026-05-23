@@ -3,7 +3,7 @@ import type { Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { existsSync, statSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
-import { createProvider, deleteProvider, ensureProviderConfigsLoaded, getModels, getProviderConfig, getProviderInfo, getProviders, resolveRoute, toggleProvider, updateProvider } from './config';
+import { createProvider, deleteProvider, ensureProviderConfigsLoaded, getModels, getProviderConfig, getProviderInfo, getProviders, refreshRoutingConfigCache, resolveRoute, toggleProvider, updateProvider } from './config';
 import { getConsoleRequest, listConsoleRequests, getProviderHealthStatuses, getConsoleUsageStats, getConsoleFilterOptions, type RequestSortKey, type SortDirection } from './console-store';
 import { createManagedApiKey, deleteManagedApiKey, getManagedApiKey, listManagedApiKeys, renameManagedApiKey, setApiKeyAllowedModels } from './api-keys';
 import { createModelAlias, deleteModelAlias, listModelAliases, toggleModelAlias, updateModelAlias } from './console-model-alias-store';
@@ -1076,6 +1076,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
     const payload = await c.req.json().catch(() => ({}));
     try {
       const alias = await createModelAlias(payload as any);
+      await refreshRoutingConfigCache();
       return c.json(alias, 201);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
@@ -1090,6 +1091,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
     const payload = await c.req.json().catch(() => ({}));
     try {
       const alias = await updateModelAlias(id, payload as any);
+      await refreshRoutingConfigCache();
       return c.json(alias);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
@@ -1105,6 +1107,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
     if (typeof enabled !== 'boolean') return c.json({ error: 'enabled 必须是布尔值' }, 400);
     try {
       const alias = await toggleModelAlias(id, enabled);
+      await refreshRoutingConfigCache();
       return c.json(alias);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
@@ -1118,6 +1121,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
     if (!Number.isFinite(id)) return c.json({ error: '无效的 id' }, 400);
     try {
       await deleteModelAlias(id);
+      await refreshRoutingConfigCache();
       return c.json({ ok: true });
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);

@@ -6,6 +6,7 @@ import {
   ensureProviderConfigsLoaded,
   getProviderInfo,
   getProviders,
+  refreshRoutingConfigCache,
   toggleProvider,
   updateProvider,
 } from './config';
@@ -317,6 +318,7 @@ export function registerOpenApiRoutes(app: Hono<any>): void {
     const payload = await c.req.json().catch(() => ({}));
     try {
       const alias = await createModelAlias(payload as any);
+      await refreshRoutingConfigCache();
       return c.json({ data: alias }, 201);
     } catch (error) {
       return c.json(
@@ -334,6 +336,7 @@ export function registerOpenApiRoutes(app: Hono<any>): void {
     const payload = await c.req.json().catch(() => ({}));
     try {
       const alias = await updateModelAlias(id, payload as any);
+      await refreshRoutingConfigCache();
       return c.json({ data: alias });
     } catch (error) {
       return c.json(
@@ -354,6 +357,7 @@ export function registerOpenApiRoutes(app: Hono<any>): void {
     }
     try {
       const alias = await toggleModelAlias(id, enabled);
+      await refreshRoutingConfigCache();
       return c.json({ data: alias });
     } catch (error) {
       return c.json(
@@ -370,6 +374,7 @@ export function registerOpenApiRoutes(app: Hono<any>): void {
     }
     try {
       await deleteModelAlias(id);
+      await refreshRoutingConfigCache();
       return c.json({ data: { ok: true } });
     } catch (error) {
       return c.json(
