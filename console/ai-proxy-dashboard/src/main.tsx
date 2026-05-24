@@ -8,7 +8,7 @@ import App from "./App.tsx"
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ThemeProvider defaultTheme="system" storageKey="ai-proxy-dashboard-theme">
+    <ThemeProvider defaultTheme="light" storageKey="ai-proxy-dashboard-theme">
       <App />
     </ThemeProvider>
   </StrictMode>

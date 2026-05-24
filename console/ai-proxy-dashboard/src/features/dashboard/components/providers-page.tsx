@@ -6,9 +6,11 @@ import {
   EyeOff,
   Globe,
   Import,
+  Search,
   Plus,
   RefreshCw,
   Server,
+  SlidersHorizontal,
   SquarePen,
   Trash2,
   Upload,
@@ -54,6 +56,14 @@ import { Input } from "@/components/ui/input"
 import { JsonViewer } from "@/components/ui/json-viewer"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import {
   Select,
   SelectContent,
@@ -116,10 +126,10 @@ const healthColors: Record<string, string> = {
 }
 
 const healthLabels: Record<string, string> = {
-  healthy: "Healthy",
-  degraded: "Degraded",
-  down: "Down",
-  "no-data": "No Data",
+  healthy: "健康",
+  degraded: "降级",
+  down: "异常",
+  "no-data": "暂无数据",
 }
 
 type DialogMode = "create" | "edit"
@@ -282,6 +292,9 @@ export function ProvidersPage({
   const [providers, setProviders] = useState<ProviderInfo[] | null>(null)
   const [error, setError] = useState("")
   const { t } = useTranslation()
+  const [searchQuery, setSearchQuery] = useState("")
+  const [typeFilter, setTypeFilter] = useState("all")
+  const [statusFilter, setStatusFilter] = useState("all")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogMode, setDialogMode] = useState<DialogMode>("create")
   const [activeProvider, setActiveProvider] = useState<ProviderInfo | null>(null)
@@ -395,8 +408,30 @@ export function ProvidersPage({
       total: list.length,
       anthropicCount: list.filter((provider) => provider.type === "anthropic").length,
       openAiCount: list.filter((provider) => provider.type === "openai").length,
+      enabledCount: list.filter((provider) => provider.enabled).length,
     }
   }, [providers])
+
+  const displayedProviders = useMemo(() => {
+    const list = providers ?? []
+    const query = searchQuery.trim().toLowerCase()
+
+    return list.filter((provider) => {
+      const matchesSearch = !query || [
+        provider.channelName,
+        provider.targetBaseUrl,
+        provider.type,
+        provider.models.map((model) => model.model).join(" "),
+      ].some((value) => value.toLowerCase().includes(query))
+      const matchesType = typeFilter === "all" || provider.type === typeFilter
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "enabled" && provider.enabled) ||
+        (statusFilter === "disabled" && !provider.enabled)
+
+      return matchesSearch && matchesType && matchesStatus
+    })
+  }, [providers, searchQuery, statusFilter, typeFilter])
 
   function openCreateDialog() {
     setDialogMode("create")
@@ -666,11 +701,88 @@ export function ProvidersPage({
           }
         />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">Total {providerStats.total}</Badge>
-          <Badge variant="outline">Anthropic {providerStats.anthropicCount}</Badge>
-          <Badge variant="outline">OpenAI {providerStats.openAiCount}</Badge>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Card size="sm">
+            <CardHeader className="pb-2">
+              <CardDescription>全部渠道</CardDescription>
+              <CardTitle className="text-3xl font-bold">{providerStats.total}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-muted-foreground">
+              OpenAI {providerStats.openAiCount} · Anthropic {providerStats.anthropicCount}
+            </CardContent>
+          </Card>
+          <Card size="sm">
+            <CardHeader className="pb-2">
+              <CardDescription>已启用</CardDescription>
+              <CardTitle className="text-3xl font-bold">{providerStats.enabledCount}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-muted-foreground">
+              {providerStats.total - providerStats.enabledCount} {t("common.disabled")}
+            </CardContent>
+          </Card>
+          <Card size="sm">
+            <CardHeader className="pb-2">
+              <CardDescription>OpenAI</CardDescription>
+              <CardTitle className="text-3xl font-bold">{providerStats.openAiCount}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-muted-foreground">
+              Responses 原生与兼容模式
+            </CardContent>
+          </Card>
+          <Card size="sm">
+            <CardHeader className="pb-2">
+              <CardDescription>Anthropic</CardDescription>
+              <CardTitle className="text-3xl font-bold">{providerStats.anthropicCount}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-muted-foreground">
+              Messages 协议渠道
+            </CardContent>
+          </Card>
         </div>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
+              <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
+              渠道筛选
+            </div>
+            <div className="grid gap-3 lg:grid-cols-[minmax(18rem,1fr)_12rem_12rem]">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="搜索渠道、URL、模型..."
+                  className="bg-white/70 pl-9"
+                />
+              </div>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="bg-white/70">
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="all">全部类型</SelectItem>
+                    <SelectItem value="openai">OpenAI</SelectItem>
+                    <SelectItem value="anthropic">Anthropic</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="bg-white/70">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="all">全部状态</SelectItem>
+                    <SelectItem value="enabled">{t("common.enabled")}</SelectItem>
+                    <SelectItem value="disabled">{t("common.disabled")}</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
 
         {providers.length === 0 ? (
           <Empty className="border">
@@ -691,21 +803,145 @@ export function ProvidersPage({
             </EmptyContent>
           </Empty>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {providers.map((provider) => (
-              <ProviderCard
-                key={provider.channelName}
-                provider={provider}
-                testResult={testResults.get(provider.channelName)}
-                isTesting={testingChannels.has(provider.channelName)}
-                isToggling={togglingChannels.has(provider.channelName)}
-                onOpenTestDialog={() => openTestDialog(provider)}
-                onEdit={() => openEditDialog(provider)}
-                onDelete={() => openDeleteDialog(provider)}
-                onToggle={(enabled) => toggleSingleProvider(provider.channelName, enabled)}
-              />
-            ))}
-          </div>
+          <Card className="c4d-table-shell">
+            <CardHeader className="border-b border-border/60">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <CardTitle>渠道列表</CardTitle>
+                  <CardDescription>
+                    显示 {displayedProviders.length} / {providers.length}
+                  </CardDescription>
+                </div>
+                <Badge variant="secondary">{providerStats.enabledCount} {t("common.enabled")}</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="hidden lg:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>渠道</TableHead>
+                      <TableHead>类型</TableHead>
+                      <TableHead>模型</TableHead>
+                      <TableHead>状态</TableHead>
+                      <TableHead>优先级</TableHead>
+                      <TableHead>目标地址</TableHead>
+                      <TableHead className="text-right">操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {displayedProviders.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="h-28 text-center text-muted-foreground">
+                          {t("common.noData")}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      displayedProviders.map((provider) => {
+                        const healthStatus = provider.healthStatus ?? "no-data"
+                        const isTesting = testingChannels.has(provider.channelName)
+                        const isToggling = togglingChannels.has(provider.channelName)
+
+                        return (
+                          <TableRow key={provider.channelName} className={!provider.enabled ? "opacity-50" : ""}>
+                            <TableCell>
+                              <div className="flex items-center gap-3">
+                                <div className="c4d-icon-tile flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/16 to-cyan-300/26 text-primary">
+                                  <Server className="h-4 w-4" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="truncate font-mono text-xs font-semibold">{provider.channelName}</div>
+                                  <div className="text-xs text-muted-foreground">{healthLabels[healthStatus]}</div>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={typeVariants[provider.type] ?? "outline"}>
+                                {typeLabels[provider.type] ?? provider.type}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              {provider.models.length ? provider.models.slice(0, 2).map((model) => model.model).join(", ") : "—"}
+                              {provider.models.length > 2 ? ` +${provider.models.length - 2}` : ""}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                type="button"
+                                variant={provider.enabled ? "secondary" : "outline"}
+                                size="xs"
+                                onClick={() => toggleSingleProvider(provider.channelName, !provider.enabled)}
+                                disabled={isToggling}
+                              >
+                                {provider.enabled ? <Eye data-icon="inline-start" /> : <EyeOff data-icon="inline-start" />}
+                                {isToggling ? "..." : provider.enabled ? t("common.enabled") : t("common.disabled")}
+                              </Button>
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground tabular-nums">
+                              {provider.priority}
+                            </TableCell>
+                            <TableCell className="max-w-72 truncate text-xs text-muted-foreground">
+                              {provider.targetBaseUrl}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-1">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="xs"
+                                  onClick={() => openTestDialog(provider)}
+                                  disabled={isTesting}
+                                >
+                                  <Wifi data-icon="inline-start" />
+                                  {isTesting ? t("common.testing") : t("common.test")}
+                                </Button>
+                                <Button type="button" variant="outline" size="xs" onClick={() => openEditDialog(provider)}>
+                                  <SquarePen data-icon="inline-start" />
+                                  {t("common.edit")}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="xs"
+                                  className="text-destructive hover:text-destructive"
+                                  onClick={() => openDeleteDialog(provider)}
+                                >
+                                  <Trash2 data-icon="inline-start" />
+                                  {t("common.delete")}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="grid gap-4 p-4 lg:hidden">
+                {displayedProviders.length === 0 ? (
+                  <Empty>
+                    <EmptyHeader>
+                      <EmptyTitle>{t("common.noData")}</EmptyTitle>
+                    </EmptyHeader>
+                  </Empty>
+                ) : (
+                  displayedProviders.map((provider) => (
+                    <ProviderCard
+                      key={provider.channelName}
+                      provider={provider}
+                      testResult={testResults.get(provider.channelName)}
+                      isTesting={testingChannels.has(provider.channelName)}
+                      isToggling={togglingChannels.has(provider.channelName)}
+                      onOpenTestDialog={() => openTestDialog(provider)}
+                      onEdit={() => openEditDialog(provider)}
+                      onDelete={() => openDeleteDialog(provider)}
+                      onToggle={(enabled) => toggleSingleProvider(provider.channelName, enabled)}
+                    />
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
 
@@ -1426,13 +1662,13 @@ function ProviderCard({
               {onEdit ? (
                 <Button type="button" variant="outline" size="xs" onClick={onEdit}>
                   <SquarePen data-icon="inline-start" />
-                  Edit
+                  {t("common.edit")}
                 </Button>
               ) : null}
               {onDelete ? (
                 <Button type="button" variant="ghost" size="xs" onClick={onDelete}>
                   <Trash2 data-icon="inline-start" />
-                  Delete
+                  {t("common.delete")}
                 </Button>
               ) : null}
             </div>

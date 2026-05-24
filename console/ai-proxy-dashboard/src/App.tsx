@@ -145,15 +145,15 @@ export function App() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+    <div className="app-canvas flex h-screen overflow-hidden p-2 text-foreground lg:p-3">
       <NavBar
         activePage={activePage}
         onNavigate={(page) => navigate({ page })}
         logoutPending={logoutPending}
         onLogout={handleLogout}
       />
-      <main className="flex-1 overflow-y-auto">
-        <div className="flex flex-col gap-6 p-6">
+      <main className="app-main-surface ml-2 flex-1 overflow-y-auto rounded-[1.5rem] ring-1 ring-white/60 lg:ml-3 lg:rounded-[2rem]">
+        <div className="mx-auto flex max-w-[1540px] flex-col gap-5 p-4 lg:gap-6 lg:p-6 xl:p-7">
           {renderPage()}
         </div>
       </main>
