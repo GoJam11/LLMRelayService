@@ -1,5 +1,7 @@
 import type {
   ConsoleCreateKeyPayload,
+  GatewayTimeoutSettings,
+  GatewayTimeoutSettingsPayload,
   ConsoleKeysPayload,
   ConsoleModelsPayload,
   ConsoleProvidersPayload,
@@ -292,5 +294,21 @@ export function toggleModelAlias(id: number, enabled: boolean): Promise<ModelAli
 export function deleteModelAlias(id: number): Promise<{ ok: true }> {
   return requestJson(`/__console/api/model-aliases/${id}`, {
     method: "DELETE",
+  })
+}
+
+// ── Gateway Settings ───────────────────────────────────────────────────────
+
+export function fetchGatewayTimeoutSettings(): Promise<GatewayTimeoutSettingsPayload> {
+  return requestJson("/__console/api/settings/timeouts")
+}
+
+export function updateGatewayTimeoutSettings(
+  payload: GatewayTimeoutSettings,
+): Promise<GatewayTimeoutSettingsPayload> {
+  return requestJson("/__console/api/settings/timeouts", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   })
 }

@@ -116,3 +116,9 @@ export const modelCatalogCache = pgTable('model_catalog_cache', {
   pricingJson: text('pricing_json'),
   fetchedAt: bigint('fetched_at', { mode: 'number' }).notNull(),
 });
+
+export const gatewaySettings = pgTable('gateway_settings', {
+  key: text('key').primaryKey(),
+  valueJson: text('value_json').notNull().default('{}'),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+});

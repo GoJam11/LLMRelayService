@@ -9,6 +9,7 @@ import { createManagedApiKey, deleteManagedApiKey, getManagedApiKey, listManaged
 import { createModelAlias, deleteModelAlias, listModelAliases, toggleModelAlias, updateModelAlias } from './console-model-alias-store';
 import { ensureModelCatalogLoaded, lookupModelContext } from './model-catalog';
 import { ensurePricingLoaded, getModelPricing } from './pricing';
+import { getGatewayTimeoutSettings, updateGatewayTimeoutSettings } from './gateway-timeouts';
 
 const CONSOLE_COOKIE_NAME = 'CONSOLE_COOKIE_NAME';
 const CONSOLE_UI_DIST_DIR = resolve(import.meta.dir, '..', 'dist', 'frontend');
@@ -401,6 +402,35 @@ export function registerConsoleRoutes(app: Hono<any>): void {
 
     const options = await getConsoleFilterOptions();
     return c.json({ ok: true, ...options });
+  });
+
+  app.get('/__console/api/settings/timeouts', async (c) => {
+    if (!isPasswordConfigured()) {
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
+    }
+    if (!isAuthenticated(c)) {
+      return c.json({ error: '未授权' }, 401);
+    }
+
+    const settings = await getGatewayTimeoutSettings();
+    return c.json({ ok: true, ...settings });
+  });
+
+  app.patch('/__console/api/settings/timeouts', async (c) => {
+    if (!isPasswordConfigured()) {
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
+    }
+    if (!isAuthenticated(c)) {
+      return c.json({ error: '未授权' }, 401);
+    }
+
+    const payload = await c.req.json().catch(() => ({}));
+    try {
+      const settings = await updateGatewayTimeoutSettings(payload as any);
+      return c.json({ ok: true, ...settings });
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
   });
 
   app.get('/__console/api/requests/:requestId', async (c) => {

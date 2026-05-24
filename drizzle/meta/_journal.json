@@ -15,6 +15,13 @@
       "when": 1777794167621,
       "tag": "0001_ambiguous_maria_hill",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779645122739,
+      "tag": "0002_natural_sphinx",
+      "breakpoints": true
     }
   ]
 }

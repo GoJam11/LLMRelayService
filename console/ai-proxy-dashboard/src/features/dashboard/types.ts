@@ -317,3 +317,25 @@ export type ModelAliasMutationPayload = {
   description?: string | null
   enabled?: boolean
 }
+
+export type TimeoutLimit = {
+  minMs: number
+  maxMs: number
+  allowZero?: boolean
+}
+
+export type GatewayTimeoutSettings = {
+  defaultFirstByteTimeoutMs: number
+  imageFirstByteTimeoutMs: number
+  responseIdleTimeoutMs: number
+}
+
+export type GatewayTimeoutSettingsPayload = GatewayTimeoutSettings & {
+  ok: boolean
+  defaults: GatewayTimeoutSettings
+  limits: {
+    firstByte: TimeoutLimit
+    responseIdle: TimeoutLimit
+  }
+  updatedAt: number | null
+}

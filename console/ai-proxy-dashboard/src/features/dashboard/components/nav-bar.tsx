@@ -11,6 +11,7 @@ import {
   MoonStar,
   Network,
   ScrollText,
+  Settings2,
   SunMedium,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
@@ -29,7 +30,7 @@ import {
 import { useTheme } from "@/components/theme-provider"
 import { setLanguage, getLanguage } from "@/i18n"
 
-type Page = "monitor" | "usage" | "providers" | "models" | "routes" | "keys" | "logs" | "api"
+type Page = "monitor" | "usage" | "providers" | "models" | "routes" | "keys" | "logs" | "settings" | "api"
 
 export function NavBar({
   activePage,
@@ -62,6 +63,7 @@ export function NavBar({
     { page: "routes" as const, icon: Network, label: t("nav.routes") },
     { page: "keys" as const, icon: KeyRound, label: t("nav.keys") },
     { page: "logs" as const, icon: ScrollText, label: t("nav.logs") },
+    { page: "settings" as const, icon: Settings2, label: t("nav.settings") },
     { page: "api" as const, icon: Code2, label: "API" },
   ]
 
@@ -83,14 +85,14 @@ export function NavBar({
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-2 py-2 lg:px-4">
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           {navItems.map(({ page, icon: Icon, label }) => (
             <button
               key={page}
               type="button"
               onClick={() => onNavigate(page)}
               className={cn(
-                "flex w-full items-center justify-center gap-3 rounded-2xl px-3 py-3 text-left text-sm font-semibold transition-all lg:justify-start lg:px-3.5",
+                "flex w-full items-center justify-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm font-semibold transition-all lg:justify-start lg:px-3.5",
                 activePage === page
                   ? "bg-gradient-to-br from-blue-500 to-blue-400 text-sidebar-primary-foreground shadow-[0_14px_28px_-18px_rgba(31,96,255,0.78)]"
                   : "text-sidebar-foreground/62 hover:bg-sidebar-accent hover:text-sidebar-foreground",
@@ -108,7 +110,7 @@ export function NavBar({
           src={lrsProviderAggregation}
           alt=""
           aria-hidden="true"
-          className="h-44 w-full object-contain drop-shadow-[0_22px_34px_rgba(44,91,170,0.22)]"
+          className="h-32 w-full object-contain drop-shadow-[0_22px_34px_rgba(44,91,170,0.22)]"
           draggable={false}
         />
       </div>

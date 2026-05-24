@@ -20,6 +20,7 @@ import { PAYLOAD_LOG_LIMIT_BYTES } from './logging-constants';
 import { ensureModelCatalogLoaded, lookupModelContext } from './model-catalog';
 import { initializeTokenEstimator } from './token-estimator';
 import { applyCorsHeaders, createCorsPreflightResponse, withCorsHeaders } from './cors';
+import { getGatewayTimeoutSettings, selectUpstreamFirstByteTimeoutMs } from './gateway-timeouts';
 import {
   convertResponsesRequestToChatCompletions,
   createResponsesChatCompatErrorResponse,
@@ -134,8 +135,6 @@ async function authenticateGateway(headers: Headers, upstreamType: UpstreamType)
 
 const utf8Encoder = new TextEncoder();
 const utf8Decoder = new TextDecoder();
-const DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS = 300_000;
-const DEFAULT_UPSTREAM_RESPONSE_IDLE_TIMEOUT_MS = DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS;
 
 interface TruncatedPayloadForLog {
   payload: string;
@@ -189,21 +188,6 @@ function captureOriginalHeaders(headers: Headers): Record<string, string> {
     result[key] = sensitiveKeys.has(key.toLowerCase()) ? `[redacted, length=${value.length}]` : value;
   });
   return result;
-}
-
-function getUpstreamRequestTimeoutMs(): number {
-  const parsed = Number.parseInt(process.env.UPSTREAM_REQUEST_TIMEOUT_MS || `${DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS}`, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS;
-}
-
-function getUpstreamResponseIdleTimeoutMs(): number {
-  const raw = process.env.UPSTREAM_RESPONSE_IDLE_TIMEOUT_MS;
-  if (raw == null || raw.trim() === '') return DEFAULT_UPSTREAM_RESPONSE_IDLE_TIMEOUT_MS;
-
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed)) return DEFAULT_UPSTREAM_RESPONSE_IDLE_TIMEOUT_MS;
-  if (parsed === 0) return 0;
-  return parsed > 0 ? parsed : DEFAULT_UPSTREAM_RESPONSE_IDLE_TIMEOUT_MS;
 }
 
 function createUpstreamResponseStartTimeout(timeoutMs: number): { signal: AbortSignal; clear: () => void } {
@@ -748,9 +732,10 @@ async function handleProxyRequest(c: any): Promise<Response> {
 
   let upstreamResponse: Response;
   const proxyStart = nowPerfMs();
-  const upstreamBodyIdleTimeoutMs = getUpstreamResponseIdleTimeoutMs();
+  const timeoutSettings = await getGatewayTimeoutSettings();
+  const upstreamTimeoutMs = selectUpstreamFirstByteTimeoutMs(url.pathname, upstreamTargetUrl, timeoutSettings);
+  const upstreamBodyIdleTimeoutMs = timeoutSettings.responseIdleTimeoutMs;
   try {
-    const upstreamTimeoutMs = getUpstreamRequestTimeoutMs();
     const upstreamResponseStartTimeout = createUpstreamResponseStartTimeout(upstreamTimeoutMs);
     try {
       upstreamResponse = await proxy(upstreamTargetUrl, {
@@ -767,7 +752,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
     addPerfPhase(requestPerfPhases, 'proxy_ms', elapsedPerfMs(proxyStart));
     const isTimeoutError = err?.name === 'TimeoutError' || err?.name === 'AbortError';
     const terminalErrorResponse = isTimeoutError
-      ? buildGatewayErrorResponse(route.type, 504, 'Upstream timeout', `No first byte received within ${Math.round(getUpstreamRequestTimeoutMs() / 1000)}s`)
+      ? buildGatewayErrorResponse(route.type, 504, 'Upstream timeout', `No first byte received within ${Math.round(upstreamTimeoutMs / 1000)}s`)
       : buildGatewayErrorResponse(route.type, 502, 'Upstream request failed', err?.message || String(err));
     console.log('[RES]', { request_id: requestId, status: terminalErrorResponse.status, status_text: terminalErrorResponse.statusText || 'Error' });
     const finalizeStart = nowPerfMs();
