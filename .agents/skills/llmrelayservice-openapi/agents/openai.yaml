@@ -1,0 +1,4 @@
+interface:
+  display_name: "LLMRelayService OpenAPI"
+  short_description: "Use LLMRelayService OpenAPI with cached local auth."
+  default_prompt: "Use LLMRelayService OpenAPI to inspect or manage providers, keys, aliases, request logs, and stats."
