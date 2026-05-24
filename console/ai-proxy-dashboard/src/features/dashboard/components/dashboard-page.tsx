@@ -237,7 +237,7 @@ export function DashboardPage({
       </div>
 
       {/* Full-width request trend chart with tab switcher */}
-      <Card className="min-h-[22rem]">
+      <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-3">
             <CardTitle>{t("monitor.requestTrend")}</CardTitle>
@@ -262,7 +262,7 @@ export function DashboardPage({
         </CardHeader>
         <CardContent>
           {trendData.length > 0 ? (
-            <ChartContainer config={trendChartConfig} className="min-h-[220px] w-full">
+            <ChartContainer config={trendChartConfig} className="h-[160px] min-h-0 w-full aspect-auto">
               <AreaChart data={trendData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="totalFill" x1="0" y1="0" x2="0" y2="1">
@@ -330,7 +330,7 @@ export function DashboardPage({
               </AreaChart>
             </ChartContainer>
           ) : (
-            <div className="flex min-h-[220px] items-center justify-center text-xs text-muted-foreground">
+            <div className="flex h-[160px] items-center justify-center text-xs text-muted-foreground">
               {t("common.noData")}
             </div>
           )}
