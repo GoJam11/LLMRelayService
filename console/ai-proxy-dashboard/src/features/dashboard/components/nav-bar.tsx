@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
+import lrsProviderAggregation from "@/assets/lrs-provider-aggregation.png"
 import { cn } from "@/lib/utils"
 import {
   DropdownMenu,
@@ -102,8 +103,14 @@ export function NavBar({
         </div>
       </nav>
 
-      <div className="mx-4 mb-4 hidden lg:block">
-        <div className="c4d-sidebar-figure" aria-hidden="true" />
+      <div className="mx-3 mb-4 hidden lg:block">
+        <img
+          src={lrsProviderAggregation}
+          alt=""
+          aria-hidden="true"
+          className="h-44 w-full object-contain drop-shadow-[0_22px_34px_rgba(44,91,170,0.22)]"
+          draggable={false}
+        />
       </div>
 
       {/* Bottom controls */}

@@ -193,48 +193,6 @@
     transform: rotate(22deg);
   }
 
-  .c4d-sidebar-figure {
-    position: relative;
-    min-height: 11rem;
-    overflow: hidden;
-    border: 1px solid oklch(1 0 0 / 0.62);
-    border-radius: 1.75rem;
-    background:
-      linear-gradient(145deg, oklch(1 0 0 / 0.52), oklch(0.91 0.06 246 / 0.34)),
-      radial-gradient(circle at 76% 18%, oklch(0.72 0.14 194 / 0.38), transparent 4rem);
-    box-shadow:
-      0 18px 40px -30px oklch(0.36 0.13 260 / 0.5),
-      inset 0 1px 0 oklch(1 0 0 / 0.74);
-  }
-
-  .c4d-sidebar-figure::before {
-    position: absolute;
-    right: 2.1rem;
-    bottom: 2rem;
-    width: 3.8rem;
-    height: 6.7rem;
-    content: "";
-    border-radius: 1rem 1rem 0.5rem 0.5rem;
-    background: linear-gradient(180deg, oklch(0.78 0.12 198), oklch(0.62 0.2 258));
-    box-shadow:
-      -2.7rem 2.2rem 0 -0.7rem oklch(0.66 0.18 260),
-      2.1rem 1.2rem 0 -0.55rem oklch(0.69 0.18 20),
-      0 18px 28px -18px oklch(0.28 0.1 260 / 0.5);
-  }
-
-  .c4d-sidebar-figure::after {
-    position: absolute;
-    right: 1.55rem;
-    bottom: 2.35rem;
-    width: 7.5rem;
-    height: 1.05rem;
-    content: "";
-    border-radius: 999px;
-    background: linear-gradient(90deg, oklch(0.78 0.19 333), oklch(0.77 0.17 22), oklch(0.74 0.18 63));
-    transform: rotate(-32deg);
-    box-shadow: 0 12px 18px -13px oklch(0.52 0.15 18 / 0.7);
-  }
-
   .c4d-metric-card {
     position: relative;
     min-height: 7.25rem;
