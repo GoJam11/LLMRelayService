@@ -8,8 +8,6 @@ import {
   Clock,
   Gauge,
   Layers,
-  MoveRight,
-  RefreshCw,
   Zap,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
@@ -68,7 +66,6 @@ export function DashboardPage({
     overview,
     stats,
     requests,
-    refresh,
     routeFilter,
     setRouteFilter,
     rangeFilter,
@@ -170,57 +167,42 @@ export function DashboardPage({
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="relative overflow-hidden rounded-[2rem] border border-white/60 bg-white/28 px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] 2xl:pr-40">
-        <div className="relative z-10">
-          <PageHeader
-            icon={Activity}
-            title={t("monitor.title")}
-            description={t("monitor.description")}
-            actions={
-              <>
-                <Combobox
-                  options={routeOptions}
-                  value={routeFilter}
-                  onChange={setRouteFilter}
-                  placeholder={t("monitor.allRoutes")}
-                  searchPlaceholder={t("common.searchRoute")}
-                  className="w-40 bg-white/70"
-                />
-                <Combobox
-                  options={[
-                    { value: "1h", label: t("timeRange.1h") },
-                    { value: "24h", label: t("timeRange.24h") },
-                    { value: "72h", label: t("timeRange.72h") },
-                    { value: "7d", label: t("timeRange.7d") },
-                    { value: "30d", label: t("timeRange.30d") },
-                    { value: "all", label: t("timeRange.all") },
-                  ]}
-                  value={rangeFilter}
-                  onChange={(value) => setRangeFilter((value || "24h") as typeof rangeFilter)}
-                  placeholder={t("timeRange.placeholder")}
-                  searchPlaceholder={t("common.searchTimeRange")}
-                  className="w-36 bg-white/70"
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => { void refresh() }}
-                >
-                  <RefreshCw data-icon="inline-start" />
-                  {t("common.refreshData")}
-                </Button>
-                <Button type="button" size="sm" variant="outline" onClick={onNavigateToLogs}>
-                  {t("common.viewLogs")}
-                  <MoveRight data-icon="inline-end" />
-                </Button>
-              </>
-            }
-          />
-        </div>
-        <div className="c4d-hero-bot absolute right-5 top-1/2 z-0 hidden -translate-y-1/2 2xl:block" aria-hidden="true" />
+    <div className="relative isolate flex flex-col gap-6 overflow-visible">
+      <div className="relative z-10 xl:pr-44">
+        <PageHeader
+          icon={Activity}
+          title={t("monitor.title")}
+          description={t("monitor.description")}
+          actions={
+            <>
+              <Combobox
+                options={routeOptions}
+                value={routeFilter}
+                onChange={setRouteFilter}
+                placeholder={t("monitor.allRoutes")}
+                searchPlaceholder={t("common.searchRoute")}
+                className="w-40 bg-white/70"
+              />
+              <Combobox
+                options={[
+                  { value: "1h", label: t("timeRange.1h") },
+                  { value: "24h", label: t("timeRange.24h") },
+                  { value: "72h", label: t("timeRange.72h") },
+                  { value: "7d", label: t("timeRange.7d") },
+                  { value: "30d", label: t("timeRange.30d") },
+                  { value: "all", label: t("timeRange.all") },
+                ]}
+                value={rangeFilter}
+                onChange={(value) => setRangeFilter((value || "24h") as typeof rangeFilter)}
+                placeholder={t("timeRange.placeholder")}
+                searchPlaceholder={t("common.searchTimeRange")}
+                className="w-36 bg-white/70"
+              />
+            </>
+          }
+        />
       </div>
+      <div className="c4d-hero-bot absolute -right-1 -top-3 z-0 hidden xl:block" aria-hidden="true" />
 
       {/* Overview metric cards */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
