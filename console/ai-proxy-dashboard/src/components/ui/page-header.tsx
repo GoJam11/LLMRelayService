@@ -12,7 +12,9 @@ export function PageHeader({ icon: Icon, title, description, actions }: PageHead
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <Icon className="h-5 w-5 text-muted-foreground" />
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
+          <Icon className="h-5 w-5" />
+        </div>
         <div>
           <h2 className="text-base font-semibold">{title}</h2>
           {description && (

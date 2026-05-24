@@ -201,12 +201,13 @@ export function DashboardPage({
         </CardHeader>
         <CardContent className="flex flex-col gap-6 pt-4">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {overviewCards.map((item) => (
+            {overviewCards.map((item, i) => (
               <MetricCard
                 key={item.title}
                 title={item.title}
                 value={item.value}
                 description={item.description}
+                color={(["blue", "green", "amber", "purple"] as const)[i % 4]}
               />
             ))}
           </div>
@@ -249,12 +250,13 @@ export function DashboardPage({
           <div className="flex flex-col gap-3">
             <h3 className="text-xs font-medium text-muted-foreground">{t("monitor.latencyMetrics")}</h3>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {operationsCards.map((item) => (
+              {operationsCards.map((item, i) => (
                 <MetricCard
                   key={item.title}
                   title={item.title}
                   value={item.value}
                   description={item.description}
+                  color={(["cyan", "blue", "purple", "amber"] as const)[i % 4]}
                 />
               ))}
             </div>
@@ -265,12 +267,13 @@ export function DashboardPage({
           <div className="flex flex-col gap-3">
             <h3 className="text-xs font-medium text-muted-foreground">{t("monitor.cacheHealth")}</h3>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {cacheCards.map((item) => (
+              {cacheCards.map((item, i) => (
                 <MetricCard
                   key={item.title}
                   title={item.title}
                   value={item.value}
                   description={item.description}
+                  color={(["green", "cyan", "amber", "purple"] as const)[i % 4]}
                 />
               ))}
             </div>

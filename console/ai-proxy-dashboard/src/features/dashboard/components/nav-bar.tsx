@@ -39,71 +39,34 @@ export function NavBar({
   const ActiveThemeIcon = activeTheme.icon
 
   return (
-    <nav className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <nav className="flex flex-col gap-4 rounded-xl bg-card px-4 py-3 ring-1 ring-foreground/[0.06] shadow-sm sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-center gap-3">
-        <Badge variant="outline" className="shrink-0">AI Proxy</Badge>
-        <div className="flex gap-1">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+            <span className="text-sm font-bold">AI</span>
+          </div>
+          <Badge variant="secondary" className="shrink-0 font-semibold">Proxy</Badge>
+        </div>
+        <div className="h-4 w-px bg-border" />
+        <div className="flex flex-wrap gap-0.5">
+          {(["monitor", "usage", "providers", "models", "routes", "keys", "logs"] as const).map((page) => (
+            <Button
+              key={page}
+              type="button"
+              variant={activePage === page ? "default" : "ghost"}
+              size="sm"
+              onClick={() => onNavigate(page)}
+              className={activePage === page ? "shadow-sm" : ""}
+            >
+              {t(`nav.${page === "monitor" ? "monitor" : page === "usage" ? "usage" : page === "providers" ? "providers" : page === "models" ? "models" : page === "routes" ? "routes" : page === "keys" ? "keys" : "logs"}`)}
+            </Button>
+          ))}
           <Button
             type="button"
-            variant={activePage === "monitor" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => onNavigate("monitor")}
-          >
-            {t("nav.monitor")}
-          </Button>
-          <Button
-            type="button"
-            variant={activePage === "usage" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => onNavigate("usage")}
-          >
-            {t("nav.usage")}
-          </Button>
-          <Button
-            type="button"
-            variant={activePage === "providers" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => onNavigate("providers")}
-          >
-            {t("nav.providers")}
-          </Button>
-          <Button
-            type="button"
-            variant={activePage === "models" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => onNavigate("models")}
-          >
-            {t("nav.models")}
-          </Button>
-          <Button
-            type="button"
-            variant={activePage === "routes" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => onNavigate("routes")}
-          >
-            {t("nav.routes")}
-          </Button>
-          <Button
-            type="button"
-            variant={activePage === "keys" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => onNavigate("keys")}
-          >
-            {t("nav.keys")}
-          </Button>
-          <Button
-            type="button"
-            variant={activePage === "logs" ? "secondary" : "ghost"}
-            size="sm"
-            onClick={() => onNavigate("logs")}
-          >
-            {t("nav.logs")}
-          </Button>
-          <Button
-            type="button"
-            variant={activePage === "api" ? "secondary" : "ghost"}
+            variant={activePage === "api" ? "default" : "ghost"}
             size="sm"
             onClick={() => onNavigate("api")}
+            className={activePage === "api" ? "shadow-sm" : ""}
           >
             API
           </Button>

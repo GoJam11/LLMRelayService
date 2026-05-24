@@ -32,14 +32,19 @@ function CenteredShell({
   children?: React.ReactNode
 }) {
   return (
-    <main className="min-h-screen bg-background px-4 py-10 text-foreground sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 px-4 py-10 text-foreground sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-xl items-center">
         <Card className="w-full">
           <CardHeader className="gap-3 border-b border-border/60">
-            <Badge variant="outline" className="w-fit">
-              AI Gateway Observatory
-            </Badge>
-            <CardTitle className="text-3xl tracking-tight">{title}</CardTitle>
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+                <span className="text-xs font-bold">AI</span>
+              </div>
+              <Badge variant="secondary" className="w-fit font-semibold">
+                Gateway
+              </Badge>
+            </div>
+            <CardTitle className="text-3xl font-bold tracking-tight">{title}</CardTitle>
             <CardDescription className="text-sm leading-6">
               {description}
             </CardDescription>
