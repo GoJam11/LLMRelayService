@@ -139,6 +139,8 @@ export default {
     cacheCreatesDesc: "Requests with cache_creation_input_tokens > 0",
     cacheMisses: "Cache Misses",
     cacheMissesDesc: "Requests with no cache hit and no creation",
+    requestTrend: "Request Volume Trend",
+    recentRequests: "Recent Requests",
   },
 
   // ── Usage Page ──

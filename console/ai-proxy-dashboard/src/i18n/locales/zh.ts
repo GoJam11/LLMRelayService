@@ -139,6 +139,8 @@ export default {
     cacheCreatesDesc: "cache_creation_input_tokens > 0 的请求",
     cacheMisses: "缓存 Miss",
     cacheMissesDesc: "未命中且未创建缓存的请求",
+    requestTrend: "请求量趋势",
+    recentRequests: "最近请求",
   },
 
   // ── Usage Page ──
