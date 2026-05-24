@@ -145,18 +145,19 @@ export function App() {
   }
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto flex w-full max-w-430 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-        <NavBar
-          activePage={activePage}
-          onNavigate={(page) => navigate({ page })}
-          logoutPending={logoutPending}
-          onLogout={handleLogout}
-        />
-
-        {renderPage()}
-      </div>
-    </main>
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
+      <NavBar
+        activePage={activePage}
+        onNavigate={(page) => navigate({ page })}
+        logoutPending={logoutPending}
+        onLogout={handleLogout}
+      />
+      <main className="flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-6 p-6">
+          {renderPage()}
+        </div>
+      </main>
+    </div>
   )
 }
 
