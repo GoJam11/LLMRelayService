@@ -72,10 +72,10 @@ export function NavBar({
       {/* Logo */}
       <div className="flex h-20 items-center justify-center gap-3 px-3 lg:justify-start lg:px-5">
         <div className="c4d-logo-cube flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 via-cyan-400 to-violet-500 text-sidebar-primary-foreground">
-          <span className="sr-only">AI Proxy</span>
+          <span className="sr-only">LLMRelayService</span>
         </div>
         <div className="hidden leading-tight lg:block">
-          <div className="text-base font-bold tracking-tight text-sidebar-foreground">AI Proxy</div>
+          <div className="text-base font-bold tracking-tight text-sidebar-foreground">LLMRelayService</div>
           <div className="text-xs font-medium text-sidebar-foreground/50">API Gateway</div>
         </div>
       </div>

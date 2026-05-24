@@ -68,7 +68,7 @@ export default {
 
   // ── Session / Login ──
   session: {
-    brandLabel: "AI Gateway Observatory",
+    brandLabel: "LLMRelayService",
     loginTitle: "进入本地观测台",
     loginDescription: "登录后可以查看请求表格、首 token 时延、结构摘要，以及每条记录的完整 payload。",
     loginFailed: "登录失败",

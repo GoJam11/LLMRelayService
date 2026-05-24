@@ -68,7 +68,7 @@ export default {
 
   // ── Session / Login ──
   session: {
-    brandLabel: "AI Gateway Observatory",
+    brandLabel: "LLMRelayService",
     loginTitle: "Sign in to Observatory",
     loginDescription: "After login you can view request tables, first-token latency, payload summaries, and full request/response data.",
     loginFailed: "Login failed",

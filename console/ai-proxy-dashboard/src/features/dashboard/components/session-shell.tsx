@@ -31,6 +31,8 @@ function CenteredShell({
   description: string
   children?: React.ReactNode
 }) {
+  const { t } = useTranslation()
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 px-4 py-10 text-foreground sm:px-6 lg:px-8">
       <div className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-xl items-center">
@@ -38,10 +40,10 @@ function CenteredShell({
           <CardHeader className="gap-3 border-b border-border/60">
             <div className="flex items-center gap-2">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-                <span className="text-xs font-bold">AI</span>
+                <span className="text-xs font-bold">LLM</span>
               </div>
               <Badge variant="secondary" className="w-fit font-semibold">
-                Gateway
+                {t("session.brandLabel")}
               </Badge>
             </div>
             <CardTitle className="text-3xl font-bold tracking-tight">{title}</CardTitle>
