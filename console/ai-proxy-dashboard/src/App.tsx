@@ -98,6 +98,7 @@ export function App() {
           <UsagePage
             onUnauthorized={handleUnauthorized}
             onNavigateToLogs={() => navigate({ page: "logs" })}
+            initialClientFilter={route.client}
           />
         )
       case "providers":
@@ -122,6 +123,7 @@ export function App() {
         return (
           <KeysPage
             onUnauthorized={handleUnauthorized}
+            onViewUsage={(client) => navigate({ page: "usage", client })}
           />
         )
       case "settings":

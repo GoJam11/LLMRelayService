@@ -689,6 +689,30 @@ export function getModels(): ModelInfo[] {
   return models;
 }
 
+export function getChannelModels(): ModelInfo[] {
+  const models: ModelInfo[] = [];
+  const sortedConfigs = Object.entries(getConfigs()).sort((a, b) => {
+    const priorityA = a[1].priority ?? 0;
+    const priorityB = b[1].priority ?? 0;
+    if (priorityB !== priorityA) return priorityB - priorityA;
+    return a[0].localeCompare(b[0]);
+  });
+
+  for (const [channelName, entry] of sortedConfigs) {
+    if (entry.enabled === false) continue;
+    const routeType = entry.type ?? 'openai';
+    for (const model of entry.models ?? []) {
+      models.push({
+        id: getModelId(model),
+        channelName,
+        type: routeType,
+        context: model.context,
+      });
+    }
+  }
+  return models;
+}
+
 export function getProviders(): ProviderInfo[] {
   return Object.entries(getConfigs())
     .sort((a, b) => a[0].localeCompare(b[0]))

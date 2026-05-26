@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { BookOpen, RefreshCw, Terminal, Wifi } from "lucide-react"
+import { BookOpen, Pencil, RefreshCw, Terminal, Wifi } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -28,6 +28,8 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty"
+import { Field, FieldContent, FieldGroup, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
 import { JsonViewer } from "@/components/ui/json-viewer"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -39,8 +41,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { fetchModels, testProvider } from "@/features/dashboard/api"
-import type { GatewayModel, TestProviderResult } from "@/features/dashboard/types"
+import { fetchModels, testProvider, updateModelMetadata } from "@/features/dashboard/api"
+import type { ConsoleModelPricing, GatewayModel, TestProviderResult } from "@/features/dashboard/types"
 
 function formatContext(context?: number) {
   if (!context) return "--"
@@ -57,9 +59,11 @@ function formatPrice(price?: number) {
 function ModelTable({
   models,
   onTest,
+  onEdit,
 }: {
   models: GatewayModel[]
   onTest: (model: GatewayModel) => void
+  onEdit: (model: GatewayModel) => void
 }) {
   const { t } = useTranslation()
   if (models.length === 0) {
@@ -89,32 +93,131 @@ function ModelTable({
       </TableHeader>
       <TableBody>
         {models.map((model) => (
-          <TableRow key={model.id}>
+          <TableRow key={`${model.channelName}:${model.id}`}>
             <TableCell className="font-mono text-xs">{model.id}</TableCell>
-            <TableCell className="text-muted-foreground">{formatContext(model.context)}</TableCell>
-            <TableCell className="text-muted-foreground tabular-nums">{formatPrice(model.pricing?.input)}</TableCell>
+            <TableCell className="text-muted-foreground">
+              <span>{formatContext(model.context)}</span>
+              {model.override?.context != null && <Badge variant="secondary" className="ml-2 text-xs">{t("models.manualBadge")}</Badge>}
+            </TableCell>
+            <TableCell className="text-muted-foreground tabular-nums">
+              <span>{formatPrice(model.pricing?.input)}</span>
+              {model.override?.pricing && <Badge variant="secondary" className="ml-2 text-xs">{t("models.manualBadge")}</Badge>}
+            </TableCell>
             <TableCell className="text-muted-foreground tabular-nums">{formatPrice(model.pricing?.output)}</TableCell>
             <TableCell>
               <Badge variant="outline" className="font-normal">
                 {model.channelName}
               </Badge>
             </TableCell>
-            <TableCell>
-              <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                onClick={() => onTest(model)}
-              >
-                <Wifi data-icon="inline-start" />
-                {t("common.test")}
-              </Button>
+            <TableCell className="text-right">
+              <div className="flex justify-end gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={() => onTest(model)}
+                >
+                  <Wifi data-icon="inline-start" />
+                  {t("common.test")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  onClick={() => onEdit(model)}
+                >
+                  <Pencil data-icon="inline-start" />
+                  {t("common.edit")}
+                </Button>
+              </div>
             </TableCell>
           </TableRow>
         ))}
       </TableBody>
     </Table>
   )
+}
+
+type ModelMetadataDraft = {
+  context: string
+  input: string
+  output: string
+  cacheRead: string
+  cacheWrite: string
+}
+
+type ParsedModelMetadataDraft = {
+  context: number | null
+  pricing: Partial<ConsoleModelPricing> | null
+}
+
+function numberToDraft(value: number | undefined): string {
+  return value == null ? "" : String(value)
+}
+
+function createMetadataDraft(model: GatewayModel): ModelMetadataDraft {
+  const pricing = model.override?.pricing ?? model.pricing
+  return {
+    context: numberToDraft(model.override?.context ?? model.context),
+    input: numberToDraft(pricing?.input),
+    output: numberToDraft(pricing?.output),
+    cacheRead: numberToDraft(pricing?.cache_read),
+    cacheWrite: numberToDraft(pricing?.cache_write),
+  }
+}
+
+function parseOptionalNumber(
+  value: string,
+  label: string,
+  t: (key: string, options?: Record<string, unknown>) => string,
+  options: { integer?: boolean; min?: number } = {},
+): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const numeric = Number(trimmed)
+  if (!Number.isFinite(numeric)) {
+    throw new Error(t("models.validationNumber", { label }))
+  }
+  if (options.integer && !Number.isInteger(numeric)) {
+    throw new Error(t("models.validationInteger", { label }))
+  }
+  if (options.min != null && numeric < options.min) {
+    throw new Error(t("models.validationMin", { label, min: options.min }))
+  }
+  return numeric
+}
+
+function buildPricingDraft(
+  draft: ModelMetadataDraft,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): Partial<ConsoleModelPricing> | null {
+  const pricing = {
+    input: parseOptionalNumber(draft.input, t("models.inputPrice"), t, { min: 0 }),
+    output: parseOptionalNumber(draft.output, t("models.outputPrice"), t, { min: 0 }),
+    cache_read: parseOptionalNumber(draft.cacheRead, t("models.cacheReadPrice"), t, { min: 0 }),
+    cache_write: parseOptionalNumber(draft.cacheWrite, t("models.cacheWritePrice"), t, { min: 0 }),
+  }
+  if (pricing.input == null && pricing.output == null && pricing.cache_read == null && pricing.cache_write == null) {
+    return null
+  }
+  if (pricing.input == null || pricing.output == null) {
+    throw new Error(t("models.customPricingRequired"))
+  }
+  return {
+    ...(pricing.input != null ? { input: pricing.input } : {}),
+    ...(pricing.output != null ? { output: pricing.output } : {}),
+    ...(pricing.cache_read != null ? { cache_read: pricing.cache_read } : {}),
+    ...(pricing.cache_write != null ? { cache_write: pricing.cache_write } : {}),
+  }
+}
+
+function parseMetadataDraft(
+  draft: ModelMetadataDraft,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): ParsedModelMetadataDraft {
+  const context = parseOptionalNumber(draft.context, t("models.contextLength"), t, { integer: true, min: 1 })
+  const pricing = buildPricingDraft(draft, t)
+  return { context, pricing }
 }
 
 function LoadingSkeleton() {
@@ -137,6 +240,11 @@ export function ModelsPage({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [testDialogModel, setTestDialogModel] = useState<GatewayModel | null>(null)
   const [testDialogResult, setTestDialogResult] = useState<TestProviderResult | null>(null)
   const [testDialogLoading, setTestDialogLoading] = useState(false)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [editDialogModel, setEditDialogModel] = useState<GatewayModel | null>(null)
+  const [editDraft, setEditDraft] = useState<ModelMetadataDraft>({ context: "", input: "", output: "", cacheRead: "", cacheWrite: "" })
+  const [editError, setEditError] = useState("")
+  const [savingMetadata, setSavingMetadata] = useState(false)
 
   const loadModels = async () => {
     setLoading(true)
@@ -197,6 +305,43 @@ export function ModelsPage({ onUnauthorized }: { onUnauthorized: () => void }) {
       setTestDialogResult(errorResult)
     } finally {
       setTestDialogLoading(false)
+    }
+  }
+
+  const openEditDialog = (model: GatewayModel) => {
+    setEditDialogModel(model)
+    setEditDraft(createMetadataDraft(model))
+    setEditError("")
+    setEditDialogOpen(true)
+  }
+
+  const handleSaveMetadata = async () => {
+    if (!editDialogModel) return
+    setSavingMetadata(true)
+    try {
+      const parsedDraft = parseMetadataDraft(editDraft, t)
+      const updated = await updateModelMetadata(editDialogModel.channelName, editDialogModel.id, {
+        context: parsedDraft.context,
+        pricing: parsedDraft.pricing,
+      })
+      const updateList = (models: GatewayModel[] | null) => models?.map((model) => (
+        model.channelName === updated.channelName && model.id === updated.id ? updated : model
+      )) ?? null
+      setOpenaiModels(updateList)
+      setAntropicModels(updateList)
+      setEditDialogOpen(false)
+      setEditDialogModel(null)
+      setEditError("")
+      setError("")
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message === "unauthorized") {
+        onUnauthorized()
+        return
+      }
+      setEditError(message)
+    } finally {
+      setSavingMetadata(false)
     }
   }
 
@@ -285,7 +430,7 @@ export function ModelsPage({ onUnauthorized }: { onUnauthorized: () => void }) {
           {anthropicModels === null ? (
             <LoadingSkeleton />
           ) : (
-            <ModelTable models={anthropicModels} onTest={openTestDialog} />
+            <ModelTable models={anthropicModels} onTest={openTestDialog} onEdit={openEditDialog} />
           )}
         </CardContent>
       </Card>
@@ -305,7 +450,7 @@ export function ModelsPage({ onUnauthorized }: { onUnauthorized: () => void }) {
           {openaiModels === null ? (
             <LoadingSkeleton />
           ) : (
-            <ModelTable models={openaiModels} onTest={openTestDialog} />
+            <ModelTable models={openaiModels} onTest={openTestDialog} onEdit={openEditDialog} />
           )}
         </CardContent>
       </Card>
@@ -374,6 +519,91 @@ export function ModelsPage({ onUnauthorized }: { onUnauthorized: () => void }) {
                 {testDialogLoading ? `${t("common.testing")}...` : t("models.retest")}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{t("models.editDialogTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("models.editDialogDesc", { model: editDialogModel?.id, channel: editDialogModel?.channelName })}
+            </DialogDescription>
+          </DialogHeader>
+          {editError ? (
+            <Alert variant="destructive">
+              <AlertTitle>{t("common.saveFailed")}</AlertTitle>
+              <AlertDescription>{editError}</AlertDescription>
+            </Alert>
+          ) : null}
+          <FieldGroup className="grid gap-4 md:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor="model-context-override">{t("models.contextLength")}</FieldLabel>
+              <FieldContent>
+                <Input
+                  id="model-context-override"
+                  inputMode="numeric"
+                  placeholder={t("models.emptyMeansAuto")}
+                  value={editDraft.context}
+                  onChange={(event) => setEditDraft((current) => ({ ...current, context: event.target.value }))}
+                />
+              </FieldContent>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="model-input-price-override">{t("models.inputPrice")}</FieldLabel>
+              <FieldContent>
+                <Input
+                  id="model-input-price-override"
+                  inputMode="decimal"
+                  placeholder={t("models.emptyMeansAuto")}
+                  value={editDraft.input}
+                  onChange={(event) => setEditDraft((current) => ({ ...current, input: event.target.value }))}
+                />
+              </FieldContent>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="model-output-price-override">{t("models.outputPrice")}</FieldLabel>
+              <FieldContent>
+                <Input
+                  id="model-output-price-override"
+                  inputMode="decimal"
+                  placeholder={t("models.emptyMeansAuto")}
+                  value={editDraft.output}
+                  onChange={(event) => setEditDraft((current) => ({ ...current, output: event.target.value }))}
+                />
+              </FieldContent>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="model-cache-read-price-override">{t("models.cacheReadPrice")}</FieldLabel>
+              <FieldContent>
+                <Input
+                  id="model-cache-read-price-override"
+                  inputMode="decimal"
+                  placeholder={t("models.emptyMeansAuto")}
+                  value={editDraft.cacheRead}
+                  onChange={(event) => setEditDraft((current) => ({ ...current, cacheRead: event.target.value }))}
+                />
+              </FieldContent>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="model-cache-write-price-override">{t("models.cacheWritePrice")}</FieldLabel>
+              <FieldContent>
+                <Input
+                  id="model-cache-write-price-override"
+                  inputMode="decimal"
+                  placeholder={t("models.emptyMeansAuto")}
+                  value={editDraft.cacheWrite}
+                  onChange={(event) => setEditDraft((current) => ({ ...current, cacheWrite: event.target.value }))}
+                />
+              </FieldContent>
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>{t("common.cancel")}</Button>
+            <Button type="button" disabled={savingMetadata} onClick={() => void handleSaveMetadata()}>
+              {savingMetadata ? t("common.saving") : t("common.save")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -10,7 +10,10 @@ import type {
 
 export type UsageRange = "1h" | "24h" | "72h" | "7d" | "30d" | "all"
 
-export function useUsageStats(onUnauthorized: () => void) {
+export function useUsageStats(
+  onUnauthorized: () => void,
+  options: { initialClientFilter?: string } = {},
+) {
   const [overview, setOverview] = useState<ConsoleUsageOverview | null>(null)
   const [stats, setStats] = useState<ConsoleStats>({ routes: [], models: [], clients: [] })
   const [filters, setFilters] = useState<ConsoleUsageFilters>({
@@ -23,7 +26,7 @@ export function useUsageStats(onUnauthorized: () => void) {
 
   const [routeFilter, setRouteFilter] = useState("")
   const [modelFilter, setModelFilter] = useState("")
-  const [clientFilter, setClientFilter] = useState("")
+  const [clientFilter, setClientFilter] = useState(options.initialClientFilter ?? "")
   const [rangeFilter, setRangeFilter] = useState<UsageRange>("24h")
 
   const loadIdRef = useRef(0)
@@ -67,6 +70,10 @@ export function useUsageStats(onUnauthorized: () => void) {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    setClientFilter(options.initialClientFilter ?? "")
+  }, [options.initialClientFilter])
 
   useEffect(() => {
     const timer = window.setInterval(() => {

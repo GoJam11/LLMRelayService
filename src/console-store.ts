@@ -1,4 +1,4 @@
-import { calculateCost, getModelPricing, type CostBreakdown, type ModelPricing } from './pricing';
+import { calculateCostWithPricing, getModelPricing, type CostBreakdown, type ModelPricing } from './pricing';
 import { detectRequestKindForProvider } from './providers';
 import type { DetectedRequestKind } from './providers';
 import { createDbClient } from './db/client';
@@ -9,6 +9,7 @@ import { consoleRequests } from './db/schema';
 import { eq, desc, asc, and, or, sql, count, gte, isNotNull, isNull, like, notInArray, type SQL } from 'drizzle-orm';
 import { elapsedPerfMs, getMaxPerfPhase, nowPerfMs, shouldLogBackgroundPerf } from './perf-detail';
 import { recordBackgroundPerfSample } from './perf-monitor';
+import { getModelOverrideKey, listModelMetadataOverrides, type ModelMetadataOverride } from './model-metadata-overrides';
 
 export type UpstreamTypeForConsole = 'anthropic' | 'openai';
 
@@ -446,6 +447,14 @@ function getEffectiveModel(row: Pick<ConsoleUsageRow, 'response_model' | 'reques
     : row.request_model;
 }
 
+function getEffectivePricing(
+  routePrefix: string,
+  model: string,
+  overrides?: Map<string, ModelMetadataOverride>,
+): ModelPricing | null {
+  return overrides?.get(getModelOverrideKey(routePrefix, model))?.pricing ?? getModelPricing(model);
+}
+
 function getClientLabel(kind: string): string {
   return CLIENT_LABELS[kind as DetectedRequestKind] ?? kind;
 }
@@ -528,7 +537,12 @@ function isUsageCacheHit(
     : usage.cache_read_input_tokens > 0;
 }
 
-function updateUsageAccumulator(accumulator: UsageAccumulator, row: ConsoleUsageRow, model: string) {
+function updateUsageAccumulator(
+  accumulator: UsageAccumulator,
+  row: ConsoleUsageRow,
+  model: string,
+  overrides?: Map<string, ModelMetadataOverride>,
+) {
   accumulator.requests += 1;
   if (row.response_status != null && row.response_status >= 400) {
     accumulator.errors += 1;
@@ -550,13 +564,13 @@ function updateUsageAccumulator(accumulator: UsageAccumulator, row: ConsoleUsage
   accumulator.last_seen_at = Math.max(accumulator.last_seen_at, row.created_at);
 
   if (model) {
-    const cost = calculateCost({
+    const cost = calculateCostWithPricing({
       input_tokens: row.input_tokens,
       output_tokens: row.output_tokens,
       cache_creation_input_tokens: row.cache_creation_input_tokens,
       cache_read_input_tokens: row.cache_read_input_tokens,
       cached_input_tokens: row.cached_input_tokens,
-    }, model, row.upstream_type);
+    }, getEffectivePricing(row.route_prefix, model, overrides), row.upstream_type);
 
     accumulator.total_cost += cost.total_cost;
     accumulator.total_input_cost += cost.input_cost;
@@ -725,7 +739,10 @@ async function listUsageRows(filters?: ConsoleQueryFilters): Promise<ConsoleUsag
 }
 
 async function buildUsageStats(filters?: ConsoleQueryFilters): Promise<ConsoleUsageStatsPayload> {
-  const rows = await listUsageRows(filters);
+  const [rows, overrides] = await Promise.all([
+    listUsageRows(filters),
+    listModelMetadataOverrides(),
+  ]);
 
   const overviewAccumulator = createUsageAccumulator();
   const routeMap = new Map<string, UsageAccumulator>();
@@ -754,18 +771,18 @@ async function buildUsageStats(filters?: ConsoleQueryFilters): Promise<ConsoleUs
       failovers += 1;
     }
 
-    updateUsageAccumulator(overviewAccumulator, row, model);
+    updateUsageAccumulator(overviewAccumulator, row, model, overrides);
 
     const routeAccumulator = routeMap.get(row.route_prefix) ?? createUsageAccumulator();
-    updateUsageAccumulator(routeAccumulator, row, model);
+    updateUsageAccumulator(routeAccumulator, row, model, overrides);
     routeMap.set(row.route_prefix, routeAccumulator);
 
     const modelAccumulator = modelMap.get(model) ?? createUsageAccumulator();
-    updateUsageAccumulator(modelAccumulator, row, model);
+    updateUsageAccumulator(modelAccumulator, row, model, overrides);
     modelMap.set(model, modelAccumulator);
 
     const clientAccumulator = clientMap.get(clientBucketKey) ?? createUsageAccumulator();
-    updateUsageAccumulator(clientAccumulator, row, model);
+    updateUsageAccumulator(clientAccumulator, row, model, overrides);
     clientMap.set(clientBucketKey, clientAccumulator);
 
     const bucketStart = floorToUsageBucket(row.created_at, bucketSizeMs);
@@ -776,13 +793,13 @@ async function buildUsageStats(filters?: ConsoleQueryFilters): Promise<ConsoleUs
       point.errors += 1;
     }
     if (model) {
-      const cost = calculateCost({
+      const cost = calculateCostWithPricing({
         input_tokens: row.input_tokens,
         output_tokens: row.output_tokens,
         cache_creation_input_tokens: row.cache_creation_input_tokens,
         cache_read_input_tokens: row.cache_read_input_tokens,
         cached_input_tokens: row.cached_input_tokens,
-      }, model, row.upstream_type);
+      }, getEffectivePricing(row.route_prefix, model, overrides), row.upstream_type);
       point.total_cost += cost.total_cost;
     }
     timeSeriesMap.set(bucketStart, point);
@@ -1160,10 +1177,12 @@ function withCalculatedUsage(
   requestModel: string,
   responseUsage: ResponseUsageForConsole,
   upstreamType: UpstreamTypeForConsole,
+  routePrefix: string,
+  overrides?: Map<string, ModelMetadataOverride>,
 ): ResponseUsageForConsole {
   const model = responseUsage.model || requestModel;
-  const pricing = getModelPricing(model);
-  const cost = calculateCost(responseUsage, model, upstreamType);
+  const pricing = getEffectivePricing(routePrefix, model, overrides);
+  const cost = calculateCostWithPricing(responseUsage, pricing, upstreamType);
 
   return {
     ...responseUsage,
@@ -1212,9 +1231,12 @@ function stripMessageRoles(summary: PayloadSummaryForConsole | null): PayloadSum
   return rest;
 }
 
-function mapListRow(row: ConsoleRequestListRow): ConsoleRequestListItem {
+function mapListRow(
+  row: ConsoleRequestListRow,
+  overrides?: Map<string, ModelMetadataOverride>,
+): ConsoleRequestListItem {
   const upstreamType = row.upstream_type === 'openai' ? 'openai' : 'anthropic';
-  const responseUsage = withCalculatedUsage(row.request_model, toUsage(row), upstreamType);
+  const responseUsage = withCalculatedUsage(row.request_model, toUsage(row), upstreamType, row.route_prefix, overrides);
   const sourceRequestType = ((row as any).source_request_type ?? 'unknown') as DetectedRequestKind;
 
   return {
@@ -1251,7 +1273,8 @@ function mapListRow(row: ConsoleRequestListRow): ConsoleRequestListItem {
 async function mapRow(row: ConsoleRequestRow): Promise<StoredConsoleRequest> {
   const requestId = row.request_id;
   const upstreamType = row.upstream_type === 'openai' ? 'openai' : 'anthropic';
-  const responseUsage = withCalculatedUsage(row.request_model, toUsage(row), upstreamType);
+  const overrides = await listModelMetadataOverrides();
+  const responseUsage = withCalculatedUsage(row.request_model, toUsage(row), upstreamType, row.route_prefix, overrides);
 
   return {
     request_id: requestId,
@@ -1538,8 +1561,10 @@ export async function listConsoleRequests(
 
   const total = Number(countResult[0]?.count) || 0;
 
+  const overrides = await listModelMetadataOverrides();
+
   return {
-    requests: rows.map((row) => mapListRow(row)),
+    requests: rows.map((row) => mapListRow(row, overrides)),
     total,
   };
 }

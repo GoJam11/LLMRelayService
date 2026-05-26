@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { Copy, Eye, Filter, KeyRound, Pencil, Plus, Trash2, X } from "lucide-react"
+import { BarChart3, Copy, Filter, KeyRound, Pencil, Plus, Trash2, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/empty"
 import { Field, FieldContent, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Combobox } from "@/components/ui/combobox"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -31,8 +32,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { createKey, deleteKey, fetchKeys, getKey, renameKey, setKeyAllowedModels } from "@/features/dashboard/api"
-import type { ManagedApiKey, ManagedApiKeyDetail } from "@/features/dashboard/types"
+import { createKey, deleteKey, fetchKeys, fetchModels, getKey, renameKey, setKeyAllowedModels } from "@/features/dashboard/api"
+import type { GatewayModel, ManagedApiKey, ManagedApiKeyDetail } from "@/features/dashboard/types"
 
 function formatDateTime(timestamp: number | null) {
   if (!timestamp) return "--"
@@ -48,7 +49,13 @@ async function copyText(value: string) {
   }
 }
 
-export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
+export function KeysPage({
+  onUnauthorized,
+  onViewUsage,
+}: {
+  onUnauthorized: () => void
+  onViewUsage: (client: string) => void
+}) {
   const { t } = useTranslation()
   const [keys, setKeys] = useState<ManagedApiKey[] | null>(null)
   const [error, setError] = useState("")
@@ -59,7 +66,6 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [creating, setCreating] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [revealingId, setRevealingId] = useState<string | null>(null)
   const [savingModelsId, setSavingModelsId] = useState<string | null>(null)
   const [newKeyName, setNewKeyName] = useState("")
   const [renameDraft, setRenameDraft] = useState("")
@@ -68,6 +74,9 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [modelsTarget, setModelsTarget] = useState<ManagedApiKey | null>(null)
   const [modelsDraft, setModelsDraft] = useState<string[]>([])
   const [modelsInput, setModelsInput] = useState("")
+  const [configuredModels, setConfiguredModels] = useState<GatewayModel[]>([])
+  const [modelsChannelFilter, setModelsChannelFilter] = useState("")
+  const [modelsModelSelect, setModelsModelSelect] = useState("")
 
   const showFeedback = (message: string) => {
     setFeedback(message)
@@ -94,11 +103,45 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
     }
   }
 
+  const loadConfiguredModels = async () => {
+    try {
+      const data = await fetchModels()
+      setConfiguredModels([...data.anthropic, ...data.openai])
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (handleUnauthorized(message)) return
+      setError(message)
+    }
+  }
+
   useEffect(() => {
     void loadKeys()
   }, [])
 
+  useEffect(() => {
+    if (modelsOpen) {
+      void loadConfiguredModels()
+    }
+  }, [modelsOpen])
+
   const hasKeys = useMemo(() => (keys?.length ?? 0) > 0, [keys])
+  const modelChannelOptions = useMemo(() => {
+    return Array.from(new Set(configuredModels.map((model) => model.channelName)))
+      .sort((left, right) => left.localeCompare(right))
+      .map((channelName) => ({ value: channelName, label: channelName }))
+  }, [configuredModels])
+  const configuredModelOptions = useMemo(() => {
+    const models = modelsChannelFilter
+      ? configuredModels.filter((model) => model.channelName === modelsChannelFilter)
+      : configuredModels
+    return models
+      .map((model) => ({
+        value: JSON.stringify([model.channelName, model.id]),
+        label: `${model.channelName} / ${model.id}`,
+        modelId: model.id,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label))
+  }, [configuredModels, modelsChannelFilter])
 
   const handleCreate = async () => {
     const name = newKeyName.trim()
@@ -121,21 +164,6 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
       setError(message)
     } finally {
       setCreating(false)
-    }
-  }
-
-  const handleReveal = async (key: ManagedApiKey) => {
-    try {
-      setRevealingId(key.id)
-      const detail = await getKey(key.id)
-      setVisibleKey(detail)
-      setError("")
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      if (handleUnauthorized(message)) return
-      setError(message)
-    } finally {
-      setRevealingId(null)
     }
   }
 
@@ -190,17 +218,31 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
     setModelsTarget(key)
     setModelsDraft([...(key.allowed_models ?? [])])
     setModelsInput("")
+    setModelsChannelFilter("")
+    setModelsModelSelect("")
     setModelsOpen(true)
+  }
+
+  const addModelRestriction = (value: string) => {
+    const model = value.trim()
+    if (!model || modelsDraft.includes(model)) return
+    setModelsDraft((prev) => [...prev, model])
   }
 
   const handleModelsInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault()
-      const value = modelsInput.trim()
-      if (value && !modelsDraft.includes(value)) {
-        setModelsDraft((prev) => [...prev, value])
-      }
+      addModelRestriction(modelsInput)
       setModelsInput("")
+    }
+  }
+
+  const handleSelectConfiguredModel = (value: string) => {
+    setModelsModelSelect(value)
+    const option = configuredModelOptions.find((item) => item.value === value)
+    if (option) {
+      addModelRestriction(option.modelId)
+      setModelsModelSelect("")
     }
   }
 
@@ -307,15 +349,15 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
                   <TableCell>{formatDateTime(key.last_used_at)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button type="button" size="xs" variant="ghost" disabled={revealingId === key.id} onClick={() => void handleReveal(key)}>
-                        <Eye data-icon="inline-start" />{revealingId === key.id ? t("keys.viewing") : t("keys.view")}
-                      </Button>
                       <Button type="button" size="xs" variant="ghost" onClick={async () => {
                         const detail = await getKey(key.id)
                         const copied = await copyText(detail.key)
                         showFeedback(copied ? t("keys.keyCopied") : t("keys.copyFailed"))
                       }}>
                         <Copy data-icon="inline-start" />{t("common.copy")}
+                      </Button>
+                      <Button type="button" size="xs" variant="ghost" onClick={() => onViewUsage(key.name)}>
+                        <BarChart3 data-icon="inline-start" />{t("keys.viewUsage")}
                       </Button>
                       <Button type="button" size="xs" variant="ghost" onClick={() => {
                         setRenameTarget(key)
@@ -389,11 +431,41 @@ export function KeysPage({ onUnauthorized }: { onUnauthorized: () => void }) {
       </Dialog>
 
       <Dialog open={modelsOpen} onOpenChange={(open) => { if (!open) { setModelsOpen(false); setModelsTarget(null) } }}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{t("keys.manageModelsDialogTitle")}</DialogTitle>
             <DialogDescription>{t("keys.manageModelsDialogDesc", { name: modelsTarget?.name ?? "" })}</DialogDescription>
           </DialogHeader>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field>
+              <FieldLabel>{t("keys.allowedModelsChannelLabel")}</FieldLabel>
+              <FieldContent>
+                <Combobox
+                  options={modelChannelOptions}
+                  value={modelsChannelFilter}
+                  onChange={(value) => {
+                    setModelsChannelFilter(value)
+                    setModelsModelSelect("")
+                  }}
+                  placeholder={t("keys.allowedModelsAllChannels")}
+                  searchPlaceholder={t("common.searchRoute")}
+                />
+              </FieldContent>
+            </Field>
+            <Field>
+              <FieldLabel>{t("keys.allowedModelsConfiguredLabel")}</FieldLabel>
+              <FieldContent>
+                <Combobox
+                  options={configuredModelOptions}
+                  value={modelsModelSelect}
+                  onChange={handleSelectConfiguredModel}
+                  placeholder={t("keys.allowedModelsSelectPlaceholder")}
+                  searchPlaceholder={t("common.searchModel")}
+                  emptyText={t("keys.allowedModelsNoConfigured")}
+                />
+              </FieldContent>
+            </Field>
+          </div>
           <Field>
             <FieldLabel htmlFor="models-input">{t("keys.allowedModelsInputPlaceholder")}</FieldLabel>
             <FieldContent>

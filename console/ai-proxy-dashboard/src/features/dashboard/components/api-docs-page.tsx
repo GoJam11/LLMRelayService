@@ -75,6 +75,19 @@ const ALIAS_ENABLED_BODY: BodyExample = {
   }
 }
 
+const MODEL_METADATA_BODY: BodyExample = {
+  description: "设置渠道模型的手动上下文和价格覆盖",
+  json: {
+    context: 128000,
+    pricing: {
+      input: 1.25,
+      output: 2.5,
+      cache_read: 0.125,
+      cache_write: 1.5
+    }
+  }
+}
+
 const ENDPOINTS: Endpoint[] = [
   { method: "GET", path: "/api/v1/health", description: "健康检查", auth: false },
   { method: "GET", path: "/api/v1/providers", description: "获取所有渠道", auth: true },
@@ -92,6 +105,7 @@ const ENDPOINTS: Endpoint[] = [
   { method: "PATCH", path: "/api/v1/keys/:id", description: "重命名 API Key", auth: true, body: KEY_NAME_BODY },
   { method: "DELETE", path: "/api/v1/keys/:id", description: "删除 API Key", auth: true },
   { method: "PATCH", path: "/api/v1/keys/:id/allowed-models", description: "设置 API Key 允许模型", auth: true, body: KEY_MODELS_BODY },
+  { method: "PATCH", path: "/__console/api/models/:channelName/:modelId/metadata", description: "设置模型手动价格和上下文", auth: true, body: MODEL_METADATA_BODY },
   { method: "GET", path: "/api/v1/aliases", description: "获取所有模型别名", auth: true },
   { method: "POST", path: "/api/v1/aliases", description: "创建模型别名", auth: true, body: ALIAS_BODY },
   { method: "PATCH", path: "/api/v1/aliases/:id", description: "更新模型别名", auth: true, body: ALIAS_BODY },

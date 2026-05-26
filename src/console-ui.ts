@@ -3,12 +3,13 @@ import type { Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { existsSync, statSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
-import { createProvider, deleteProvider, ensureProviderConfigsLoaded, getModels, getProviderConfig, getProviderInfo, getProviders, refreshRoutingConfigCache, resolveRoute, toggleProvider, updateProvider } from './config';
+import { createProvider, deleteProvider, ensureProviderConfigsLoaded, getChannelModels, getProviderConfig, getProviderInfo, getProviders, refreshRoutingConfigCache, resolveRoute, toggleProvider, updateProvider } from './config';
 import { getConsoleRequest, listConsoleRequests, getProviderHealthStatuses, getConsoleUsageStats, getConsoleFilterOptions, type RequestSortKey, type SortDirection } from './console-store';
 import { createManagedApiKey, deleteManagedApiKey, getManagedApiKey, listManagedApiKeys, renameManagedApiKey, setApiKeyAllowedModels } from './api-keys';
 import { createModelAlias, deleteModelAlias, listModelAliases, toggleModelAlias, updateModelAlias } from './console-model-alias-store';
 import { ensureModelCatalogLoaded, lookupModelContext } from './model-catalog';
 import { ensurePricingLoaded, getModelPricing } from './pricing';
+import { getModelOverrideKey, listModelMetadataOverrides, upsertModelMetadataOverride } from './model-metadata-overrides';
 import { getGatewayTimeoutSettings, updateGatewayTimeoutSettings } from './gateway-timeouts';
 
 const CONSOLE_COOKIE_NAME = 'CONSOLE_COOKIE_NAME';
@@ -498,13 +499,25 @@ export function registerConsoleRoutes(app: Hono<any>): void {
     await ensureProviderConfigsLoaded();
     await Promise.all([ensureModelCatalogLoaded(), ensurePricingLoaded()]);
 
-    const rawModels = getModels();
+    const rawModels = getChannelModels();
+    const overrides = await listModelMetadataOverrides();
     const enrich = (m: (typeof rawModels)[number]) => {
-      const pricing = getModelPricing(m.id);
+      const override = overrides.get(getModelOverrideKey(m.channelName, m.id));
+      const pricing = override?.pricing ?? getModelPricing(m.id);
+      const context = override?.context ?? m.context ?? lookupModelContext(m.id);
       return {
         ...m,
-        context: m.context ?? lookupModelContext(m.id),
+        context,
         ...(pricing ? { pricing } : {}),
+        ...(override
+          ? {
+              override: {
+                ...(override.context != null ? { context: override.context } : {}),
+                ...(override.pricing ? { pricing: override.pricing } : {}),
+                updatedAt: override.updatedAt,
+              },
+            }
+          : {}),
       };
     };
 
@@ -512,6 +525,48 @@ export function registerConsoleRoutes(app: Hono<any>): void {
       openai: rawModels.filter((m) => m.type === 'openai').map(enrich),
       anthropic: rawModels.filter((m) => m.type === 'anthropic').map(enrich),
     });
+  });
+
+  app.patch('/__console/api/models/:channelName/:modelId/metadata', async (c) => {
+    if (!isPasswordConfigured()) {
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
+    }
+    if (!isAuthenticated(c)) {
+      return c.json({ error: '未授权' }, 401);
+    }
+
+    await ensureProviderConfigsLoaded();
+    const channelName = c.req.param('channelName');
+    const modelId = c.req.param('modelId');
+    const model = getChannelModels().find((item) => item.channelName === channelName && item.id === modelId);
+    if (!model) {
+      return c.json({ error: '模型不存在' }, 404);
+    }
+
+    const payload = await c.req.json().catch(() => ({}));
+    try {
+      const override = await upsertModelMetadataOverride(channelName, modelId, payload as any);
+      await Promise.all([ensureModelCatalogLoaded(), ensurePricingLoaded()]);
+      const pricing = override?.pricing ?? getModelPricing(model.id);
+      const context = override?.context ?? model.context ?? lookupModelContext(model.id);
+
+      return c.json({
+        ...model,
+        context,
+        ...(pricing ? { pricing } : {}),
+        ...(override
+          ? {
+              override: {
+                ...(override.context != null ? { context: override.context } : {}),
+                ...(override.pricing ? { pricing: override.pricing } : {}),
+                updatedAt: override.updatedAt,
+              },
+            }
+          : {}),
+      });
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
   });
 
   app.post('/__console/api/providers', async (c) => {

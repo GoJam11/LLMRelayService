@@ -22,6 +22,13 @@
       "when": 1779645122739,
       "tag": "0002_natural_sphinx",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779728913980,
+      "tag": "0003_boring_firestar",
+      "breakpoints": true
     }
   ]
 }

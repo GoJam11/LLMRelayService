@@ -51,6 +51,47 @@ export function getModelPricing(modelId: string): ModelPricing | null {
   return pricingCache.get(modelId) || null;
 }
 
+export function calculateCostWithPricing(
+  usage: PricingUsage,
+  pricing: ModelPricing | null | undefined,
+  upstreamType?: PricingUsageUpstreamType,
+): CostBreakdown {
+  const { upstream_type, uncached_input_tokens, cache_read_tokens, cache_write_tokens } =
+    getCostTokenBuckets(usage, upstreamType);
+  const outputTokens = usage.output_tokens ?? 0;
+
+  if (!pricing) {
+    return {
+      upstream_type,
+      uncached_input_tokens,
+      cache_read_tokens,
+      cache_write_tokens,
+      input_cost: 0,
+      output_cost: 0,
+      cache_read_cost: 0,
+      cache_write_cost: 0,
+      total_cost: 0,
+    };
+  }
+
+  const inputCost = (uncached_input_tokens / 1_000_000) * pricing.input;
+  const outputCost = (outputTokens / 1_000_000) * pricing.output;
+  const cacheReadCost = (cache_read_tokens / 1_000_000) * (pricing.cache_read ?? 0);
+  const cacheWriteCost = (cache_write_tokens / 1_000_000) * (pricing.cache_write ?? 0);
+
+  return {
+    upstream_type,
+    uncached_input_tokens,
+    cache_read_tokens,
+    cache_write_tokens,
+    input_cost: inputCost,
+    output_cost: outputCost,
+    cache_read_cost: cacheReadCost,
+    cache_write_cost: cacheWriteCost,
+    total_cost: inputCost + outputCost + cacheReadCost + cacheWriteCost,
+  };
+}
+
 export async function ensurePricingLoaded(): Promise<void> {
   await fetchModelsDevPricing();
 }
@@ -119,41 +160,7 @@ export function calculateCost(
   modelId: string,
   upstreamType?: PricingUsageUpstreamType,
 ): CostBreakdown {
-  const { upstream_type, uncached_input_tokens, cache_read_tokens, cache_write_tokens } =
-    getCostTokenBuckets(usage, upstreamType);
-  const outputTokens = usage.output_tokens ?? 0;
-  const pricing = getModelPricing(modelId);
-
-  if (!pricing) {
-    return {
-      upstream_type,
-      uncached_input_tokens,
-      cache_read_tokens,
-      cache_write_tokens,
-      input_cost: 0,
-      output_cost: 0,
-      cache_read_cost: 0,
-      cache_write_cost: 0,
-      total_cost: 0,
-    };
-  }
-
-  const inputCost = (uncached_input_tokens / 1_000_000) * pricing.input;
-  const outputCost = (outputTokens / 1_000_000) * pricing.output;
-  const cacheReadCost = (cache_read_tokens / 1_000_000) * (pricing.cache_read ?? 0);
-  const cacheWriteCost = (cache_write_tokens / 1_000_000) * (pricing.cache_write ?? 0);
-
-  return {
-    upstream_type,
-    uncached_input_tokens,
-    cache_read_tokens,
-    cache_write_tokens,
-    input_cost: inputCost,
-    output_cost: outputCost,
-    cache_read_cost: cacheReadCost,
-    cache_write_cost: cacheWriteCost,
-    total_cost: inputCost + outputCost + cacheReadCost + cacheWriteCost,
-  };
+  return calculateCostWithPricing(usage, getModelPricing(modelId), upstreamType);
 }
 
 

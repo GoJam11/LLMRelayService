@@ -27,6 +27,17 @@ export type ConsoleModelPricing = {
   cache_write?: number
 }
 
+export type ModelMetadataOverride = {
+  context?: number
+  pricing?: ConsoleModelPricing
+  updatedAt: number
+}
+
+export type UpdateModelMetadataPayload = {
+  context?: number | null
+  pricing?: Partial<ConsoleModelPricing> | null
+}
+
 export type ConsoleCostBreakdown = {
   upstream_type: "anthropic" | "openai"
   uncached_input_tokens: number
@@ -288,6 +299,7 @@ export type GatewayModel = {
   type: "anthropic" | "openai"
   context?: number
   pricing?: ConsoleModelPricing
+  override?: ModelMetadataOverride
 }
 
 export type ConsoleModelsPayload = {

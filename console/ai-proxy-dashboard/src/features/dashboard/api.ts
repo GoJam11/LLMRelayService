@@ -9,6 +9,7 @@ import type {
   ConsoleRequestDetail,
   ConsoleSession,
   ConsoleUsageStatsPayload,
+  GatewayModel,
   ManagedApiKey,
   ManagedApiKeyDetail,
   ModelAlias,
@@ -16,6 +17,7 @@ import type {
   ModelAliasMutationPayload,
   ProviderInfo,
   ProviderMutationPayload,
+  UpdateModelMetadataPayload,
 } from "@/features/dashboard/types"
 
 export const DEFAULT_REQUEST_LIMIT = 50
@@ -242,6 +244,20 @@ export function fetchFilterOptions(): Promise<{ ok: boolean } & ConsoleFilterOpt
 
 export function fetchModels(): Promise<ConsoleModelsPayload> {
   return requestJson("/__console/api/models")
+}
+
+export function updateModelMetadata(
+  channelName: string,
+  modelId: string,
+  payload: UpdateModelMetadataPayload,
+): Promise<GatewayModel> {
+  return requestJson(`/__console/api/models/${encodeURIComponent(channelName)}/${encodeURIComponent(modelId)}/metadata`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  })
 }
 
 export function fetchUpstreamModels(channelName: string): Promise<{ models: Array<{ id: string }> }> {

@@ -1,4 +1,4 @@
-import { bigint, index, integer, pgTable, serial, text } from 'drizzle-orm/pg-core';
+import { bigint, index, integer, pgTable, serial, text, uniqueIndex } from 'drizzle-orm/pg-core';
 
 export const consoleRequests = pgTable('console_requests', {
   requestId: text('request_id').primaryKey(),
@@ -116,6 +116,19 @@ export const modelCatalogCache = pgTable('model_catalog_cache', {
   pricingJson: text('pricing_json'),
   fetchedAt: bigint('fetched_at', { mode: 'number' }).notNull(),
 });
+
+export const modelMetadataOverrides = pgTable('model_metadata_overrides', {
+  id: serial('id').primaryKey(),
+  channelName: text('channel_name').notNull(),
+  modelId: text('model_id').notNull(),
+  contextWindow: integer('context_window'),
+  pricingJson: text('pricing_json'),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
+}, (table) => ({
+  channelModelIdx: uniqueIndex('idx_model_metadata_overrides_channel_model').on(table.channelName, table.modelId),
+  updatedAtIdx: index('idx_model_metadata_overrides_updated_at').on(table.updatedAt),
+}));
 
 export const gatewaySettings = pgTable('gateway_settings', {
   key: text('key').primaryKey(),

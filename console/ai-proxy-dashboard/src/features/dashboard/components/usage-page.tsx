@@ -27,9 +27,11 @@ import {
 export function UsagePage({
   onUnauthorized,
   onNavigateToLogs,
+  initialClientFilter,
 }: {
   onUnauthorized: () => void
   onNavigateToLogs: () => void
+  initialClientFilter?: string
 }) {
   const {
     overview,
@@ -45,7 +47,7 @@ export function UsagePage({
     setClientFilter,
     rangeFilter,
     setRangeFilter,
-  } = useUsageStats(onUnauthorized)
+  } = useUsageStats(onUnauthorized, { initialClientFilter })
 
   const { t } = useTranslation()
 
