@@ -11,6 +11,7 @@ import { ensureModelCatalogLoaded, lookupModelContext } from './model-catalog';
 import { ensurePricingLoaded, getModelPricing } from './pricing';
 import { getModelOverrideKey, listModelMetadataOverrides, upsertModelMetadataOverride } from './model-metadata-overrides';
 import { getGatewayTimeoutSettings, updateGatewayTimeoutSettings } from './gateway-timeouts';
+import { getGatewayFailoverPolicy, updateGatewayFailoverPolicy } from './gateway-failover';
 
 const CONSOLE_COOKIE_NAME = 'CONSOLE_COOKIE_NAME';
 const CONSOLE_UI_DIST_DIR = resolve(import.meta.dir, '..', 'dist', 'frontend');
@@ -429,6 +430,35 @@ export function registerConsoleRoutes(app: Hono<any>): void {
     try {
       const settings = await updateGatewayTimeoutSettings(payload as any);
       return c.json({ ok: true, ...settings });
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  });
+
+  app.get('/__console/api/settings/failover', async (c) => {
+    if (!isPasswordConfigured()) {
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
+    }
+    if (!isAuthenticated(c)) {
+      return c.json({ error: '未授权' }, 401);
+    }
+
+    const policy = await getGatewayFailoverPolicy();
+    return c.json({ ok: true, ...policy });
+  });
+
+  app.patch('/__console/api/settings/failover', async (c) => {
+    if (!isPasswordConfigured()) {
+      return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
+    }
+    if (!isAuthenticated(c)) {
+      return c.json({ error: '未授权' }, 401);
+    }
+
+    const payload = await c.req.json().catch(() => ({}));
+    try {
+      const policy = await updateGatewayFailoverPolicy(payload as any);
+      return c.json({ ok: true, ...policy });
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }

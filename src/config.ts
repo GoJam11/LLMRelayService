@@ -284,7 +284,7 @@ function inferExpectedProviderType(pathname: string): UpstreamType | null {
   return null;
 }
 
-function findRouteByModel(model: string, expectedType?: UpstreamType): { channelName: string; entry: ConfigEntry } | null {
+function findRoutesByModel(model: string, expectedType?: UpstreamType): Array<{ channelName: string; entry: ConfigEntry }> {
   const sortedConfigs = Object.entries(getConfigs()).filter(([, entry]) => entry != null) as [string, ConfigEntry][];
   sortedConfigs.sort((a, b) => {
     const priorityA = a[1].priority ?? 0;
@@ -293,6 +293,7 @@ function findRouteByModel(model: string, expectedType?: UpstreamType): { channel
     return a[0].localeCompare(b[0]);
   });
 
+  const matches: Array<{ channelName: string; entry: ConfigEntry }> = [];
   for (const [channelName, entry] of sortedConfigs) {
     // 跳过禁用的渠道
     if (entry.enabled === false) {
@@ -304,11 +305,15 @@ function findRouteByModel(model: string, expectedType?: UpstreamType): { channel
     }
     const modelIds = entry.models?.map(getModelId) ?? [];
     if (modelIds.includes(model)) {
-      return { channelName, entry };
+      matches.push({ channelName, entry });
     }
   }
 
-  return null;
+  return matches;
+}
+
+function findRouteByModel(model: string, expectedType?: UpstreamType): { channelName: string; entry: ConfigEntry } | null {
+  return findRoutesByModel(model, expectedType)[0] ?? null;
 }
 
 function buildRouteResult(channelName: string, entry: ConfigEntry, path: string, search: string): RouteResult {
@@ -620,6 +625,14 @@ export function resetProviderConfigCache(): void {
   providerConfigsPromise = null;
 }
 
+export function loadProviderConfigsForTest(nextProviderConfigs: Record<string, ConfigEntry>): void {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('loadProviderConfigsForTest is only available while running tests');
+  }
+  setProviderConfigs(nextProviderConfigs);
+  providerConfigsLoaded = true;
+}
+
 export interface ModelInfo {
   id: string;
   channelName: string;
@@ -635,11 +648,71 @@ export function resolveRoute(pathname: string, search: string): RouteResult | nu
 }
 
 export function resolveRouteByModel(pathname: string, search: string, model: string, forcedType?: UpstreamType): RouteResult | null {
-  if (!isModelRoutedPath(pathname)) return null;
+  return resolveRoutesByModel(pathname, search, model, forcedType)[0] ?? null;
+}
+
+export function resolveRoutesForModelFallback(pathname: string, search: string, model: string, forcedType?: UpstreamType): RouteResult[] {
+  if (!isModelRoutedPath(pathname)) return [];
+
+  const expectedType = forcedType ?? inferExpectedProviderType(pathname);
+  if (!expectedType) return [];
+
+  return findRoutesByModel(model, expectedType).map((matched) => buildRouteResult(matched.channelName, matched.entry, pathname, search));
+}
+
+export function resolveRoutesForAnyModelFallback(pathname: string, search: string, forcedType?: UpstreamType): RouteResult[] {
+  if (!isModelRoutedPath(pathname)) return [];
+
+  const expectedType = forcedType ?? inferExpectedProviderType(pathname);
+  if (!expectedType) return [];
+
+  const sortedConfigs = Object.entries(getConfigs()).filter(([, entry]) => entry != null) as [string, ConfigEntry][];
+  sortedConfigs.sort((a, b) => {
+    const priorityA = a[1].priority ?? 0;
+    const priorityB = b[1].priority ?? 0;
+    if (priorityB !== priorityA) return priorityB - priorityA;
+    return a[0].localeCompare(b[0]);
+  });
+
+  const routes: RouteResult[] = [];
+  for (const [channelName, entry] of sortedConfigs) {
+    if (entry.enabled === false) continue;
+    if (entry.type !== expectedType) continue;
+    for (const model of entry.models ?? []) {
+      routes.push({
+        ...buildRouteResult(channelName, entry, pathname, search),
+        resolvedModel: getModelId(model),
+      });
+    }
+  }
+  return routes;
+}
+
+export function resolveRoutesForFallbackModels(pathname: string, search: string, fallbackModels: string[], forcedType?: UpstreamType): RouteResult[] {
+  if (!isModelRoutedPath(pathname)) return [];
+
+  const routes: RouteResult[] = [];
+  const seenRouteKeys = new Set<string>();
+  for (const fallbackModel of fallbackModels) {
+    for (const route of resolveRoutesByModel(pathname, search, fallbackModel, forcedType)) {
+      const routeKey = `${route.channelName}:${route.resolvedModel ?? fallbackModel}:${route.targetUrl}`;
+      if (seenRouteKeys.has(routeKey)) continue;
+      seenRouteKeys.add(routeKey);
+      routes.push(route.resolvedModel ? route : { ...route, resolvedModel: fallbackModel });
+    }
+  }
+  return routes;
+}
+
+export function resolveRoutesByModel(pathname: string, search: string, model: string, forcedType?: UpstreamType): RouteResult[] {
+  if (!isModelRoutedPath(pathname)) return [];
 
   // 根据端点推断期望的 provider 类型（显式指定时优先使用）
   const expectedType = forcedType ?? inferExpectedProviderType(pathname);
-  if (!expectedType) return null;
+  if (!expectedType) return [];
+
+  const routes: RouteResult[] = [];
+  const seenChannelNames = new Set<string>();
 
   // 先检查 model alias：如果 model 是一个别名，直接解析到目标 provider + model
   const aliasTarget = aliasConfigs[model];
@@ -649,15 +722,22 @@ export function resolveRouteByModel(pathname: string, search: string, model: str
     const entry = getConfigs()[resolvedChannelName];
     if (entry && entry.enabled !== false && (!expectedType || entry.type === expectedType)) {
       const result = buildRouteResult(resolvedChannelName, entry, pathname, search);
-      return { ...result, resolvedModel: aliasTarget.model };
+      routes.push({ ...result, resolvedModel: aliasTarget.model });
+      seenChannelNames.add(resolvedChannelName);
     }
-    // alias 存在但 provider 不可用时继续走普通查找（降级）
+
+    for (const matched of findRoutesByModel(aliasTarget.model, expectedType)) {
+      if (seenChannelNames.has(matched.channelName)) continue;
+      const result = buildRouteResult(matched.channelName, matched.entry, pathname, search);
+      routes.push({ ...result, resolvedModel: aliasTarget.model });
+      seenChannelNames.add(matched.channelName);
+    }
+
+    if (routes.length > 0) return routes;
+    // alias 存在但没有可用目标时继续走普通查找（降级）
   }
 
-  const matched = findRouteByModel(model, expectedType);
-  if (!matched) return null;
-
-  return buildRouteResult(matched.channelName, matched.entry, pathname, search);
+  return findRoutesByModel(model, expectedType).map((matched) => buildRouteResult(matched.channelName, matched.entry, pathname, search));
 }
 
 export function getModels(): ModelInfo[] {

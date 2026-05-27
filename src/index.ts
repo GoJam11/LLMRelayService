@@ -5,7 +5,7 @@
 
 import { Hono } from 'hono';
 import { proxy } from 'hono/proxy';
-import { DEFAULT_OPENAI_RESPONSES_MODE, ensureProviderConfigsLoaded, getModels, resolveRoute, resolveRouteByModel, type RouteResult } from './config';
+import { DEFAULT_OPENAI_RESPONSES_MODE, ensureProviderConfigsLoaded, getModels, resolveRoute, resolveRoutesByModel, resolveRoutesForAnyModelFallback, resolveRoutesForFallbackModels, type RouteResult } from './config';
 import { trackPendingConsoleRequestWrite } from './console-log-tasks';
 import { saveConsoleRequest, type ForwardHeadersSummary, type PayloadSummaryForConsole } from './console-store';
 import { registerConsoleRoutes } from './console-ui';
@@ -21,6 +21,7 @@ import { ensureModelCatalogLoaded, lookupModelContext } from './model-catalog';
 import { initializeTokenEstimator } from './token-estimator';
 import { applyCorsHeaders, createCorsPreflightResponse, withCorsHeaders } from './cors';
 import { getGatewayTimeoutSettings, selectUpstreamFirstByteTimeoutMs } from './gateway-timeouts';
+import { describeFailoverTrigger, getCustomModelFallbackModels, getGatewayFailoverPolicy, shouldTriggerFailover, type FailoverTrigger, type GatewayFailoverPolicy } from './gateway-failover';
 import {
   convertResponsesRequestToChatCompletions,
   createResponsesChatCompatErrorResponse,
@@ -212,6 +213,16 @@ function buildUpstreamSearch(url: URL): string {
   return search ? `?${search}` : '';
 }
 
+function isEventStreamRequestBody(rawPayload: string | null): boolean {
+  if (rawPayload == null) return false;
+  try {
+    const json = JSON.parse(rawPayload) as Record<string, unknown>;
+    return json.stream === true;
+  } catch {
+    return false;
+  }
+}
+
 function extractModelFromRequestBody(rawPayload: string | null): string | null {
   if (rawPayload == null) return null;
 
@@ -393,7 +404,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
   const explicitRoute = resolveRoute(lookupPathname, upstreamSearch);
   const modelRoutedInitialRoute = explicitRoute
     ? null
-    : resolveRouteByModel(lookupPathname, upstreamSearch, extractModelFromRequestBody(rawPayloadForLog) ?? '', typeForced?.type);
+    : resolveRoutesByModel(lookupPathname, upstreamSearch, extractModelFromRequestBody(rawPayloadForLog) ?? '', typeForced?.type)[0] ?? null;
   const initialRoute = explicitRoute ?? modelRoutedInitialRoute;
   requestChannelName = explicitRoute?.channelName ?? null;
   addPerfPhase(requestPerfPhases, 'route_lookup_ms', elapsedPerfMs(routeLookupStart));
@@ -465,229 +476,61 @@ async function handleProxyRequest(c: any): Promise<Response> {
     }
   }
 
-  const route: RouteResult = initialRoute;
-  resolvedChannelName = route.channelName;
-  const routeTargetPathname = (() => {
-    try {
-      return new URL(route.targetUrl).pathname;
-    } catch {
-      return '';
-    }
-  })();
-  const isOpenAiResponsesRequest = c.req.method === 'POST'
-    && route.type === 'openai'
-    && (isOpenAiResponsesEndpointPath(lookupPathname) || routeTargetPathname.endsWith('/responses'));
-  const responsesMode = route.type === 'openai'
-    ? (route.responsesMode ?? DEFAULT_OPENAI_RESPONSES_MODE)
-    : DEFAULT_OPENAI_RESPONSES_MODE;
-  const adaptResponsesToChatCompletions = isOpenAiResponsesRequest && responsesMode === 'chat_compat';
-  const responsesDisabled = isOpenAiResponsesRequest && responsesMode === 'disabled';
-  const upstreamTargetUrl = adaptResponsesToChatCompletions
-    ? rewriteResponsesTargetUrlToChatCompletions(route.targetUrl)
-    : route.targetUrl;
-
-  let body: BodyInit | null | undefined;
-  let requestModel = originalRequestModel;
-  let forwardedPayload: string | null = null;
-  let forwardedPayloadForStore: string | null = null;
-  let forwardedSummaryForLog: PayloadSummaryForLog | null = null;
+  const requestedModel = extractModelFromRequestBody(rawPayloadForLog) ?? '';
+  const routeCandidates = explicitRoute
+    ? [initialRoute]
+    : resolveRoutesByModel(lookupPathname, upstreamSearch, requestedModel, typeForced?.type);
+  const timeoutSettings = await getGatewayTimeoutSettings();
+  const failoverPolicy = await getGatewayFailoverPolicy();
+  const customFallbackModels = explicitRoute ? [] : getCustomModelFallbackModels(failoverPolicy, requestedModel);
+  const retryableStreamRequest = isEventStreamRequestBody(rawPayloadForLog);
+  const attemptedRouteKeys = new Set<string>();
+  const failedRouteChain: string[] = [];
+  let failoverReason: string | null = null;
+  let lastFailureTrigger: FailoverTrigger | null = null;
   let sourceRequestType = 'unknown';
 
-  const buildHeadersStart = nowPerfMs();
-  const forwardHeaders = buildForwardHeadersForProvider(
-    c.req.raw.headers,
-    route.type,
-    route.auth,
-  );
-  addPerfPhase(requestPerfPhases, 'build_forward_headers_ms', elapsedPerfMs(buildHeadersStart));
+  const routeKey = (route: RouteResult): string => `${route.channelName}:${route.resolvedModel ?? requestedModel}:${route.targetUrl}`;
+  const describeRoute = (route: RouteResult): string => route.resolvedModel
+    ? `${route.channelName}:${route.resolvedModel}`
+    : route.channelName;
+  const isFallbackRoute = (route: RouteResult): boolean => routeKey(route) !== routeKey(initialRoute);
 
-  const summarizeHeadersStart = nowPerfMs();
-  const headersSummary = summarizeHeadersForLog(forwardHeaders);
-  addPerfPhase(requestPerfPhases, 'summarize_headers_ms', elapsedPerfMs(summarizeHeadersStart));
-
-  const returnLoggedLocalResponse = (
-    localResponse: Response,
-    logTag: string,
-    logDetails: Record<string, unknown>,
-  ): Response => {
-    const detectRequestTypeStart = nowPerfMs();
-    sourceRequestType = detectRequestKindForProvider(
-      originalPayloadForStore,
-      route.type,
-      c.req.raw.headers,
-    );
-    addPerfPhase(requestPerfPhases, 'detect_request_type_ms', elapsedPerfMs(detectRequestTypeStart));
-
-    const queueConsoleWriteStart = nowPerfMs();
-    const originalPayloadForRecord = originalPayloadForStore == null
-      ? null
-      : truncatePayloadForLog(originalPayloadForStore);
-    trackPendingConsoleRequestWrite(requestId, () => saveConsoleRequest({
-      request_id: requestId,
-      created_at: requestCreatedAt,
-      route_prefix: route.channelName,
-      upstream_type: route.type,
-      method: c.req.method,
-      path: url.pathname + url.search,
-      target_url: upstreamTargetUrl,
-      request_model: requestModel,
-      api_key_id: matchedApiKey?.id ?? null,
-      api_key_name: matchedApiKey?.name ?? null,
-      original_payload: originalPayloadForRecord?.payload ?? null,
-      original_payload_truncated: originalPayloadForRecord?.truncated ?? false,
-      original_summary: originalSummaryForLog,
-      forwarded_payload: null,
-      forwarded_payload_truncated: false,
-      forwarded_summary: null,
-      original_headers: captureOriginalHeaders(c.req.raw.headers),
-      forward_headers: headersSummary,
-      failover_from: null,
-      failover_chain: [],
-      original_route_prefix: null,
-      original_request_model: null,
-      failover_reason: null,
-      source_request_type: sourceRequestType as any,
-    }));
-    addPerfPhase(requestPerfPhases, 'queue_console_request_ms', elapsedPerfMs(queueConsoleWriteStart));
-
-    console.warn(logTag, {
-      request_id: requestId,
-      path: url.pathname + url.search,
-      target_url: upstreamTargetUrl,
-      ...logDetails,
+  const buildFallbackRoutes = (): RouteResult[] => {
+    if (explicitRoute || failoverPolicy.maxFallbackAttempts <= 0) {
+      return [];
+    }
+    const customRoutes = customFallbackModels.length > 0
+      ? resolveRoutesForFallbackModels(lookupPathname, upstreamSearch, customFallbackModels, typeForced?.type)
+      : [];
+    const sitePolicyRoutes = failoverPolicy.modelFallbackMode === 'any_model'
+      ? resolveRoutesForAnyModelFallback(lookupPathname, upstreamSearch, typeForced?.type)
+      : failoverPolicy.modelFallbackMode === 'same_model'
+        ? routeCandidates
+        : [];
+    const routes = [...customRoutes, ...sitePolicyRoutes];
+    const queuedRouteKeys = new Set(activeRoutes.map((route) => routeKey(route)));
+    return routes.filter((candidate) => {
+      const candidateKey = routeKey(candidate);
+      return !attemptedRouteKeys.has(candidateKey) && !queuedRouteKeys.has(candidateKey);
     });
-    console.log('[REQ_HEADERS_FWD]', {
-      request_id: requestId,
-      path: url.pathname + url.search,
-      target_url: upstreamTargetUrl,
-      headers: headersSummary,
-    });
-    console.log('[RES]', { request_id: requestId, status: localResponse.status, status_text: localResponse.statusText || 'Error' });
-
-    const finalizeStart = nowPerfMs();
-    const response = finalizeProxyResponse({
-      response: localResponse,
-      requestId,
-      path: url.pathname + url.search,
-      shouldLog: true,
-      createdAt: requestCreatedAt,
-      createdAtPerf: requestCreatedPerfAt,
-      upstreamType: route.type,
-      truncatePayloadForLog,
-      requestBody: rawPayloadForLog ?? undefined,
-    });
-    addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
-    emitRequestPerf(response.status);
-    return response;
   };
 
-  if (responsesDisabled) {
-    const disabledResponse = createResponsesChatCompatErrorResponse({
-      status: 400,
-      message: 'Responses endpoint is disabled for this provider.',
-      code: 'responses_disabled',
-      param: null,
-    });
-    applyCorsHeaders(disabledResponse.headers);
-    return returnLoggedLocalResponse(disabledResponse, '[REQ_RESPONSES_DISABLED]', {
-      responses_mode: responsesMode,
-    });
-  }
-
-  if (c.req.method === 'POST' && rawPayloadForLog != null) {
-    const prepareStart = nowPerfMs();
-    const prepared = prepareRequestForProvider({
-      upstreamType: route.type,
-      method: c.req.method,
-      rawBodyText: rawPayloadForLog,
-      rawHeaders: c.req.raw.headers,
-      routePrefix: route.channelName,
-      routeSystem: route.systemPrompt,
-    });
-    addPerfPhase(requestPerfPhases, 'prepare_request_ms', elapsedPerfMs(prepareStart));
-
-    if (prepared.body != null) {
-      body = prepared.body;
-      requestModel = prepared.requestModel;
-      if (adaptResponsesToChatCompletions) {
-        const converted = convertResponsesRequestToChatCompletions(body as string, {
-          targetUrl: upstreamTargetUrl,
-        });
-        if (!converted.ok) {
-          const compatibilityErrorResponse = createResponsesChatCompatErrorResponse(converted.error);
-          applyCorsHeaders(compatibilityErrorResponse.headers);
-          return returnLoggedLocalResponse(compatibilityErrorResponse, '[REQ_COMPAT_ERR]', {
-            message: converted.error.message,
-            param: converted.error.param ?? null,
-            code: converted.error.code ?? null,
-          });
-        }
-        body = converted.body;
-        requestModel = converted.requestModel;
-      }
-      // 如果请求 model 是别名，改写请求体中的 model 字段为真实模型名
-      if (route.resolvedModel && requestModel !== route.resolvedModel) {
-        try {
-          const parsed = JSON.parse(body as string) as Record<string, unknown>;
-          parsed.model = route.resolvedModel;
-          body = JSON.stringify(parsed);
-        } catch {
-          // body 不是 JSON（不应发生），保持原样
-        }
-      }
-    } else if (originalSummaryForLog?.model) {
-      requestModel = originalSummaryForLog.model;
-    }
-  }
-
-  if (c.req.method === 'POST') {
-    forwardedPayload = typeof body === 'string' ? body : rawPayloadForLog;
-    if (forwardedPayload != null) {
-      forwardedPayloadForStore = forwardedPayload;
-      lastForwardedPayloadChars = forwardedPayload.length;
-      const payloadForLog = truncatePayloadForLog(forwardedPayload);
-      const logForwardedPayloadStart = nowPerfMs();
-      console.log('[REQ_PAYLOAD_FWD]', {
-        request_id: requestId,
-        method: c.req.method,
-        path: url.pathname + url.search,
-        target_url: upstreamTargetUrl,
-        original_bytes: payloadForLog.originalBytes,
-        logged_bytes: payloadForLog.loggedBytes,
-        truncated: payloadForLog.truncated,
-        truncation_reason: payloadForLog.truncationReason,
-      });
-      addPerfPhase(requestPerfPhases, 'log_req_payload_fwd_ms', elapsedPerfMs(logForwardedPayloadStart));
-
-      const summarizeForwardedStart = nowPerfMs();
-      const payloadSummary = summarizePayloadForProvider(forwardedPayload, route.type);
-      forwardedSummaryForLog = payloadSummary;
-      addPerfPhase(requestPerfPhases, 'summarize_forwarded_ms', elapsedPerfMs(summarizeForwardedStart));
-      if (payloadSummary) {
-        const logForwardedSummaryStart = nowPerfMs();
-        console.log('[REQ_PAYLOAD_FWD_SUMMARY]', {
-          request_id: requestId,
-          path: url.pathname + url.search,
-          target_url: upstreamTargetUrl,
-          ...payloadSummary,
-        });
-        addPerfPhase(requestPerfPhases, 'log_req_payload_fwd_summary_ms', elapsedPerfMs(logForwardedSummaryStart));
-      }
-    }
-
-    const logHeadersStart = nowPerfMs();
-    console.log('[REQ_HEADERS_FWD]', {
-      request_id: requestId,
-      path: url.pathname + url.search,
-      target_url: upstreamTargetUrl,
-      headers: headersSummary,
-    });
-    addPerfPhase(requestPerfPhases, 'log_req_headers_ms', elapsedPerfMs(logHeadersStart));
-
+  const saveRequestLogForAttempt = (attempt: {
+    route: RouteResult;
+    upstreamTargetUrl: string;
+    requestModel: string;
+    forwardedPayloadForStore: string | null;
+    forwardedSummaryForLog: PayloadSummaryForLog | null;
+    headersSummary: ForwardHeadersSummary;
+    failoverFrom: string | null;
+    failoverChain: string[];
+    failoverReason: string | null;
+  }): void => {
     const detectRequestTypeStart = nowPerfMs();
     sourceRequestType = detectRequestKindForProvider(
       originalPayloadForStore,
-      route.type,
+      attempt.route.type,
       c.req.raw.headers,
     );
     addPerfPhase(requestPerfPhases, 'detect_request_type_ms', elapsedPerfMs(detectRequestTypeStart));
@@ -696,18 +539,18 @@ async function handleProxyRequest(c: any): Promise<Response> {
     const originalPayloadForRecord = originalPayloadForStore == null
       ? null
       : truncatePayloadForLog(originalPayloadForStore);
-    const forwardedPayloadForRecord = forwardedPayloadForStore == null
+    const forwardedPayloadForRecord = attempt.forwardedPayloadForStore == null
       ? null
-      : truncatePayloadForLog(forwardedPayloadForStore);
+      : truncatePayloadForLog(attempt.forwardedPayloadForStore);
     trackPendingConsoleRequestWrite(requestId, () => saveConsoleRequest({
       request_id: requestId,
       created_at: requestCreatedAt,
-      route_prefix: route.channelName,
-      upstream_type: route.type,
+      route_prefix: attempt.route.channelName,
+      upstream_type: attempt.route.type,
       method: c.req.method,
       path: url.pathname + url.search,
-      target_url: upstreamTargetUrl,
-      request_model: requestModel,
+      target_url: attempt.upstreamTargetUrl,
+      request_model: attempt.requestModel,
       api_key_id: matchedApiKey?.id ?? null,
       api_key_name: matchedApiKey?.name ?? null,
       original_payload: originalPayloadForRecord?.payload ?? null,
@@ -715,49 +558,386 @@ async function handleProxyRequest(c: any): Promise<Response> {
       original_summary: originalSummaryForLog,
       forwarded_payload: forwardedPayloadForRecord?.payload ?? null,
       forwarded_payload_truncated: forwardedPayloadForRecord?.truncated ?? false,
-      forwarded_summary: forwardedSummaryForLog,
+      forwarded_summary: attempt.forwardedSummaryForLog,
       original_headers: captureOriginalHeaders(c.req.raw.headers),
-      forward_headers: headersSummary,
-      failover_from: null,
-      failover_chain: [],
-      original_route_prefix: null,
-      original_request_model: null,
-      failover_reason: null,
+      forward_headers: attempt.headersSummary,
+      failover_from: attempt.failoverFrom,
+      failover_chain: attempt.failoverChain,
+      original_route_prefix: attempt.failoverFrom,
+      original_request_model: attempt.failoverFrom ? originalRequestModel : null,
+      failover_reason: attempt.failoverReason,
       source_request_type: sourceRequestType as any,
     }));
     addPerfPhase(requestPerfPhases, 'queue_console_request_ms', elapsedPerfMs(queueConsoleWriteStart));
-  }
+  };
 
-  console.log('[REQ]', { request_id: requestId, method: c.req.method, path: url.pathname + url.search, target_url: upstreamTargetUrl });
+  const buildAttempt = (route: RouteResult): {
+    route: RouteResult;
+    body: BodyInit | null | undefined;
+    requestModel: string;
+    forwardedPayload: string | null;
+    forwardedPayloadForStore: string | null;
+    forwardedSummaryForLog: PayloadSummaryForLog | null;
+    forwardHeaders: Headers;
+    headersSummary: ForwardHeadersSummary;
+    upstreamTargetUrl: string;
+    adaptResponsesToChatCompletions: boolean;
+  } | { localResponse: Response; logTag: string; logDetails: Record<string, unknown>; route: RouteResult; upstreamTargetUrl: string; headersSummary: ForwardHeadersSummary; requestModel: string } => {
+    const routeTargetPathname = (() => {
+      try {
+        return new URL(route.targetUrl).pathname;
+      } catch {
+        return '';
+      }
+    })();
+    const isOpenAiResponsesRequest = c.req.method === 'POST'
+      && route.type === 'openai'
+      && (isOpenAiResponsesEndpointPath(lookupPathname) || routeTargetPathname.endsWith('/responses'));
+    const responsesMode = route.type === 'openai'
+      ? (route.responsesMode ?? DEFAULT_OPENAI_RESPONSES_MODE)
+      : DEFAULT_OPENAI_RESPONSES_MODE;
+    const adaptResponsesToChatCompletions = isOpenAiResponsesRequest && responsesMode === 'chat_compat';
+    const responsesDisabled = isOpenAiResponsesRequest && responsesMode === 'disabled';
+    const upstreamTargetUrl = adaptResponsesToChatCompletions
+      ? rewriteResponsesTargetUrlToChatCompletions(route.targetUrl)
+      : route.targetUrl;
 
-  let upstreamResponse: Response;
-  const proxyStart = nowPerfMs();
-  const timeoutSettings = await getGatewayTimeoutSettings();
-  const upstreamTimeoutMs = selectUpstreamFirstByteTimeoutMs(url.pathname, upstreamTargetUrl, timeoutSettings);
-  const upstreamBodyIdleTimeoutMs = timeoutSettings.responseIdleTimeoutMs;
-  try {
-    const upstreamResponseStartTimeout = createUpstreamResponseStartTimeout(upstreamTimeoutMs);
-    try {
-      upstreamResponse = await proxy(upstreamTargetUrl, {
-        raw: c.req.raw.clone(),
-        headers: forwardHeaders,
-        body,
-        signal: upstreamResponseStartTimeout.signal,
+    const buildHeadersStart = nowPerfMs();
+    const forwardHeaders = buildForwardHeadersForProvider(
+      c.req.raw.headers,
+      route.type,
+      route.auth,
+    );
+    addPerfPhase(requestPerfPhases, 'build_forward_headers_ms', elapsedPerfMs(buildHeadersStart));
+
+    const summarizeHeadersStart = nowPerfMs();
+    const headersSummary = summarizeHeadersForLog(forwardHeaders);
+    addPerfPhase(requestPerfPhases, 'summarize_headers_ms', elapsedPerfMs(summarizeHeadersStart));
+
+    let body: BodyInit | null | undefined;
+    let requestModel = originalRequestModel;
+    let forwardedPayload: string | null = null;
+    let forwardedPayloadForStore: string | null = null;
+    let forwardedSummaryForLog: PayloadSummaryForLog | null = null;
+
+    if (responsesDisabled) {
+      const disabledResponse = createResponsesChatCompatErrorResponse({
+        status: 400,
+        message: 'Responses endpoint is disabled for this provider.',
+        code: 'responses_disabled',
+        param: null,
       });
-    } finally {
-      upstreamResponseStartTimeout.clear();
+      applyCorsHeaders(disabledResponse.headers);
+      return {
+        localResponse: disabledResponse,
+        logTag: '[REQ_RESPONSES_DISABLED]',
+        logDetails: { responses_mode: responsesMode },
+        route,
+        upstreamTargetUrl,
+        headersSummary,
+        requestModel,
+      };
     }
-    addPerfPhase(requestPerfPhases, 'proxy_ms', elapsedPerfMs(proxyStart));
-  } catch (err: any) {
-    addPerfPhase(requestPerfPhases, 'proxy_ms', elapsedPerfMs(proxyStart));
-    const isTimeoutError = err?.name === 'TimeoutError' || err?.name === 'AbortError';
-    const terminalErrorResponse = isTimeoutError
-      ? buildGatewayErrorResponse(route.type, 504, 'Upstream timeout', `No first byte received within ${Math.round(upstreamTimeoutMs / 1000)}s`)
-      : buildGatewayErrorResponse(route.type, 502, 'Upstream request failed', err?.message || String(err));
-    console.log('[RES]', { request_id: requestId, status: terminalErrorResponse.status, status_text: terminalErrorResponse.statusText || 'Error' });
+
+    if (c.req.method === 'POST' && rawPayloadForLog != null) {
+      const prepareStart = nowPerfMs();
+      const prepared = prepareRequestForProvider({
+        upstreamType: route.type,
+        method: c.req.method,
+        rawBodyText: rawPayloadForLog,
+        rawHeaders: c.req.raw.headers,
+        routePrefix: route.channelName,
+        routeSystem: route.systemPrompt,
+      });
+      addPerfPhase(requestPerfPhases, 'prepare_request_ms', elapsedPerfMs(prepareStart));
+
+      if (prepared.body != null) {
+        body = prepared.body;
+        requestModel = prepared.requestModel;
+        if (adaptResponsesToChatCompletions) {
+          const converted = convertResponsesRequestToChatCompletions(body as string, {
+            targetUrl: upstreamTargetUrl,
+          });
+          if (!converted.ok) {
+            const compatibilityErrorResponse = createResponsesChatCompatErrorResponse(converted.error);
+            applyCorsHeaders(compatibilityErrorResponse.headers);
+            return {
+              localResponse: compatibilityErrorResponse,
+              logTag: '[REQ_COMPAT_ERR]',
+              logDetails: {
+                message: converted.error.message,
+                param: converted.error.param ?? null,
+                code: converted.error.code ?? null,
+              },
+              route,
+              upstreamTargetUrl,
+              headersSummary,
+              requestModel,
+            };
+          }
+          body = converted.body;
+          requestModel = converted.requestModel;
+        }
+        if (route.resolvedModel && requestModel !== route.resolvedModel) {
+          try {
+            const parsed = JSON.parse(body as string) as Record<string, unknown>;
+            parsed.model = route.resolvedModel;
+            body = JSON.stringify(parsed);
+            requestModel = route.resolvedModel;
+          } catch {}
+        }
+      } else if (originalSummaryForLog?.model) {
+        requestModel = originalSummaryForLog.model;
+      }
+    }
+
+    if (c.req.method === 'POST') {
+      forwardedPayload = typeof body === 'string' ? body : rawPayloadForLog;
+      if (forwardedPayload != null) {
+        forwardedPayloadForStore = forwardedPayload;
+        lastForwardedPayloadChars = forwardedPayload.length;
+        const payloadForLog = truncatePayloadForLog(forwardedPayload);
+        const logForwardedPayloadStart = nowPerfMs();
+        console.log('[REQ_PAYLOAD_FWD]', {
+          request_id: requestId,
+          method: c.req.method,
+          path: url.pathname + url.search,
+          target_url: upstreamTargetUrl,
+          original_bytes: payloadForLog.originalBytes,
+          logged_bytes: payloadForLog.loggedBytes,
+          truncated: payloadForLog.truncated,
+          truncation_reason: payloadForLog.truncationReason,
+        });
+        addPerfPhase(requestPerfPhases, 'log_req_payload_fwd_ms', elapsedPerfMs(logForwardedPayloadStart));
+
+        const summarizeForwardedStart = nowPerfMs();
+        const payloadSummary = summarizePayloadForProvider(forwardedPayload, route.type);
+        forwardedSummaryForLog = payloadSummary;
+        addPerfPhase(requestPerfPhases, 'summarize_forwarded_ms', elapsedPerfMs(summarizeForwardedStart));
+        if (payloadSummary) {
+          const logForwardedSummaryStart = nowPerfMs();
+          console.log('[REQ_PAYLOAD_FWD_SUMMARY]', {
+            request_id: requestId,
+            path: url.pathname + url.search,
+            target_url: upstreamTargetUrl,
+            ...payloadSummary,
+          });
+          addPerfPhase(requestPerfPhases, 'log_req_payload_fwd_summary_ms', elapsedPerfMs(logForwardedSummaryStart));
+        }
+      }
+    }
+
+    return {
+      route,
+      body,
+      requestModel,
+      forwardedPayload,
+      forwardedPayloadForStore,
+      forwardedSummaryForLog,
+      forwardHeaders,
+      headersSummary,
+      upstreamTargetUrl,
+      adaptResponsesToChatCompletions,
+    };
+  };
+
+  const shouldContinueAfterFailure = (policy: GatewayFailoverPolicy, trigger: FailoverTrigger, attemptIndex: number): boolean => {
+    if (!shouldTriggerFailover(policy, trigger)) return false;
+    if (attemptIndex < policy.retryAttempts) return true;
+    return fallbackAttempts < policy.maxFallbackAttempts && buildFallbackRoutes().length > 0;
+  };
+
+  let activeRoutes = [initialRoute];
+  let activeRouteIndex = 0;
+  let retryIndexForRoute = 0;
+  let fallbackAttempts = 0;
+
+  while (activeRouteIndex < activeRoutes.length) {
+    const route = activeRoutes[activeRouteIndex]!;
+    resolvedChannelName = route.channelName;
+    attemptedRouteKeys.add(routeKey(route));
+    const attempt = buildAttempt(route);
+    if ('localResponse' in attempt) {
+      saveRequestLogForAttempt({
+        route: attempt.route,
+        upstreamTargetUrl: attempt.upstreamTargetUrl,
+        requestModel: attempt.requestModel,
+        forwardedPayloadForStore: null,
+        forwardedSummaryForLog: null,
+        headersSummary: attempt.headersSummary,
+        failoverFrom: isFallbackRoute(attempt.route) ? describeRoute(initialRoute) : null,
+        failoverChain: [...failedRouteChain],
+        failoverReason,
+      });
+      console.warn(attempt.logTag, {
+        request_id: requestId,
+        path: url.pathname + url.search,
+        target_url: attempt.upstreamTargetUrl,
+        ...attempt.logDetails,
+      });
+      console.log('[REQ_HEADERS_FWD]', {
+        request_id: requestId,
+        path: url.pathname + url.search,
+        target_url: attempt.upstreamTargetUrl,
+        headers: attempt.headersSummary,
+      });
+      console.log('[RES]', { request_id: requestId, status: attempt.localResponse.status, status_text: attempt.localResponse.statusText || 'Error' });
+      const finalizeStart = nowPerfMs();
+      const response = finalizeProxyResponse({
+        response: attempt.localResponse,
+        requestId,
+        path: url.pathname + url.search,
+        shouldLog: true,
+        createdAt: requestCreatedAt,
+        createdAtPerf: requestCreatedPerfAt,
+        upstreamType: attempt.route.type,
+        truncatePayloadForLog,
+        requestBody: rawPayloadForLog ?? undefined,
+      });
+      addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
+      emitRequestPerf(response.status);
+      return response;
+    }
+
+    console.log('[REQ_HEADERS_FWD]', {
+      request_id: requestId,
+      path: url.pathname + url.search,
+      target_url: attempt.upstreamTargetUrl,
+      headers: attempt.headersSummary,
+    });
+    console.log('[REQ]', { request_id: requestId, method: c.req.method, path: url.pathname + url.search, target_url: attempt.upstreamTargetUrl });
+
+    const upstreamTimeoutMs = selectUpstreamFirstByteTimeoutMs(url.pathname, attempt.upstreamTargetUrl, timeoutSettings);
+    let upstreamResponse: Response;
+    const proxyStart = nowPerfMs();
+    try {
+      const upstreamResponseStartTimeout = createUpstreamResponseStartTimeout(upstreamTimeoutMs);
+      try {
+        upstreamResponse = await proxy(attempt.upstreamTargetUrl, {
+          raw: c.req.raw.clone(),
+          headers: attempt.forwardHeaders,
+          body: attempt.body,
+          signal: upstreamResponseStartTimeout.signal,
+        });
+      } finally {
+        upstreamResponseStartTimeout.clear();
+      }
+      addPerfPhase(requestPerfPhases, 'proxy_ms', elapsedPerfMs(proxyStart));
+    } catch (err: any) {
+      addPerfPhase(requestPerfPhases, 'proxy_ms', elapsedPerfMs(proxyStart));
+      const isTimeoutError = err?.name === 'TimeoutError' || err?.name === 'AbortError';
+      const trigger: FailoverTrigger = isTimeoutError ? { kind: 'timeout' } : { kind: 'network_error' };
+      lastFailureTrigger = trigger;
+      if (shouldContinueAfterFailure(failoverPolicy, trigger, retryIndexForRoute)) {
+        const reason = describeFailoverTrigger(trigger);
+        failoverReason = reason;
+        console.warn('[REQ_FAILOVER_RETRY]', {
+          request_id: requestId,
+          route: describeRoute(route),
+          target_url: attempt.upstreamTargetUrl,
+          reason,
+          retry_attempt: retryIndexForRoute,
+        });
+        if (!failedRouteChain.includes(describeRoute(route))) {
+          failedRouteChain.push(describeRoute(route));
+        }
+        if (retryIndexForRoute < failoverPolicy.retryAttempts) {
+          retryIndexForRoute += 1;
+          continue;
+        }
+        const fallbackRoutes = buildFallbackRoutes();
+        if (fallbackRoutes.length > 0 && fallbackAttempts < failoverPolicy.maxFallbackAttempts) {
+          const appendedRoutes = fallbackRoutes.slice(0, failoverPolicy.maxFallbackAttempts - fallbackAttempts);
+          activeRoutes = activeRoutes.concat(appendedRoutes);
+          fallbackAttempts += appendedRoutes.length;
+        }
+        activeRouteIndex += 1;
+        retryIndexForRoute = 0;
+        continue;
+      }
+
+      const terminalErrorResponse = isTimeoutError
+        ? buildGatewayErrorResponse(route.type, 504, 'Upstream timeout', `No first byte received within ${Math.round(upstreamTimeoutMs / 1000)}s`)
+        : buildGatewayErrorResponse(route.type, 502, 'Upstream request failed', err?.message || String(err));
+      saveRequestLogForAttempt({
+        route,
+        upstreamTargetUrl: attempt.upstreamTargetUrl,
+        requestModel: attempt.requestModel,
+        forwardedPayloadForStore: attempt.forwardedPayloadForStore,
+        forwardedSummaryForLog: attempt.forwardedSummaryForLog,
+        headersSummary: attempt.headersSummary,
+        failoverFrom: isFallbackRoute(route) ? describeRoute(initialRoute) : null,
+        failoverChain: [...failedRouteChain],
+        failoverReason: failoverReason ?? describeFailoverTrigger(trigger),
+      });
+      console.log('[RES]', { request_id: requestId, status: terminalErrorResponse.status, status_text: terminalErrorResponse.statusText || 'Error' });
+      const finalizeStart = nowPerfMs();
+      const response = finalizeProxyResponse({
+        response: terminalErrorResponse,
+        requestId,
+        path: url.pathname + url.search,
+        shouldLog: c.req.method === 'POST',
+        createdAt: requestCreatedAt,
+        createdAtPerf: requestCreatedPerfAt,
+        upstreamType: route.type,
+        truncatePayloadForLog,
+        requestBody: attempt.forwardedPayload ?? undefined,
+      });
+      addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
+      emitRequestPerf(response.status);
+      return response;
+    }
+
+    const statusTrigger: FailoverTrigger = { kind: 'status', status: upstreamResponse.status };
+    if (!retryableStreamRequest && shouldContinueAfterFailure(failoverPolicy, statusTrigger, retryIndexForRoute)) {
+      lastFailureTrigger = statusTrigger;
+      const reason = describeFailoverTrigger(statusTrigger);
+      failoverReason = reason;
+      console.warn('[REQ_FAILOVER_STATUS]', {
+        request_id: requestId,
+        route: describeRoute(route),
+        target_url: attempt.upstreamTargetUrl,
+        status: upstreamResponse.status,
+      });
+      await upstreamResponse.body?.cancel().catch(() => undefined);
+      if (!failedRouteChain.includes(describeRoute(route))) {
+        failedRouteChain.push(describeRoute(route));
+      }
+      if (retryIndexForRoute < failoverPolicy.retryAttempts) {
+        retryIndexForRoute += 1;
+        continue;
+      }
+      const fallbackRoutes = buildFallbackRoutes();
+      if (fallbackRoutes.length > 0 && fallbackAttempts < failoverPolicy.maxFallbackAttempts) {
+        const appendedRoutes = fallbackRoutes.slice(0, failoverPolicy.maxFallbackAttempts - fallbackAttempts);
+        activeRoutes = activeRoutes.concat(appendedRoutes);
+        fallbackAttempts += appendedRoutes.length;
+      }
+      activeRouteIndex += 1;
+      retryIndexForRoute = 0;
+      continue;
+    }
+
+    if (attempt.adaptResponsesToChatCompletions) {
+      upstreamResponse = transformChatCompletionsResponseToResponses(upstreamResponse);
+    }
+
+    saveRequestLogForAttempt({
+      route,
+      upstreamTargetUrl: attempt.upstreamTargetUrl,
+      requestModel: attempt.requestModel,
+      forwardedPayloadForStore: attempt.forwardedPayloadForStore,
+      forwardedSummaryForLog: attempt.forwardedSummaryForLog,
+      headersSummary: attempt.headersSummary,
+      failoverFrom: isFallbackRoute(route) ? describeRoute(initialRoute) : null,
+      failoverChain: [...failedRouteChain],
+      failoverReason,
+    });
+
+    console.log('[RES]', { request_id: requestId, status: upstreamResponse.status, status_text: upstreamResponse.statusText });
     const finalizeStart = nowPerfMs();
     const response = finalizeProxyResponse({
-      response: terminalErrorResponse,
+      response: upstreamResponse,
       requestId,
       path: url.pathname + url.search,
       shouldLog: c.req.method === 'POST',
@@ -765,43 +945,27 @@ async function handleProxyRequest(c: any): Promise<Response> {
       createdAtPerf: requestCreatedPerfAt,
       upstreamType: route.type,
       truncatePayloadForLog,
-      requestBody: forwardedPayload ?? undefined,
+      requestBody: attempt.forwardedPayload ?? undefined,
+      bodyIdleTimeoutMs: timeoutSettings.responseIdleTimeoutMs,
     });
     addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
+    const analyticsStart = nowPerfMs();
+    try {
+      c.env.LLM_STATUS?.writeDataPoint({
+        indexes: [route.channelName],
+        blobs: [attempt.requestModel, url.pathname, '', String(response.status)],
+        doubles: [0, 0, 0, 0, 0, 0, response.status],
+      });
+    } catch (e) {
+      console.error('[AE write error]', e);
+    }
+    addPerfPhase(requestPerfPhases, 'analytics_write_ms', elapsedPerfMs(analyticsStart));
     emitRequestPerf(response.status);
     return response;
   }
 
-  if (adaptResponsesToChatCompletions) {
-    upstreamResponse = transformChatCompletionsResponseToResponses(upstreamResponse);
-  }
-
-  console.log('[RES]', { request_id: requestId, status: upstreamResponse.status, status_text: upstreamResponse.statusText });
-  const finalizeStart = nowPerfMs();
-  const response = finalizeProxyResponse({
-    response: upstreamResponse,
-    requestId,
-    path: url.pathname + url.search,
-    shouldLog: c.req.method === 'POST',
-    createdAt: requestCreatedAt,
-    createdAtPerf: requestCreatedPerfAt,
-    upstreamType: route.type,
-    truncatePayloadForLog,
-    requestBody: forwardedPayload ?? undefined,
-    bodyIdleTimeoutMs: upstreamBodyIdleTimeoutMs,
-  });
-  addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
-  const analyticsStart = nowPerfMs();
-  try {
-    c.env.LLM_STATUS?.writeDataPoint({
-      indexes: [route.channelName],
-      blobs: [requestModel, url.pathname, '', String(response.status)],
-      doubles: [0, 0, 0, 0, 0, 0, response.status],
-    });
-  } catch (e) {
-    console.error('[AE write error]', e);
-  }
-  addPerfPhase(requestPerfPhases, 'analytics_write_ms', elapsedPerfMs(analyticsStart));
+  const terminalStatus = lastFailureTrigger?.kind === 'timeout' ? 504 : 502;
+  const response = buildGatewayErrorResponse(initialRoute.type, terminalStatus, 'No failover route available');
   emitRequestPerf(response.status);
   return response;
 }

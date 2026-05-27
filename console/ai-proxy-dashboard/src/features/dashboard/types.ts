@@ -351,3 +351,34 @@ export type GatewayTimeoutSettingsPayload = GatewayTimeoutSettings & {
   }
   updatedAt: number | null
 }
+
+export type ModelFallbackMode = "disabled" | "same_model" | "any_model"
+
+export type CustomModelFallbackRule = {
+  model: string
+  fallbacks: string[]
+}
+
+export type GatewayFailoverPolicy = {
+  enabled: boolean
+  retryAttempts: number
+  modelFallbackMode: ModelFallbackMode
+  maxFallbackAttempts: number
+  customModelFallbacks: CustomModelFallbackRule[]
+  retryOnTimeout: boolean
+  retryOnNetworkError: boolean
+  retryOnStatusCodes: number[]
+  retryOnStatusRanges: Array<"5xx">
+}
+
+export type GatewayFailoverPolicyPayload = GatewayFailoverPolicy & {
+  ok: boolean
+  defaults: GatewayFailoverPolicy
+  limits: {
+    retryAttempts: { min: number; max: number }
+    maxFallbackAttempts: { min: number; max: number }
+    customModelFallbackRules: { min: number; max: number }
+    customModelFallbacksPerRule: { min: number; max: number }
+  }
+  updatedAt: number | null
+}

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { CheckCircle, GitFork, Loader2, Pencil, Plus, RefreshCw, Trash2, TriangleAlert, Wifi, XCircle } from "lucide-react"
+import { CheckCircle, GitFork, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Save, Trash2, TriangleAlert, Wifi, X, XCircle } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import { PageHeader } from "@/components/ui/page-header"
 import {
   Dialog,
@@ -23,6 +25,7 @@ import {
 } from "@/components/ui/empty"
 import {
   Field,
+  FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
@@ -38,6 +41,7 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Table,
   TableBody,
@@ -55,13 +59,15 @@ import {
 import {
   createModelAlias,
   deleteModelAlias,
+  fetchGatewayFailoverPolicy,
   fetchModelAliases,
   fetchProviders,
   testProvider,
   toggleModelAlias,
+  updateGatewayFailoverPolicy,
   updateModelAlias,
 } from "@/features/dashboard/api"
-import type { ModelAlias, ProviderInfo } from "@/features/dashboard/types"
+import type { GatewayFailoverPolicyPayload, ModelAlias, ModelFallbackMode, ProviderInfo } from "@/features/dashboard/types"
 import type { TestProviderResult } from "@/features/dashboard/api"
 
 const EMPTY_FORM = {
@@ -69,6 +75,105 @@ const EMPTY_FORM = {
   provider: "",
   model: "",
   description: "",
+}
+
+type FailoverFormState = {
+  enabled: boolean
+  retryAttempts: string
+  modelFallbackMode: ModelFallbackMode
+  maxFallbackAttempts: string
+  customModelFallbacks: Array<{ model: string; fallbacksText: string }>
+  retryOnTimeout: boolean
+  retryOnNetworkError: boolean
+  retryOn429: boolean
+  retryOn5xx: boolean
+}
+
+function formatUpdatedAt(timestamp: number | null, language: string): string {
+  if (!timestamp) return "--"
+  return new Date(timestamp).toLocaleString(language === "en" ? "en-US" : "zh-CN", { hour12: false })
+}
+
+function toFailoverForm(policy: GatewayFailoverPolicyPayload): FailoverFormState {
+  return {
+    enabled: policy.enabled,
+    retryAttempts: String(policy.retryAttempts),
+    modelFallbackMode: policy.modelFallbackMode,
+    maxFallbackAttempts: String(policy.maxFallbackAttempts),
+    customModelFallbacks: policy.customModelFallbacks.map((rule) => ({
+      model: rule.model,
+      fallbacksText: rule.fallbacks.join("\n"),
+    })),
+    retryOnTimeout: policy.retryOnTimeout,
+    retryOnNetworkError: policy.retryOnNetworkError,
+    retryOn429: policy.retryOnStatusCodes.includes(429),
+    retryOn5xx: policy.retryOnStatusRanges.includes("5xx"),
+  }
+}
+
+function parseBoundedInteger(value: string, label: string, limit: { min: number; max: number }, t: (key: string, options?: Record<string, unknown>) => string): number {
+  const trimmed = value.trim()
+  if (!trimmed) throw new Error(t("routes.failoverValidationRequired", { label }))
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed)) throw new Error(t("routes.failoverValidationNumber", { label }))
+  const normalized = Math.trunc(parsed)
+  if (normalized < limit.min || normalized > limit.max) {
+    throw new Error(t("routes.failoverValidationRange", { label, min: limit.min, max: limit.max }))
+  }
+  return normalized
+}
+
+function parseCustomModelFallbacks(
+  rules: FailoverFormState["customModelFallbacks"],
+  limits: GatewayFailoverPolicyPayload["limits"],
+  t: (key: string, options?: Record<string, unknown>) => string,
+) {
+  const normalized = rules
+    .map((rule) => ({
+      model: rule.model.trim(),
+      fallbacks: rule.fallbacksText
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    }))
+    .filter((rule) => rule.model || rule.fallbacks.length > 0)
+
+  if (normalized.length > limits.customModelFallbackRules.max) {
+    throw new Error(t("routes.failoverCustomValidationRuleCount", { max: limits.customModelFallbackRules.max }))
+  }
+
+  return normalized.map((rule, index) => {
+    if (!rule.model) {
+      throw new Error(t("routes.failoverCustomValidationModelRequired", { index: index + 1 }))
+    }
+    const fallbacks = Array.from(new Set(rule.fallbacks))
+    if (fallbacks.length < limits.customModelFallbacksPerRule.min) {
+      throw new Error(t("routes.failoverCustomValidationFallbackRequired", { model: rule.model }))
+    }
+    if (fallbacks.length > limits.customModelFallbacksPerRule.max) {
+      throw new Error(t("routes.failoverCustomValidationFallbackCount", { model: rule.model, max: limits.customModelFallbacksPerRule.max }))
+    }
+    return { model: rule.model, fallbacks }
+  })
+}
+
+function FailoverTriggerCheckbox({
+  id,
+  label,
+  checked,
+  onChange,
+}: {
+  id: string
+  label: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label htmlFor={id} className="flex items-center gap-2 text-sm text-foreground">
+      <Checkbox id={id} checked={checked} onCheckedChange={(value) => onChange(value === true)} />
+      {label}
+    </label>
+  )
 }
 
 function AliasForm({
@@ -224,11 +329,16 @@ function AliasStatus({
 }
 
 export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [aliases, setAliases] = useState<ModelAlias[] | null>(null)
   const [providers, setProviders] = useState<ProviderInfo[]>([])
+  const [failoverPolicy, setFailoverPolicy] = useState<GatewayFailoverPolicyPayload | null>(null)
+  const [failoverForm, setFailoverForm] = useState<FailoverFormState | null>(null)
   const [error, setError] = useState("")
+  const [failoverError, setFailoverError] = useState("")
+  const [failoverFeedback, setFailoverFeedback] = useState("")
   const [loading, setLoading] = useState(false)
+  const [savingFailover, setSavingFailover] = useState(false)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<ModelAlias | null>(null)
@@ -254,13 +364,17 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
   const load = useCallback(async () => {
     try {
       setLoading(true)
-      const [aliasData, providerData] = await Promise.all([
+      const [aliasData, providerData, failoverData] = await Promise.all([
         fetchModelAliases(),
         fetchProviders(),
+        fetchGatewayFailoverPolicy(),
       ])
       setAliases(aliasData.aliases)
       setProviders(providerData.providers)
+      setFailoverPolicy(failoverData)
+      setFailoverForm(toFailoverForm(failoverData))
       setError("")
+      setFailoverError("")
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       if (handleUnauth(message)) return
@@ -368,6 +482,89 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
 
   const hasAliases = useMemo(() => (aliases?.length ?? 0) > 0, [aliases])
 
+  const handleFailoverSave = async () => {
+    if (!failoverPolicy || !failoverForm) return
+    try {
+      setSavingFailover(true)
+      setFailoverError("")
+      const retryAttempts = parseBoundedInteger(
+        failoverForm.retryAttempts,
+        t("routes.failoverRetryAttempts"),
+        failoverPolicy.limits.retryAttempts,
+        t,
+      )
+      const maxFallbackAttempts = parseBoundedInteger(
+        failoverForm.maxFallbackAttempts,
+        t("routes.failoverMaxFallbackAttempts"),
+        failoverPolicy.limits.maxFallbackAttempts,
+        t,
+      )
+      const customModelFallbacks = parseCustomModelFallbacks(
+        failoverForm.customModelFallbacks,
+        failoverPolicy.limits,
+        t,
+      )
+      const next = await updateGatewayFailoverPolicy({
+        enabled: failoverForm.enabled,
+        retryAttempts,
+        modelFallbackMode: failoverForm.modelFallbackMode,
+        maxFallbackAttempts,
+        customModelFallbacks,
+        retryOnTimeout: failoverForm.retryOnTimeout,
+        retryOnNetworkError: failoverForm.retryOnNetworkError,
+        retryOnStatusCodes: failoverForm.retryOn429 ? [408, 429] : [408],
+        retryOnStatusRanges: failoverForm.retryOn5xx ? ["5xx"] : [],
+      })
+      setFailoverPolicy(next)
+      setFailoverForm(toFailoverForm(next))
+      setFailoverError("")
+      setFailoverFeedback(t("routes.failoverSaved"))
+      window.setTimeout(() => setFailoverFeedback(""), 1800)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (handleUnauth(message)) return
+      setFailoverError(message)
+    } finally {
+      setSavingFailover(false)
+    }
+  }
+
+  const addCustomFallbackRule = () => {
+    setFailoverForm((current) => current
+      ? {
+          ...current,
+          customModelFallbacks: [...current.customModelFallbacks, { model: "", fallbacksText: "" }],
+        }
+      : current)
+  }
+
+  const updateCustomFallbackRule = (index: number, patch: Partial<{ model: string; fallbacksText: string }>) => {
+    setFailoverForm((current) => {
+      if (!current) return current
+      return {
+        ...current,
+        customModelFallbacks: current.customModelFallbacks.map((rule, ruleIndex) => (
+          ruleIndex === index ? { ...rule, ...patch } : rule
+        )),
+      }
+    })
+  }
+
+  const removeCustomFallbackRule = (index: number) => {
+    setFailoverForm((current) => current
+      ? {
+          ...current,
+          customModelFallbacks: current.customModelFallbacks.filter((_, ruleIndex) => ruleIndex !== index),
+        }
+      : current)
+  }
+
+  const failoverModeLabel = failoverForm?.modelFallbackMode === "any_model"
+    ? t("routes.failoverModeAnyModel")
+    : failoverForm?.modelFallbackMode === "same_model"
+      ? t("routes.failoverModeSameModel")
+      : t("routes.failoverModeDisabled")
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -393,6 +590,243 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
           </>
         }
       />
+
+      <Card>
+        <CardHeader className="gap-2 border-b border-border/60">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <CardTitle>{t("routes.failoverTitle")}</CardTitle>
+              <CardDescription className="mt-1">{t("routes.failoverDesc")}</CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {failoverPolicy ? (
+                <Badge variant="secondary">
+                  {t("routes.failoverUpdatedAt", { time: formatUpdatedAt(failoverPolicy.updatedAt, i18n.language) })}
+                </Badge>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => failoverPolicy && setFailoverForm(toFailoverForm(failoverPolicy))}
+                disabled={!failoverPolicy || savingFailover}
+              >
+                <RotateCcw data-icon="inline-start" />
+                {t("routes.failoverReset")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!failoverPolicy || !failoverForm || savingFailover}
+                onClick={() => void handleFailoverSave()}
+              >
+                {savingFailover ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Save data-icon="inline-start" />}
+                {savingFailover ? t("common.saving") : t("common.save")}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-5">
+          {!failoverForm || !failoverPolicy ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : (
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
+              <FieldGroup className="grid gap-5 md:grid-cols-2">
+                <Field>
+                  <FieldLabel>{t("routes.failoverEnabled")}</FieldLabel>
+                  <FieldContent>
+                    <div className="flex h-10 items-center gap-3">
+                      <Switch
+                        checked={failoverForm.enabled}
+                        onCheckedChange={(checked) => setFailoverForm((current) => current ? { ...current, enabled: checked } : current)}
+                      />
+                      <span className="text-sm text-muted-foreground">
+                        {failoverForm.enabled ? t("common.enabled") : t("common.disabled")}
+                      </span>
+                    </div>
+                    <FieldDescription>{t("routes.failoverEnabledHint")}</FieldDescription>
+                  </FieldContent>
+                </Field>
+                <Field>
+                  <FieldLabel>{t("routes.failoverMode")}</FieldLabel>
+                  <FieldContent>
+                    <Select
+                      value={failoverForm.modelFallbackMode}
+                      onValueChange={(value) => setFailoverForm((current) => current ? { ...current, modelFallbackMode: value as ModelFallbackMode } : current)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="disabled">{t("routes.failoverModeDisabled")}</SelectItem>
+                        <SelectItem value="same_model">{t("routes.failoverModeSameModel")}</SelectItem>
+                        <SelectItem value="any_model">{t("routes.failoverModeAnyModel")}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FieldDescription>{t("routes.failoverModeHint")}</FieldDescription>
+                  </FieldContent>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="failover-retry-attempts">{t("routes.failoverRetryAttempts")}</FieldLabel>
+                  <FieldContent>
+                    <Input
+                      id="failover-retry-attempts"
+                      type="number"
+                      min={failoverPolicy.limits.retryAttempts.min}
+                      max={failoverPolicy.limits.retryAttempts.max}
+                      step="1"
+                      value={failoverForm.retryAttempts}
+                      onChange={(event) => setFailoverForm((current) => current ? { ...current, retryAttempts: event.target.value } : current)}
+                      className="tabular-nums"
+                    />
+                    <FieldDescription>
+                      {t("routes.failoverRangeHint", failoverPolicy.limits.retryAttempts)}
+                    </FieldDescription>
+                  </FieldContent>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="failover-max-fallback-attempts">{t("routes.failoverMaxFallbackAttempts")}</FieldLabel>
+                  <FieldContent>
+                    <Input
+                      id="failover-max-fallback-attempts"
+                      type="number"
+                      min={failoverPolicy.limits.maxFallbackAttempts.min}
+                      max={failoverPolicy.limits.maxFallbackAttempts.max}
+                      step="1"
+                      value={failoverForm.maxFallbackAttempts}
+                      onChange={(event) => setFailoverForm((current) => current ? { ...current, maxFallbackAttempts: event.target.value } : current)}
+                      className="tabular-nums"
+                    />
+                    <FieldDescription>
+                      {t("routes.failoverRangeHint", failoverPolicy.limits.maxFallbackAttempts)}
+                    </FieldDescription>
+                  </FieldContent>
+                </Field>
+                <Field className="md:col-span-2">
+                  <FieldLabel>{t("routes.failoverTriggers")}</FieldLabel>
+                  <FieldContent>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <FailoverTriggerCheckbox
+                        id="failover-timeout"
+                        label={t("routes.failoverTriggerTimeout")}
+                        checked={failoverForm.retryOnTimeout}
+                        onChange={(checked) => setFailoverForm((current) => current ? { ...current, retryOnTimeout: checked } : current)}
+                      />
+                      <FailoverTriggerCheckbox
+                        id="failover-network"
+                        label={t("routes.failoverTriggerNetwork")}
+                        checked={failoverForm.retryOnNetworkError}
+                        onChange={(checked) => setFailoverForm((current) => current ? { ...current, retryOnNetworkError: checked } : current)}
+                      />
+                      <FailoverTriggerCheckbox
+                        id="failover-429"
+                        label={t("routes.failoverTrigger429")}
+                        checked={failoverForm.retryOn429}
+                        onChange={(checked) => setFailoverForm((current) => current ? { ...current, retryOn429: checked } : current)}
+                      />
+                      <FailoverTriggerCheckbox
+                        id="failover-5xx"
+                        label={t("routes.failoverTrigger5xx")}
+                        checked={failoverForm.retryOn5xx}
+                        onChange={(checked) => setFailoverForm((current) => current ? { ...current, retryOn5xx: checked } : current)}
+                      />
+                    </div>
+                    <FieldDescription>{t("routes.failoverTriggersHint")}</FieldDescription>
+                  </FieldContent>
+                </Field>
+                <Field className="md:col-span-2">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <FieldLabel>{t("routes.failoverCustomTitle")}</FieldLabel>
+                      <FieldDescription>{t("routes.failoverCustomDesc")}</FieldDescription>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addCustomFallbackRule}
+                      disabled={failoverForm.customModelFallbacks.length >= failoverPolicy.limits.customModelFallbackRules.max}
+                    >
+                      <Plus data-icon="inline-start" />
+                      {t("routes.failoverCustomAdd")}
+                    </Button>
+                  </div>
+                  <FieldContent>
+                    {failoverForm.customModelFallbacks.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">{t("routes.failoverCustomEmpty")}</p>
+                    ) : (
+                      <div className="grid gap-3">
+                        {failoverForm.customModelFallbacks.map((rule, index) => (
+                          <div key={index} className="grid gap-3 border border-border/70 bg-card/70 p-3 md:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto]">
+                            <Field>
+                              <FieldLabel htmlFor={`failover-custom-model-${index}`}>{t("routes.failoverCustomRequestModel")}</FieldLabel>
+                              <Input
+                                id={`failover-custom-model-${index}`}
+                                value={rule.model}
+                                placeholder="gpt-4o"
+                                onChange={(event) => updateCustomFallbackRule(index, { model: event.target.value })}
+                              />
+                            </Field>
+                            <Field>
+                              <FieldLabel htmlFor={`failover-custom-fallbacks-${index}`}>{t("routes.failoverCustomFallbackModels")}</FieldLabel>
+                              <Textarea
+                                id={`failover-custom-fallbacks-${index}`}
+                                value={rule.fallbacksText}
+                                placeholder={t("routes.failoverCustomFallbackPlaceholder")}
+                                onChange={(event) => updateCustomFallbackRule(index, { fallbacksText: event.target.value })}
+                                className="min-h-20 font-mono text-xs"
+                              />
+                              <FieldDescription>{t("routes.failoverCustomFallbackHint")}</FieldDescription>
+                            </Field>
+                            <div className="flex items-start justify-end md:pt-6">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="xs"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => removeCustomFallbackRule(index)}
+                              >
+                                <X data-icon="inline-start" />
+                                {t("common.delete")}
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </FieldContent>
+                </Field>
+              </FieldGroup>
+              <div className="grid gap-3 border border-border/70 bg-card/70 p-4">
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground">{t("routes.failoverCurrentMode")}</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{failoverModeLabel}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="text-xs text-muted-foreground">{t("routes.failoverRetryAttempts")}</div>
+                    <div className="font-mono text-base text-foreground">{failoverForm.retryAttempts}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">{t("routes.failoverMaxFallbackAttempts")}</div>
+                    <div className="font-mono text-base text-foreground">{failoverForm.maxFallbackAttempts}</div>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">{t("routes.failoverCustomRuleCount")}</div>
+                  <div className="font-mono text-base text-foreground">{failoverForm.customModelFallbacks.length}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {failoverError ? <p className="mt-4 text-sm text-destructive">{failoverError}</p> : null}
+          {failoverFeedback ? <p className="mt-4 text-sm text-muted-foreground">{failoverFeedback}</p> : null}
+        </CardContent>
+      </Card>
 
       <Card>
         {error && (

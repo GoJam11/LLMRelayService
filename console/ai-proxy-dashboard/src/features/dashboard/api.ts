@@ -9,6 +9,8 @@ import type {
   ConsoleRequestDetail,
   ConsoleSession,
   ConsoleUsageStatsPayload,
+  GatewayFailoverPolicy,
+  GatewayFailoverPolicyPayload,
   GatewayModel,
   ManagedApiKey,
   ManagedApiKeyDetail,
@@ -323,6 +325,20 @@ export function updateGatewayTimeoutSettings(
   payload: GatewayTimeoutSettings,
 ): Promise<GatewayTimeoutSettingsPayload> {
   return requestJson("/__console/api/settings/timeouts", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function fetchGatewayFailoverPolicy(): Promise<GatewayFailoverPolicyPayload> {
+  return requestJson("/__console/api/settings/failover")
+}
+
+export function updateGatewayFailoverPolicy(
+  payload: GatewayFailoverPolicy,
+): Promise<GatewayFailoverPolicyPayload> {
+  return requestJson("/__console/api/settings/failover", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
