@@ -312,3 +312,15 @@ export function getCustomModelFallbackModels(policy: GatewayFailoverPolicy, requ
   if (!model) return [];
   return policy.customModelFallbacks.find((rule) => rule.model === model)?.fallbacks ?? [];
 }
+
+/**
+ * Test-only: directly inject a failover policy into the cache, bypassing the database.
+ * Throws if called outside of a test environment.
+ */
+export function loadFailoverPolicyForTest(input: GatewayFailoverPolicyInput): void {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('loadFailoverPolicyForTest is only available while running tests');
+  }
+  cachedPolicy = buildPolicyView(input, null);
+  cachedPolicyLoadedAt = Date.now();
+}

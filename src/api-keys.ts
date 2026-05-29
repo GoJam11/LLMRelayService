@@ -150,24 +150,36 @@ export async function clearManagedApiKeys(): Promise<void> {
 export async function authenticateManagedApiKey(rawKey: string): Promise<AuthenticatedApiKeyInfo | null> {
   await storeReady;
   const normalized = rawKey.trim();
-  if (!normalized) return false;
+  if (!normalized) return null;
 
   const keyHash = hashKey(normalized);
-  const [row] = await db.select().from(consoleApiKeys)
-    .where(and(
-      eq(consoleApiKeys.keyHash, keyHash),
-      eq(consoleApiKeys.revoked, 0),
-    ))
-    .limit(1);
+  let row: typeof consoleApiKeys.$inferSelect | undefined;
+
+  try {
+    const rows = await db.select().from(consoleApiKeys)
+      .where(and(
+        eq(consoleApiKeys.keyHash, keyHash),
+        eq(consoleApiKeys.revoked, 0),
+      ))
+      .limit(1);
+    row = rows[0];
+  } catch {
+    // DB unavailable — treat as no match, do not expose internal errors to callers
+    return null;
+  }
 
   if (!row) return null;
 
-  await db.update(consoleApiKeys)
-    .set({ lastUsedAt: Date.now() })
-    .where(and(
-      eq(consoleApiKeys.id, row.id),
-      ne(consoleApiKeys.revoked, 1),
-    ));
+  try {
+    await db.update(consoleApiKeys)
+      .set({ lastUsedAt: Date.now() })
+      .where(and(
+        eq(consoleApiKeys.id, row.id),
+        ne(consoleApiKeys.revoked, 1),
+      ));
+  } catch {
+    // Best-effort update; don't fail authentication if the update fails
+  }
 
   return {
     id: row.id,

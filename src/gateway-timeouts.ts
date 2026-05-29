@@ -256,3 +256,21 @@ export function selectUpstreamFirstByteTimeoutMs(
     ? settings.imageFirstByteTimeoutMs
     : settings.defaultFirstByteTimeoutMs;
 }
+
+/**
+ * Test-only: directly inject timeout settings into the cache, bypassing validation
+ * and the database. Allows sub-minimum timeouts for fast timeout tests.
+ * Throws if called outside of a test environment.
+ */
+export function forceTimeoutSettingsForTest(settings: GatewayTimeoutSettings): void {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('forceTimeoutSettingsForTest is only available while running tests');
+  }
+  cachedSettings = {
+    ...settings,
+    defaults: getGatewayTimeoutDefaults(),
+    limits: GATEWAY_TIMEOUT_LIMITS,
+    updatedAt: null,
+  };
+  cachedSettingsLoadedAt = Date.now();
+}
