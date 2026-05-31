@@ -24,9 +24,9 @@ import {
   listManagedApiKeys,
   renameManagedApiKey,
   setApiKeyAllowedModels,
-  setApiKeyTokenQuota,
+  setApiKeyCostQuota,
 } from './api-keys';
-import { parseApiKeyTokenQuotaLimit } from './api-key-quota';
+import { parseApiKeyCostQuotaLimit } from './api-key-quota';
 import {
   createModelAlias,
   deleteModelAlias,
@@ -266,7 +266,7 @@ export function registerOpenApiRoutes(app: Hono<any>): void {
       return c.json({ error: 'Key name is required' }, 400);
     }
     try {
-      const created = await createManagedApiKey(name, (payload as { token_quota?: unknown }).token_quota);
+      const created = await createManagedApiKey(name, (payload as { cost_quota?: unknown }).cost_quota);
       return c.json({ data: created }, 201);
     } catch (error) {
       return c.json(
@@ -312,11 +312,11 @@ export function registerOpenApiRoutes(app: Hono<any>): void {
 
   v1.patch('/keys/:id/quota', async (c) => {
     const payload = await c.req.json().catch(() => ({}));
-    const parsed = parseApiKeyTokenQuotaLimit((payload as { token_quota?: unknown }).token_quota);
+    const parsed = parseApiKeyCostQuotaLimit((payload as { cost_quota?: unknown }).cost_quota);
     if (!parsed.ok) {
       return c.json({ error: parsed.error }, 400);
     }
-    const updated = await setApiKeyTokenQuota(c.req.param('id'), parsed.value);
+    const updated = await setApiKeyCostQuota(c.req.param('id'), parsed.value);
     if (!updated) {
       return c.json({ error: 'API key not found' }, 404);
     }

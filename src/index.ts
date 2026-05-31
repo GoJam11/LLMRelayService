@@ -447,12 +447,12 @@ async function handleProxyRequest(c: any): Promise<Response> {
   const matchedApiKey = gatewayAuth.apiKeyInfo;
 
   if (matchedApiKey?.quota_exhausted) {
-    const quota = matchedApiKey.token_quota ?? 0;
+    const quota = matchedApiKey.cost_quota ?? 0;
     const quotaResponse = buildGatewayErrorResponse(
       initialRoute.type,
       429,
-      '此 API key 的 Token 额度已用完',
-      `已用 ${matchedApiKey.token_used} / 额度 ${quota}`,
+      '此 API key 的费用额度已用完',
+      `已用 $${matchedApiKey.cost_used.toFixed(6)} / 额度 $${quota.toFixed(6)}`,
     );
     applyCorsHeaders(quotaResponse.headers);
     emitRequestPerf(quotaResponse.status);

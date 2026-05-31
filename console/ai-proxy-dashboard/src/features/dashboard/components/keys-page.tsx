@@ -32,17 +32,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { createKey, deleteKey, fetchKeys, fetchModels, getKey, renameKey, setKeyAllowedModels, setKeyTokenQuota } from "@/features/dashboard/api"
+import { createKey, deleteKey, fetchKeys, fetchModels, getKey, renameKey, setKeyAllowedModels, setKeyCostQuota } from "@/features/dashboard/api"
 import type { GatewayModel, ManagedApiKey, ManagedApiKeyDetail } from "@/features/dashboard/types"
+import { formatCost } from "@/features/dashboard/utils"
 
 function formatDateTime(timestamp: number | null) {
   if (!timestamp) return "--"
   return new Date(timestamp).toLocaleString("zh-CN", { hour12: false })
-}
-
-function formatTokenCount(value: number | null | undefined) {
-  if (value == null) return "--"
-  return new Intl.NumberFormat("zh-CN").format(value)
 }
 
 async function copyText(value: string) {
@@ -161,15 +157,15 @@ export function KeysPage({
     }
 
     const trimmedQuota = newKeyQuotaDraft.trim()
-    const tokenQuota = trimmedQuota === "" ? null : Number(trimmedQuota)
-    if (tokenQuota != null && (!Number.isFinite(tokenQuota) || tokenQuota < 0 || !Number.isInteger(tokenQuota))) {
+    const costQuota = trimmedQuota === "" ? null : Number(trimmedQuota)
+    if (costQuota != null && (!Number.isFinite(costQuota) || costQuota < 0)) {
       setError(t("keys.quotaValidation"))
       return
     }
 
     try {
       setCreating(true)
-      const created = await createKey(name, tokenQuota)
+      const created = await createKey(name, costQuota)
       setKeys((current) => [created.record, ...(current ?? [])])
       setVisibleKey({ ...created.record, key: created.key })
       setCreateOpen(false)
@@ -243,7 +239,7 @@ export function KeysPage({
 
   const openQuotaDialog = (key: ManagedApiKey) => {
     setQuotaTarget(key)
-    setQuotaDraft(key.token_quota == null ? "" : String(key.token_quota))
+    setQuotaDraft(key.cost_quota == null ? "" : String(key.cost_quota))
     setQuotaOpen(true)
   }
 
@@ -300,15 +296,15 @@ export function KeysPage({
     if (!target) return
 
     const trimmed = quotaDraft.trim()
-    const tokenQuota = trimmed === "" ? null : Number(trimmed)
-    if (tokenQuota != null && (!Number.isFinite(tokenQuota) || tokenQuota < 0 || !Number.isInteger(tokenQuota))) {
+    const costQuota = trimmed === "" ? null : Number(trimmed)
+    if (costQuota != null && (!Number.isFinite(costQuota) || costQuota < 0)) {
       setError(t("keys.quotaValidation"))
       return
     }
 
     try {
       setSavingQuotaId(target.id)
-      const updated = await setKeyTokenQuota(target.id, tokenQuota)
+      const updated = await setKeyCostQuota(target.id, costQuota)
       setKeys((current) => (current ?? []).map((item) => item.id === target.id ? { ...item, ...updated } : item))
       setVisibleKey((current) => current?.id === target.id ? { ...current, ...updated } : current)
       setQuotaOpen(false)
@@ -379,7 +375,7 @@ export function KeysPage({
                 <TableHead>{t("keys.nameCol")}</TableHead>
                 <TableHead>{t("keys.prefixCol")}</TableHead>
                 <TableHead>{t("keys.allowedModelsCol")}</TableHead>
-                <TableHead>{t("keys.tokenQuotaCol")}</TableHead>
+                <TableHead>{t("keys.costQuotaCol")}</TableHead>
                 <TableHead>{t("keys.createdCol")}</TableHead>
                 <TableHead>{t("keys.lastUsedCol")}</TableHead>
                 <TableHead className="text-right">{t("keys.actionsCol")}</TableHead>
@@ -400,17 +396,17 @@ export function KeysPage({
                     )}
                   </TableCell>
                   <TableCell>
-                    {key.token_quota == null ? (
+                    {key.cost_quota == null ? (
                       <span className="text-muted-foreground text-xs">{t("keys.quotaUnlimited")}</span>
                     ) : (
                       <div className="flex flex-col gap-1">
                         <Badge variant={key.quota_exhausted ? "destructive" : "secondary"} className="font-mono text-xs">
                           {key.quota_exhausted
                             ? t("keys.quotaExhausted")
-                            : t("keys.quotaRemaining", { remaining: formatTokenCount(key.token_remaining) })}
+                            : t("keys.quotaRemaining", { remaining: formatCost(key.cost_remaining) })}
                         </Badge>
                         <span className="font-mono text-xs text-muted-foreground">
-                          {formatTokenCount(key.token_used)} / {formatTokenCount(key.token_quota)}
+                          {formatCost(key.cost_used)} / {formatCost(key.cost_quota)}
                         </span>
                       </div>
                     )}
@@ -480,7 +476,7 @@ export function KeysPage({
                 id="new-key-quota"
                 type="number"
                 min={0}
-                step={1}
+                step="0.01"
                 placeholder={t("keys.quotaInputPlaceholder")}
                 value={newKeyQuotaDraft}
                 onChange={(event) => setNewKeyQuotaDraft(event.target.value)}
@@ -607,12 +603,12 @@ export function KeysPage({
                 id="quota-input"
                 type="number"
                 min={0}
-                step={1}
+                step="0.01"
                 placeholder={t("keys.quotaInputPlaceholder")}
                 value={quotaDraft}
                 onChange={(event) => setQuotaDraft(event.target.value)}
               />
-              <FieldDescription>{t("keys.quotaInputHint", { used: formatTokenCount(quotaTarget?.token_used ?? 0) })}</FieldDescription>
+              <FieldDescription>{t("keys.quotaInputHint", { used: formatCost(quotaTarget?.cost_used ?? 0) })}</FieldDescription>
             </FieldContent>
           </Field>
           <DialogFooter>

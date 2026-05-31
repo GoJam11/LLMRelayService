@@ -3,7 +3,7 @@ import { and, desc, eq, ne } from 'drizzle-orm';
 import { consoleApiKeys } from './db/schema';
 import { createDbClient } from './db/client';
 import { isModelAllowed, parseAllowedModels } from './api-key-model-filter';
-import { buildApiKeyQuotaSnapshot, parseApiKeyTokenQuotaLimit } from './api-key-quota';
+import { buildApiKeyQuotaSnapshot, parseApiKeyCostQuotaLimit } from './api-key-quota';
 export { isModelAllowed, parseAllowedModels } from './api-key-model-filter';
 
 const db = createDbClient();
@@ -17,9 +17,9 @@ export interface StoredApiKeyRecord {
   created_at: number;
   last_used_at: number | null;
   allowed_models: string[];
-  token_quota: number | null;
-  token_used: number;
-  token_remaining: number | null;
+  cost_quota: number | null;
+  cost_used: number;
+  cost_remaining: number | null;
   quota_exhausted: boolean;
 }
 
@@ -31,9 +31,9 @@ export interface AuthenticatedApiKeyInfo {
   id: string;
   name: string;
   allowed_models: string[];
-  token_quota: number | null;
-  token_used: number;
-  token_remaining: number | null;
+  cost_quota: number | null;
+  cost_used: number;
+  cost_remaining: number | null;
   quota_exhausted: boolean;
 }
 
@@ -57,7 +57,7 @@ function toRecord(row: typeof consoleApiKeys.$inferSelect): StoredApiKeyRecord {
     created_at: row.createdAt,
     last_used_at: row.lastUsedAt,
     allowed_models: parseAllowedModels(row.allowedModelsJson),
-    ...buildApiKeyQuotaSnapshot(row.tokenQuota, row.tokenUsed),
+    ...buildApiKeyQuotaSnapshot(row.costQuotaMicrousd, row.costUsedMicrousd),
   };
 }
 
@@ -70,13 +70,13 @@ export async function listManagedApiKeys(): Promise<StoredApiKeyRecord[]> {
   return rows.map(toRecord);
 }
 
-export async function createManagedApiKey(name: string, tokenQuotaInput?: unknown): Promise<{ key: string; record: StoredApiKeyRecord }> {
+export async function createManagedApiKey(name: string, costQuotaInput?: unknown): Promise<{ key: string; record: StoredApiKeyRecord }> {
   await storeReady;
   const normalizedName = name.trim();
   if (!normalizedName) {
     throw new Error('Key 名称不能为空');
   }
-  const parsedQuota = parseApiKeyTokenQuotaLimit(tokenQuotaInput);
+  const parsedQuota = parseApiKeyCostQuotaLimit(costQuotaInput);
   if (!parsedQuota.ok) {
     throw new Error(parsedQuota.error);
   }
@@ -94,8 +94,8 @@ export async function createManagedApiKey(name: string, tokenQuotaInput?: unknow
       createdAt: now,
       lastUsedAt: null,
       revoked: 0,
-      tokenQuota: parsedQuota.value,
-      tokenUsed: 0,
+      costQuotaMicrousd: parsedQuota.value,
+      costUsedMicrousd: 0,
     })
     .returning();
 
@@ -201,7 +201,7 @@ export async function authenticateManagedApiKey(rawKey: string): Promise<Authent
     id: row.id,
     name: row.name,
     allowed_models: parseAllowedModels(row.allowedModelsJson),
-    ...buildApiKeyQuotaSnapshot(row.tokenQuota, row.tokenUsed),
+    ...buildApiKeyQuotaSnapshot(row.costQuotaMicrousd, row.costUsedMicrousd),
   };
 }
 
@@ -229,13 +229,13 @@ export async function setApiKeyAllowedModels(id: string, models: string[]): Prom
   return rows[0] ? toRecord(rows[0]) : null;
 }
 
-export async function setApiKeyTokenQuota(id: string, tokenQuota: number | null): Promise<StoredApiKeyRecord | null> {
+export async function setApiKeyCostQuota(id: string, costQuotaMicrousd: number | null): Promise<StoredApiKeyRecord | null> {
   await storeReady;
   const normalizedId = id.trim();
   if (!normalizedId) return null;
 
   const rows = await db.update(consoleApiKeys)
-    .set({ tokenQuota })
+    .set({ costQuotaMicrousd })
     .where(and(
       eq(consoleApiKeys.id, normalizedId),
       eq(consoleApiKeys.revoked, 0),

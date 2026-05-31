@@ -1,4 +1,4 @@
-import { calculateCostWithPricing, getModelPricing, type CostBreakdown, type ModelPricing } from './pricing';
+import { calculateCostWithPricing, ensurePricingLoaded, getModelPricing, type CostBreakdown, type ModelPricing } from './pricing';
 import { detectRequestKindForProvider } from './providers';
 import type { DetectedRequestKind } from './providers';
 import { createDbClient } from './db/client';
@@ -10,6 +10,7 @@ import { eq, desc, asc, and, or, sql, count, gte, isNotNull, isNull, like, notIn
 import { elapsedPerfMs, getMaxPerfPhase, nowPerfMs, shouldLogBackgroundPerf } from './perf-detail';
 import { recordBackgroundPerfSample } from './perf-monitor';
 import { getModelOverrideKey, listModelMetadataOverrides, type ModelMetadataOverride } from './model-metadata-overrides';
+import { usdCostToChargeMicrousd } from './api-key-quota';
 
 export type UpstreamTypeForConsole = 'anthropic' | 'openai';
 
@@ -1342,32 +1343,60 @@ function normalizeOffset(offset: number): number {
   return Math.max(0, Math.trunc(offset));
 }
 
-function normalizeQuotaChargeTokens(value: unknown): number {
-  const parsed = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
-  return Math.trunc(parsed);
+async function getQuotaChargeMicrousd(
+  requestId: string,
+  responseUsage: ResponseUsageForConsole,
+): Promise<number> {
+  const [request] = await db.select({
+    routePrefix: consoleRequests.routePrefix,
+    upstreamType: consoleRequests.upstreamType,
+    requestModel: consoleRequests.requestModel,
+    responseModel: consoleRequests.responseModel,
+  }).from(consoleRequests)
+    .where(eq(consoleRequests.requestId, requestId))
+    .limit(1);
+
+  if (!request) return 0;
+
+  try {
+    await ensurePricingLoaded();
+  } catch (error) {
+    console.warn('[QUOTA_PRICING_LOAD_ERR]', { request_id: requestId, error });
+  }
+
+  const model = responseUsage.model || request.responseModel || request.requestModel;
+  const overrides = await listModelMetadataOverrides();
+  const cost = calculateCostWithPricing(
+    responseUsage,
+    getEffectivePricing(request.routePrefix, model, overrides),
+    request.upstreamType === 'openai' ? 'openai' : 'anthropic',
+  );
+  return usdCostToChargeMicrousd(cost.total_cost);
 }
 
-async function syncApiKeyQuotaCharge(requestId: string, totalTokens: unknown): Promise<void> {
-  const chargedTokens = normalizeQuotaChargeTokens(totalTokens);
+async function syncApiKeyQuotaCharge(
+  requestId: string,
+  responseUsage: ResponseUsageForConsole,
+): Promise<void> {
+  const chargedMicrousd = await getQuotaChargeMicrousd(requestId, responseUsage);
 
   await db.execute(sql`
     WITH target AS (
-      SELECT request_id, api_key_id, quota_charged_tokens
+      SELECT request_id, api_key_id, quota_charged_microusd
       FROM console_requests
       WHERE request_id = ${requestId}
       FOR UPDATE
     ),
     updated_request AS (
       UPDATE console_requests AS cr
-      SET quota_charged_tokens = ${chargedTokens}::bigint
+      SET quota_charged_microusd = ${chargedMicrousd}::bigint
       FROM target
       WHERE cr.request_id = target.request_id
       RETURNING target.api_key_id AS api_key_id,
-        (${chargedTokens}::bigint - target.quota_charged_tokens) AS delta
+        (${chargedMicrousd}::bigint - target.quota_charged_microusd) AS delta
     )
     UPDATE console_api_keys AS k
-    SET token_used = GREATEST(0, k.token_used + updated_request.delta)
+    SET cost_used_microusd = GREATEST(0, k.cost_used_microusd + updated_request.delta)
     FROM updated_request
     WHERE k.id = updated_request.api_key_id
       AND updated_request.api_key_id IS NOT NULL
@@ -1496,7 +1525,7 @@ export async function saveConsoleResponse(record: ConsoleResponseSnapshotInput):
         tokenUsageEstimated: record.response_usage.estimated ? 1 : 0,
       })
       .where(eq(consoleRequests.requestId, record.request_id));
-    await syncApiKeyQuotaCharge(record.request_id, record.response_usage.total_tokens);
+    await syncApiKeyQuotaCharge(record.request_id, record.response_usage);
     const dbTxMs = elapsedPerfMs(txStart);
     const totalMs = elapsedPerfMs(totalStart);
 

@@ -194,13 +194,13 @@ export function fetchKeys(): Promise<ConsoleKeysPayload> {
   return requestJson("/__console/api/keys")
 }
 
-export function createKey(name: string, tokenQuota?: number | null): Promise<ConsoleCreateKeyPayload> {
+export function createKey(name: string, costQuota?: number | null): Promise<ConsoleCreateKeyPayload> {
   return requestJson("/__console/api/keys", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ name, token_quota: tokenQuota ?? null }),
+    body: JSON.stringify({ name, cost_quota: costQuota ?? null }),
   })
 }
 
@@ -234,13 +234,13 @@ export function setKeyAllowedModels(id: string, models: string[]): Promise<Manag
   })
 }
 
-export function setKeyTokenQuota(id: string, tokenQuota: number | null): Promise<ManagedApiKey> {
+export function setKeyCostQuota(id: string, costQuota: number | null): Promise<ManagedApiKey> {
   return requestJson(`/__console/api/keys/${encodeURIComponent(id)}/quota`, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ token_quota: tokenQuota }),
+    body: JSON.stringify({ cost_quota: costQuota }),
   })
 }
 

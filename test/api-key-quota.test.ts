@@ -1,67 +1,71 @@
 import { describe, expect, test } from 'bun:test';
-import { buildApiKeyQuotaSnapshot, normalizeUsedTokens, parseApiKeyTokenQuotaLimit } from '../src/api-key-quota';
+import {
+  buildApiKeyQuotaSnapshot,
+  microusdToUsd,
+  parseApiKeyCostQuotaLimit,
+  usdCostToChargeMicrousd,
+  usdToQuotaMicrousd,
+} from '../src/api-key-quota';
 
-describe('parseApiKeyTokenQuotaLimit', () => {
+describe('parseApiKeyCostQuotaLimit', () => {
   test('empty values mean unlimited quota', () => {
-    expect(parseApiKeyTokenQuotaLimit(null)).toEqual({ ok: true, value: null });
-    expect(parseApiKeyTokenQuotaLimit(undefined)).toEqual({ ok: true, value: null });
-    expect(parseApiKeyTokenQuotaLimit('')).toEqual({ ok: true, value: null });
-    expect(parseApiKeyTokenQuotaLimit('   ')).toEqual({ ok: true, value: null });
+    expect(parseApiKeyCostQuotaLimit(null)).toEqual({ ok: true, value: null });
+    expect(parseApiKeyCostQuotaLimit(undefined)).toEqual({ ok: true, value: null });
+    expect(parseApiKeyCostQuotaLimit('')).toEqual({ ok: true, value: null });
   });
 
-  test('accepts non-negative integers', () => {
-    expect(parseApiKeyTokenQuotaLimit(0)).toEqual({ ok: true, value: 0 });
-    expect(parseApiKeyTokenQuotaLimit(1000)).toEqual({ ok: true, value: 1000 });
-    expect(parseApiKeyTokenQuotaLimit('2500')).toEqual({ ok: true, value: 2500 });
+  test('accepts non-negative dollar values and stores micro-USD', () => {
+    expect(parseApiKeyCostQuotaLimit(0)).toEqual({ ok: true, value: 0 });
+    expect(parseApiKeyCostQuotaLimit(0.01)).toEqual({ ok: true, value: 10_000 });
+    expect(parseApiKeyCostQuotaLimit('2.5')).toEqual({ ok: true, value: 2_500_000 });
   });
 
-  test('rejects negative, fractional, and non-numeric values', () => {
-    expect(parseApiKeyTokenQuotaLimit(-1).ok).toBe(false);
-    expect(parseApiKeyTokenQuotaLimit(1.5).ok).toBe(false);
-    expect(parseApiKeyTokenQuotaLimit('abc').ok).toBe(false);
+  test('rejects negative and non-numeric values', () => {
+    expect(parseApiKeyCostQuotaLimit(-1).ok).toBe(false);
+    expect(parseApiKeyCostQuotaLimit('abc').ok).toBe(false);
   });
 });
 
 describe('buildApiKeyQuotaSnapshot', () => {
   test('unlimited quota never exhausts', () => {
     expect(buildApiKeyQuotaSnapshot(null, 500)).toEqual({
-      token_quota: null,
-      token_used: 500,
-      token_remaining: null,
+      cost_quota: null,
+      cost_used: 0.0005,
+      cost_remaining: null,
       quota_exhausted: false,
     });
   });
 
   test('zero quota is exhausted immediately', () => {
     expect(buildApiKeyQuotaSnapshot(0, 0)).toEqual({
-      token_quota: 0,
-      token_used: 0,
-      token_remaining: 0,
+      cost_quota: 0,
+      cost_used: 0,
+      cost_remaining: 0,
       quota_exhausted: true,
     });
   });
 
-  test('computes remaining quota and exhaustion from used tokens', () => {
-    expect(buildApiKeyQuotaSnapshot(1000, 400)).toEqual({
-      token_quota: 1000,
-      token_used: 400,
-      token_remaining: 600,
+  test('computes remaining cost quota and exhaustion from used cost', () => {
+    expect(buildApiKeyQuotaSnapshot(1_000_000, 400_000)).toEqual({
+      cost_quota: 1,
+      cost_used: 0.4,
+      cost_remaining: 0.6,
       quota_exhausted: false,
     });
 
-    expect(buildApiKeyQuotaSnapshot(1000, 1000)).toEqual({
-      token_quota: 1000,
-      token_used: 1000,
-      token_remaining: 0,
+    expect(buildApiKeyQuotaSnapshot(1_000_000, 1_000_000)).toEqual({
+      cost_quota: 1,
+      cost_used: 1,
+      cost_remaining: 0,
       quota_exhausted: true,
     });
   });
 });
 
-describe('normalizeUsedTokens', () => {
-  test('normalizes aggregate values defensively', () => {
-    expect(normalizeUsedTokens('42')).toBe(42);
-    expect(normalizeUsedTokens(-3)).toBe(0);
-    expect(normalizeUsedTokens('not-a-number')).toBe(0);
+describe('micro-USD helpers', () => {
+  test('rounds configured quotas but rounds usage charges up', () => {
+    expect(usdToQuotaMicrousd(0.0000014)).toBe(1);
+    expect(usdCostToChargeMicrousd(0.0000014)).toBe(2);
+    expect(microusdToUsd('42')).toBe(0.000042);
   });
 });

@@ -5,8 +5,8 @@ import { existsSync, statSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { createProvider, deleteProvider, ensureProviderConfigsLoaded, getChannelModels, getProviderConfig, getProviderInfo, getProviders, refreshRoutingConfigCache, resolveRoute, toggleProvider, updateProvider } from './config';
 import { getConsoleRequest, listConsoleRequests, getProviderHealthStatuses, getConsoleUsageStats, getConsoleFilterOptions, type RequestSortKey, type SortDirection } from './console-store';
-import { createManagedApiKey, deleteManagedApiKey, getManagedApiKey, listManagedApiKeys, renameManagedApiKey, setApiKeyAllowedModels, setApiKeyTokenQuota } from './api-keys';
-import { parseApiKeyTokenQuotaLimit } from './api-key-quota';
+import { createManagedApiKey, deleteManagedApiKey, getManagedApiKey, listManagedApiKeys, renameManagedApiKey, setApiKeyAllowedModels, setApiKeyCostQuota } from './api-keys';
+import { parseApiKeyCostQuotaLimit } from './api-key-quota';
 import { createModelAlias, deleteModelAlias, listModelAliases, toggleModelAlias, updateModelAlias } from './console-model-alias-store';
 import { ensureModelCatalogLoaded, lookupModelContext } from './model-catalog';
 import { ensurePricingLoaded, getModelPricing } from './pricing';
@@ -1094,7 +1094,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
     }
 
     try {
-      const created = await createManagedApiKey(name, (payload as { token_quota?: unknown }).token_quota);
+      const created = await createManagedApiKey(name, (payload as { cost_quota?: unknown }).cost_quota);
       return c.json(created, 201);
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
@@ -1186,12 +1186,12 @@ export function registerConsoleRoutes(app: Hono<any>): void {
     }
 
     const payload = await c.req.json().catch(() => ({}));
-    const parsed = parseApiKeyTokenQuotaLimit((payload as { token_quota?: unknown }).token_quota);
+    const parsed = parseApiKeyCostQuotaLimit((payload as { cost_quota?: unknown }).cost_quota);
     if (!parsed.ok) {
       return c.json({ error: parsed.error }, 400);
     }
 
-    const updated = await setApiKeyTokenQuota(c.req.param('id'), parsed.value);
+    const updated = await setApiKeyCostQuota(c.req.param('id'), parsed.value);
     if (!updated) {
       return c.json({ error: '未找到 API key' }, 404);
     }

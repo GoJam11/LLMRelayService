@@ -36,6 +36,13 @@
       "when": 1780226509003,
       "tag": "0004_api_key_token_quota",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1780228173744,
+      "tag": "0005_api_key_cost_quota",
+      "breakpoints": true
     }
   ]
 }
