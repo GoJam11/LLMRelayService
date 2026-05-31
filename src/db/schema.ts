@@ -41,6 +41,7 @@ export const consoleRequests = pgTable('console_requests', {
   reasoningOutputTokens: integer('reasoning_output_tokens').notNull().default(0),
   ephemeral5mInputTokens: integer('ephemeral_5m_input_tokens').notNull().default(0),
   ephemeral1hInputTokens: integer('ephemeral_1h_input_tokens').notNull().default(0),
+  quotaChargedTokens: bigint('quota_charged_tokens', { mode: 'number' }).notNull().default(0),
   failoverFrom: text('failover_from'),
   failoverChainJson: text('failover_chain_json'),
   originalRoutePrefix: text('original_route_prefix'),
@@ -72,6 +73,8 @@ export const consoleApiKeys = pgTable('console_api_keys', {
   lastUsedAt: bigint('last_used_at', { mode: 'number' }),
   revoked: integer('revoked').notNull().default(0),
   allowedModelsJson: text('allowed_models_json').notNull().default('[]'),
+  tokenQuota: bigint('token_quota', { mode: 'number' }),
+  tokenUsed: bigint('token_used', { mode: 'number' }).notNull().default(0),
 }, (table) => ({
   keyHashIdx: index('idx_console_api_keys_key_hash').on(table.keyHash),
   createdAtIdx: index('idx_console_api_keys_created_at').on(table.createdAt),

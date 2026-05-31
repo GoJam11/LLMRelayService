@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { BarChart3, Copy, Filter, KeyRound, Pencil, Plus, Trash2, X } from "lucide-react"
+import { BarChart3, Copy, Filter, Gauge, KeyRound, Pencil, Plus, Trash2, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -20,7 +20,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { Field, FieldContent, FieldLabel } from "@/components/ui/field"
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Combobox } from "@/components/ui/combobox"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -32,12 +32,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { createKey, deleteKey, fetchKeys, fetchModels, getKey, renameKey, setKeyAllowedModels } from "@/features/dashboard/api"
+import { createKey, deleteKey, fetchKeys, fetchModels, getKey, renameKey, setKeyAllowedModels, setKeyTokenQuota } from "@/features/dashboard/api"
 import type { GatewayModel, ManagedApiKey, ManagedApiKeyDetail } from "@/features/dashboard/types"
 
 function formatDateTime(timestamp: number | null) {
   if (!timestamp) return "--"
   return new Date(timestamp).toLocaleString("zh-CN", { hour12: false })
+}
+
+function formatTokenCount(value: number | null | undefined) {
+  if (value == null) return "--"
+  return new Intl.NumberFormat("zh-CN").format(value)
 }
 
 async function copyText(value: string) {
@@ -63,15 +68,20 @@ export function KeysPage({
   const [createOpen, setCreateOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
   const [modelsOpen, setModelsOpen] = useState(false)
+  const [quotaOpen, setQuotaOpen] = useState(false)
   const [creating, setCreating] = useState(false)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [savingModelsId, setSavingModelsId] = useState<string | null>(null)
+  const [savingQuotaId, setSavingQuotaId] = useState<string | null>(null)
   const [newKeyName, setNewKeyName] = useState("")
+  const [newKeyQuotaDraft, setNewKeyQuotaDraft] = useState("")
   const [renameDraft, setRenameDraft] = useState("")
   const [renameTarget, setRenameTarget] = useState<ManagedApiKey | null>(null)
   const [visibleKey, setVisibleKey] = useState<ManagedApiKeyDetail | null>(null)
   const [modelsTarget, setModelsTarget] = useState<ManagedApiKey | null>(null)
+  const [quotaTarget, setQuotaTarget] = useState<ManagedApiKey | null>(null)
+  const [quotaDraft, setQuotaDraft] = useState("")
   const [modelsDraft, setModelsDraft] = useState<string[]>([])
   const [modelsInput, setModelsInput] = useState("")
   const [configuredModels, setConfiguredModels] = useState<GatewayModel[]>([])
@@ -150,13 +160,21 @@ export function KeysPage({
       return
     }
 
+    const trimmedQuota = newKeyQuotaDraft.trim()
+    const tokenQuota = trimmedQuota === "" ? null : Number(trimmedQuota)
+    if (tokenQuota != null && (!Number.isFinite(tokenQuota) || tokenQuota < 0 || !Number.isInteger(tokenQuota))) {
+      setError(t("keys.quotaValidation"))
+      return
+    }
+
     try {
       setCreating(true)
-      const created = await createKey(name)
+      const created = await createKey(name, tokenQuota)
       setKeys((current) => [created.record, ...(current ?? [])])
       setVisibleKey({ ...created.record, key: created.key })
       setCreateOpen(false)
       setNewKeyName("")
+      setNewKeyQuotaDraft("")
       setError("")
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -223,6 +241,12 @@ export function KeysPage({
     setModelsOpen(true)
   }
 
+  const openQuotaDialog = (key: ManagedApiKey) => {
+    setQuotaTarget(key)
+    setQuotaDraft(key.token_quota == null ? "" : String(key.token_quota))
+    setQuotaOpen(true)
+  }
+
   const addModelRestriction = (value: string) => {
     const model = value.trim()
     if (!model || modelsDraft.includes(model)) return
@@ -268,6 +292,35 @@ export function KeysPage({
       setError(message)
     } finally {
       setSavingModelsId(null)
+    }
+  }
+
+  const handleSaveQuota = async () => {
+    const target = quotaTarget
+    if (!target) return
+
+    const trimmed = quotaDraft.trim()
+    const tokenQuota = trimmed === "" ? null : Number(trimmed)
+    if (tokenQuota != null && (!Number.isFinite(tokenQuota) || tokenQuota < 0 || !Number.isInteger(tokenQuota))) {
+      setError(t("keys.quotaValidation"))
+      return
+    }
+
+    try {
+      setSavingQuotaId(target.id)
+      const updated = await setKeyTokenQuota(target.id, tokenQuota)
+      setKeys((current) => (current ?? []).map((item) => item.id === target.id ? { ...item, ...updated } : item))
+      setVisibleKey((current) => current?.id === target.id ? { ...current, ...updated } : current)
+      setQuotaOpen(false)
+      setQuotaTarget(null)
+      setError("")
+      showFeedback(t("keys.quotaUpdated"))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (handleUnauthorized(message)) return
+      setError(message)
+    } finally {
+      setSavingQuotaId(null)
     }
   }
 
@@ -326,6 +379,7 @@ export function KeysPage({
                 <TableHead>{t("keys.nameCol")}</TableHead>
                 <TableHead>{t("keys.prefixCol")}</TableHead>
                 <TableHead>{t("keys.allowedModelsCol")}</TableHead>
+                <TableHead>{t("keys.tokenQuotaCol")}</TableHead>
                 <TableHead>{t("keys.createdCol")}</TableHead>
                 <TableHead>{t("keys.lastUsedCol")}</TableHead>
                 <TableHead className="text-right">{t("keys.actionsCol")}</TableHead>
@@ -343,6 +397,22 @@ export function KeysPage({
                       <Badge variant="secondary" className="font-mono text-xs">
                         {t("keys.allowedModelsCount", { count: key.allowed_models.length })}
                       </Badge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {key.token_quota == null ? (
+                      <span className="text-muted-foreground text-xs">{t("keys.quotaUnlimited")}</span>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        <Badge variant={key.quota_exhausted ? "destructive" : "secondary"} className="font-mono text-xs">
+                          {key.quota_exhausted
+                            ? t("keys.quotaExhausted")
+                            : t("keys.quotaRemaining", { remaining: formatTokenCount(key.token_remaining) })}
+                        </Badge>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {formatTokenCount(key.token_used)} / {formatTokenCount(key.token_quota)}
+                        </span>
+                      </div>
                     )}
                   </TableCell>
                   <TableCell>{formatDateTime(key.created_at)}</TableCell>
@@ -368,6 +438,9 @@ export function KeysPage({
                       </Button>
                       <Button type="button" size="xs" variant="ghost" onClick={() => openModelsDialog(key)}>
                         <Filter data-icon="inline-start" />{t("keys.manageModels")}
+                      </Button>
+                      <Button type="button" size="xs" variant="ghost" onClick={() => openQuotaDialog(key)}>
+                        <Gauge data-icon="inline-start" />{t("keys.manageQuota")}
                       </Button>
                       <Button type="button" size="xs" variant="ghost" disabled={deletingId === key.id} onClick={() => void handleDelete(key)}>
                         <Trash2 data-icon="inline-start" />{deletingId === key.id ? t("common.deleting") : t("common.delete")}
@@ -398,6 +471,21 @@ export function KeysPage({
             <FieldLabel htmlFor="new-key-name">{t("keys.keyNameLabel")}</FieldLabel>
             <FieldContent>
               <Input id="new-key-name" placeholder={t("keys.keyNamePlaceholder")} value={newKeyName} onChange={(event) => setNewKeyName(event.target.value)} />
+            </FieldContent>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="new-key-quota">{t("keys.quotaInputLabel")}</FieldLabel>
+            <FieldContent>
+              <Input
+                id="new-key-quota"
+                type="number"
+                min={0}
+                step={1}
+                placeholder={t("keys.quotaInputPlaceholder")}
+                value={newKeyQuotaDraft}
+                onChange={(event) => setNewKeyQuotaDraft(event.target.value)}
+              />
+              <FieldDescription>{t("keys.createQuotaHint")}</FieldDescription>
             </FieldContent>
           </Field>
           <DialogFooter>
@@ -506,6 +594,36 @@ export function KeysPage({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={quotaOpen} onOpenChange={(open) => { if (!open) { setQuotaOpen(false); setQuotaTarget(null) } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("keys.manageQuotaDialogTitle")}</DialogTitle>
+            <DialogDescription>{t("keys.manageQuotaDialogDesc", { name: quotaTarget?.name ?? "" })}</DialogDescription>
+          </DialogHeader>
+          <Field>
+            <FieldLabel htmlFor="quota-input">{t("keys.quotaInputLabel")}</FieldLabel>
+            <FieldContent>
+              <Input
+                id="quota-input"
+                type="number"
+                min={0}
+                step={1}
+                placeholder={t("keys.quotaInputPlaceholder")}
+                value={quotaDraft}
+                onChange={(event) => setQuotaDraft(event.target.value)}
+              />
+              <FieldDescription>{t("keys.quotaInputHint", { used: formatTokenCount(quotaTarget?.token_used ?? 0) })}</FieldDescription>
+            </FieldContent>
+          </Field>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => { setQuotaOpen(false); setQuotaTarget(null) }}>{t("common.cancel")}</Button>
+            <Button type="button" disabled={savingQuotaId === quotaTarget?.id} onClick={() => void handleSaveQuota()}>
+              {savingQuotaId === quotaTarget?.id ? t("keys.quotaSaving") : t("keys.quotaSave")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={visibleKey !== null} onOpenChange={(open) => { if (!open) setVisibleKey(null) }}>
         <DialogContent>
           <DialogHeader>
@@ -528,4 +646,3 @@ export function KeysPage({
     </div>
   )
 }
-

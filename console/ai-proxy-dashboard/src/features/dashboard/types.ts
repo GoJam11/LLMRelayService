@@ -269,6 +269,10 @@ export type ManagedApiKey = {
   created_at: number
   last_used_at: number | null
   allowed_models: string[]
+  token_quota: number | null
+  token_used: number
+  token_remaining: number | null
+  quota_exhausted: boolean
 }
 
 export type ConsoleKeysPayload = {

@@ -3,6 +3,7 @@ import { and, desc, eq, ne } from 'drizzle-orm';
 import { consoleApiKeys } from './db/schema';
 import { createDbClient } from './db/client';
 import { isModelAllowed, parseAllowedModels } from './api-key-model-filter';
+import { buildApiKeyQuotaSnapshot, parseApiKeyTokenQuotaLimit } from './api-key-quota';
 export { isModelAllowed, parseAllowedModels } from './api-key-model-filter';
 
 const db = createDbClient();
@@ -16,6 +17,10 @@ export interface StoredApiKeyRecord {
   created_at: number;
   last_used_at: number | null;
   allowed_models: string[];
+  token_quota: number | null;
+  token_used: number;
+  token_remaining: number | null;
+  quota_exhausted: boolean;
 }
 
 export interface StoredApiKeyDetail extends StoredApiKeyRecord {
@@ -26,6 +31,10 @@ export interface AuthenticatedApiKeyInfo {
   id: string;
   name: string;
   allowed_models: string[];
+  token_quota: number | null;
+  token_used: number;
+  token_remaining: number | null;
+  quota_exhausted: boolean;
 }
 
 function hashKey(rawKey: string): string {
@@ -48,6 +57,7 @@ function toRecord(row: typeof consoleApiKeys.$inferSelect): StoredApiKeyRecord {
     created_at: row.createdAt,
     last_used_at: row.lastUsedAt,
     allowed_models: parseAllowedModels(row.allowedModelsJson),
+    ...buildApiKeyQuotaSnapshot(row.tokenQuota, row.tokenUsed),
   };
 }
 
@@ -60,11 +70,15 @@ export async function listManagedApiKeys(): Promise<StoredApiKeyRecord[]> {
   return rows.map(toRecord);
 }
 
-export async function createManagedApiKey(name: string): Promise<{ key: string; record: StoredApiKeyRecord }> {
+export async function createManagedApiKey(name: string, tokenQuotaInput?: unknown): Promise<{ key: string; record: StoredApiKeyRecord }> {
   await storeReady;
   const normalizedName = name.trim();
   if (!normalizedName) {
     throw new Error('Key 名称不能为空');
+  }
+  const parsedQuota = parseApiKeyTokenQuotaLimit(tokenQuotaInput);
+  if (!parsedQuota.ok) {
+    throw new Error(parsedQuota.error);
   }
 
   const rawKey = createRawKey();
@@ -80,6 +94,8 @@ export async function createManagedApiKey(name: string): Promise<{ key: string; 
       createdAt: now,
       lastUsedAt: null,
       revoked: 0,
+      tokenQuota: parsedQuota.value,
+      tokenUsed: 0,
     })
     .returning();
 
@@ -185,6 +201,7 @@ export async function authenticateManagedApiKey(rawKey: string): Promise<Authent
     id: row.id,
     name: row.name,
     allowed_models: parseAllowedModels(row.allowedModelsJson),
+    ...buildApiKeyQuotaSnapshot(row.tokenQuota, row.tokenUsed),
   };
 }
 
@@ -203,6 +220,22 @@ export async function setApiKeyAllowedModels(id: string, models: string[]): Prom
 
   const rows = await db.update(consoleApiKeys)
     .set({ allowedModelsJson: JSON.stringify(cleanedModels) })
+    .where(and(
+      eq(consoleApiKeys.id, normalizedId),
+      eq(consoleApiKeys.revoked, 0),
+    ))
+    .returning();
+
+  return rows[0] ? toRecord(rows[0]) : null;
+}
+
+export async function setApiKeyTokenQuota(id: string, tokenQuota: number | null): Promise<StoredApiKeyRecord | null> {
+  await storeReady;
+  const normalizedId = id.trim();
+  if (!normalizedId) return null;
+
+  const rows = await db.update(consoleApiKeys)
+    .set({ tokenQuota })
     .where(and(
       eq(consoleApiKeys.id, normalizedId),
       eq(consoleApiKeys.revoked, 0),

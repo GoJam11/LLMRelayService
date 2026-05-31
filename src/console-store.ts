@@ -1342,6 +1342,39 @@ function normalizeOffset(offset: number): number {
   return Math.max(0, Math.trunc(offset));
 }
 
+function normalizeQuotaChargeTokens(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.trunc(parsed);
+}
+
+async function syncApiKeyQuotaCharge(requestId: string, totalTokens: unknown): Promise<void> {
+  const chargedTokens = normalizeQuotaChargeTokens(totalTokens);
+
+  await db.execute(sql`
+    WITH target AS (
+      SELECT request_id, api_key_id, quota_charged_tokens
+      FROM console_requests
+      WHERE request_id = ${requestId}
+      FOR UPDATE
+    ),
+    updated_request AS (
+      UPDATE console_requests AS cr
+      SET quota_charged_tokens = ${chargedTokens}::bigint
+      FROM target
+      WHERE cr.request_id = target.request_id
+      RETURNING target.api_key_id AS api_key_id,
+        (${chargedTokens}::bigint - target.quota_charged_tokens) AS delta
+    )
+    UPDATE console_api_keys AS k
+    SET token_used = GREATEST(0, k.token_used + updated_request.delta)
+    FROM updated_request
+    WHERE k.id = updated_request.api_key_id
+      AND updated_request.api_key_id IS NOT NULL
+      AND updated_request.delta <> 0
+  `);
+}
+
 export async function saveConsoleRequest(record: ConsoleRequestSnapshotInput): Promise<void> {
   try {
     const totalStart = nowPerfMs();
@@ -1463,6 +1496,7 @@ export async function saveConsoleResponse(record: ConsoleResponseSnapshotInput):
         tokenUsageEstimated: record.response_usage.estimated ? 1 : 0,
       })
       .where(eq(consoleRequests.requestId, record.request_id));
+    await syncApiKeyQuotaCharge(record.request_id, record.response_usage.total_tokens);
     const dbTxMs = elapsedPerfMs(txStart);
     const totalMs = elapsedPerfMs(totalStart);
 

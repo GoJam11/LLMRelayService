@@ -62,8 +62,8 @@ function buildGatewayErrorResponse(
     return Response.json({
       error: {
         message: details ? `${message}: ${details}` : message,
-        type: status === 401 ? 'authentication_error' : 'api_error',
-        code: null,
+        type: status === 401 ? 'authentication_error' : status === 429 ? 'rate_limit_error' : 'api_error',
+        code: status === 429 ? 'insufficient_quota' : null,
         param: null,
       },
     }, { status });
@@ -445,6 +445,19 @@ async function handleProxyRequest(c: any): Promise<Response> {
     return gatewayAuth.response;
   }
   const matchedApiKey = gatewayAuth.apiKeyInfo;
+
+  if (matchedApiKey?.quota_exhausted) {
+    const quota = matchedApiKey.token_quota ?? 0;
+    const quotaResponse = buildGatewayErrorResponse(
+      initialRoute.type,
+      429,
+      '此 API key 的 Token 额度已用完',
+      `已用 ${matchedApiKey.token_used} / 额度 ${quota}`,
+    );
+    applyCorsHeaders(quotaResponse.headers);
+    emitRequestPerf(quotaResponse.status);
+    return quotaResponse;
+  }
 
   // Enforce per-key model restrictions against the client-requested model name.
   // This intentionally checks the pre-resolution model/alias, not route.resolvedModel,
