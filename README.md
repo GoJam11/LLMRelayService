@@ -17,9 +17,7 @@ LRS 秉持**轻量设计**原则：默认不引入格式转换，客户端发什
 
 > **适用场景**：LRS 面向个人开发者或小团队内部使用，无注册、邀请等商业化机制，只有单一管理员账户。它提供按 API key 分发的简单费用额度控制；如果你需要完整多租户商业化能力，可以考虑 NewAPI / One-API 等方案。如果你只是想为自己的工具链搭一个干净、可观测的 LLM 中继，LRS 是更轻量的选择。
 
-| 渠道管理 | 用量统计 | 请求日志 |
-|:---:|:---:|:---:|
-| ![渠道管理](docs/screenshots/providers.png) | ![用量统计](docs/screenshots/usage.png) | ![请求日志](docs/screenshots/logs.png) |
+![LRS 控制台](docs/screenshots/lrs.png)
 
 ---
 
