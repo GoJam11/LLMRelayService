@@ -96,6 +96,7 @@ export interface ConsoleRequestSnapshotInput {
   original_route_prefix: string | null;
   original_request_model: string | null;
   failover_reason: string | null;
+  retry_attempt?: number;
   source_request_type?: string;
 }
 
@@ -158,6 +159,7 @@ interface ConsoleRequestRow {
   original_route_prefix: string | null;
   original_request_model: string | null;
   failover_reason: string | null;
+  retry_attempt: number | string;
 }
 
 export interface StoredConsoleRequest {
@@ -190,6 +192,7 @@ export interface StoredConsoleRequest {
   original_route_prefix: string | null;
   original_request_model: string | null;
   failover_reason: string | null;
+  retry_attempt: number;
 }
 
 export interface ConsoleRequestDetailResult {
@@ -232,6 +235,7 @@ export interface ConsoleRequestListItem {
   original_route_prefix: string | null;
   original_request_model: string | null;
   failover_reason: string | null;
+  retry_attempt: number;
 }
 
 type ConsoleRequestListRow = Pick<ConsoleRequestRow,
@@ -271,6 +275,7 @@ type ConsoleRequestListRow = Pick<ConsoleRequestRow,
   | 'original_route_prefix'
   | 'original_request_model'
   | 'failover_reason'
+  | 'retry_attempt'
 >;
 
 export interface ConsoleOverview {
@@ -1110,6 +1115,7 @@ function toCamelCaseRow(row: typeof consoleRequests.$inferSelect): ConsoleReques
     original_route_prefix: row.originalRoutePrefix,
     original_request_model: row.originalRequestModel,
     failover_reason: row.failoverReason,
+    retry_attempt: row.retryAttempt ?? 0,
   };
 }
 
@@ -1268,6 +1274,7 @@ function mapListRow(
     original_route_prefix: row.original_route_prefix ?? null,
     original_request_model: row.original_request_model ?? null,
     failover_reason: row.failover_reason ?? null,
+    retry_attempt: normalizeNumber(row.retry_attempt) || 0,
   };
 }
 
@@ -1307,6 +1314,7 @@ async function mapRow(row: ConsoleRequestRow): Promise<StoredConsoleRequest> {
     original_route_prefix: row.original_route_prefix ?? null,
     original_request_model: row.original_request_model ?? null,
     failover_reason: row.failover_reason ?? null,
+    retry_attempt: normalizeNumber(row.retry_attempt) || 0,
   };
 }
 
@@ -1445,6 +1453,7 @@ export async function saveConsoleRequest(record: ConsoleRequestSnapshotInput): P
       originalRoutePrefix: record.original_route_prefix ?? null,
       originalRequestModel: record.original_request_model ?? null,
       failoverReason: record.failover_reason ?? null,
+      retryAttempt: record.retry_attempt ?? 0,
       sourceRequestType,
     }).onConflictDoUpdate({
       target: consoleRequests.requestId,
@@ -1468,6 +1477,7 @@ export async function saveConsoleRequest(record: ConsoleRequestSnapshotInput): P
         originalRoutePrefix: record.original_route_prefix ?? null,
         originalRequestModel: record.original_request_model ?? null,
         failoverReason: record.failover_reason ?? null,
+        retryAttempt: record.retry_attempt ?? 0,
         sourceRequestType,
       },
     });

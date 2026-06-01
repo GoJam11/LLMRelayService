@@ -47,6 +47,7 @@ export const consoleRequests = pgTable('console_requests', {
   originalRoutePrefix: text('original_route_prefix'),
   originalRequestModel: text('original_request_model'),
   failoverReason: text('failover_reason'),
+  retryAttempt: integer('retry_attempt').notNull().default(0),
   sourceRequestType: text('source_request_type').notNull().default('unknown'),
   tokenUsageEstimated: integer('token_usage_estimated').notNull().default(0),
 }, (table) => ({

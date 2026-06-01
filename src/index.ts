@@ -539,6 +539,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
     failoverFrom: string | null;
     failoverChain: string[];
     failoverReason: string | null;
+    retryAttempt: number;
   }): void => {
     const detectRequestTypeStart = nowPerfMs();
     sourceRequestType = detectRequestKindForProvider(
@@ -579,6 +580,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
       original_route_prefix: attempt.failoverFrom,
       original_request_model: attempt.failoverFrom ? originalRequestModel : null,
       failover_reason: attempt.failoverReason,
+      retry_attempt: attempt.retryAttempt,
       source_request_type: sourceRequestType as any,
     }));
     addPerfPhase(requestPerfPhases, 'queue_console_request_ms', elapsedPerfMs(queueConsoleWriteStart));
@@ -781,6 +783,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
         failoverFrom: isFallbackRoute(attempt.route) ? describeRoute(initialRoute) : null,
         failoverChain: [...failedRouteChain],
         failoverReason,
+        retryAttempt: retryIndexForRoute,
       });
       console.warn(attempt.logTag, {
         request_id: requestId,
@@ -818,7 +821,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
       target_url: attempt.upstreamTargetUrl,
       headers: attempt.headersSummary,
     });
-    console.log('[REQ]', { request_id: requestId, method: c.req.method, path: url.pathname + url.search, target_url: attempt.upstreamTargetUrl });
+    console.log('[REQ]', { request_id: requestId, method: c.req.method, path: url.pathname + url.search, target_url: attempt.upstreamTargetUrl, ...(retryIndexForRoute > 0 ? { retry_attempt: retryIndexForRoute } : {}) });
 
     const upstreamTimeoutMs = selectUpstreamFirstByteTimeoutMs(
       url.pathname,
@@ -887,6 +890,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
         failoverFrom: isFallbackRoute(route) ? describeRoute(initialRoute) : null,
         failoverChain: [...failedRouteChain],
         failoverReason: failoverReason ?? describeFailoverTrigger(trigger),
+        retryAttempt: retryIndexForRoute,
       });
       console.log('[RES]', { request_id: requestId, status: terminalErrorResponse.status, status_text: terminalErrorResponse.statusText || 'Error' });
       const finalizeStart = nowPerfMs();
@@ -950,6 +954,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
       failoverFrom: isFallbackRoute(route) ? describeRoute(initialRoute) : null,
       failoverChain: [...failedRouteChain],
       failoverReason,
+      retryAttempt: retryIndexForRoute,
     });
 
     console.log('[RES]', { request_id: requestId, status: upstreamResponse.status, status_text: upstreamResponse.statusText });

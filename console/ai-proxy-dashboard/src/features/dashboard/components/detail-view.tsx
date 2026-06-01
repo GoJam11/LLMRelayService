@@ -129,6 +129,7 @@ export function DetailView({
       value: `${record.response_status ?? "--"} ${record.response_status_text || ""}`.trim(),
     },
     ...(record.failover_reason ? [{ label: t("detail.failoverReason"), value: record.failover_reason }] : []),
+    ...(record.retry_attempt > 0 ? [{ label: t("detail.retryAttempt"), value: String(record.retry_attempt) }] : []),
   ]
   const timingRows = [
     { label: t("detail.firstChunk"), value: formatDuration(timing.first_chunk_latency_ms) },

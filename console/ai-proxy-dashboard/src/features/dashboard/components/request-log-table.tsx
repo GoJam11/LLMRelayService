@@ -136,6 +136,11 @@ function getRuntimeStatusBadges(item: ConsoleRequestListItem, t: (key: string) =
       label: t("logTable.failedOver"),
       variant: "outline",
     })
+  } else if (!item.failover_from && item.retry_attempt > 0) {
+    badges.push({
+      label: t("logTable.retriedSameRoute"),
+      variant: "outline",
+    })
   }
 
   return badges

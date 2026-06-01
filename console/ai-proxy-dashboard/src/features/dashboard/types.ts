@@ -101,6 +101,7 @@ export type ConsoleRequestListItem = {
   original_route_prefix: string | null
   original_request_model: string | null
   failover_reason: string | null
+  retry_attempt: number
 }
 
 export type ConsoleRequestDetail = {

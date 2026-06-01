@@ -1,0 +1,1 @@
+ALTER TABLE "console_requests" ADD COLUMN "retry_attempt" integer DEFAULT 0 NOT NULL;
