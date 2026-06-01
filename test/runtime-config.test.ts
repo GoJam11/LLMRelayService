@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { getDatabaseUrl } from '../src/db/config';
 import { TEST_DATABASE_URL, isTrustedTestDatabaseUrl } from '../src/db/test-database';
-import { loadProviderConfigsForTest, resetProviderConfigCache, resolveRoutesByModel, resolveRoutesForAnyModelFallback, resolveRoutesForFallbackModels, validateConfigEntries } from '../src/config';
+import { loadModelAliasesForTest, loadProviderConfigsForTest, resetProviderConfigCache, resolveRoutesByModel, resolveRoutesForAnyModelFallback, resolveRoutesForFallbackModels, validateConfigEntries } from '../src/config';
 
 describe('runtime config', () => {
   it('uses TEST_DATABASE_URL env var when running under bun test', () => {
@@ -141,5 +141,34 @@ describe('runtime config', () => {
       'miniLow:gpt-4o-mini',
       'deepseek:deepseek-chat',
     ]);
+  });
+
+  it('resolves custom fallback candidates through model aliases', () => {
+    const configs = validateConfigEntries({
+      primary: {
+        type: 'openai',
+        targetBaseUrl: 'https://primary.example.com/v1',
+        models: ['gpt-4o'],
+        priority: 30,
+        providerUuid: 'provider-primary',
+      },
+      backup: {
+        type: 'openai',
+        targetBaseUrl: 'https://backup.example.com/v1',
+        models: ['gpt-4o-mini'],
+        priority: 10,
+        providerUuid: 'provider-backup',
+      },
+    } as any);
+
+    loadProviderConfigsForTest(configs);
+    loadModelAliasesForTest({ mini: { provider: 'provider-backup', model: 'gpt-4o-mini' } });
+    const routes = resolveRoutesForFallbackModels('/v1/chat/completions', '', ['mini'], 'openai');
+    resetProviderConfigCache();
+
+    expect(routes.map((route) => `${route.channelName}:${route.resolvedModel}`)).toEqual([
+      'backup:gpt-4o-mini',
+    ]);
+    expect(routes[0]?.targetUrl).toBe('https://backup.example.com/v1/chat/completions');
   });
 });

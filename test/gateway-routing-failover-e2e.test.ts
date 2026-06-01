@@ -517,6 +517,7 @@ describe('failover – network error and timeout', () => {
     // Very short first-byte timeout (200 ms) — the mock will delay the first response
     forceTimeoutSettingsForTest({
       defaultFirstByteTimeoutMs: 200,
+      streamFirstByteTimeoutMs: 200,
       imageFirstByteTimeoutMs: 200,
       responseIdleTimeoutMs: 0,
     });
@@ -542,6 +543,7 @@ describe('failover – network error and timeout', () => {
     loadProviderConfigsForTest(singleProviderConfig());
     forceTimeoutSettingsForTest({
       defaultFirstByteTimeoutMs: 200,
+      streamFirstByteTimeoutMs: 200,
       imageFirstByteTimeoutMs: 200,
       responseIdleTimeoutMs: 0,
     });
@@ -567,6 +569,7 @@ describe('failover – network error and timeout', () => {
     loadProviderConfigsForTest(singleProviderConfig());
     forceTimeoutSettingsForTest({
       defaultFirstByteTimeoutMs: 200,
+      streamFirstByteTimeoutMs: 200,
       imageFirstByteTimeoutMs: 200,
       responseIdleTimeoutMs: 0,
     });

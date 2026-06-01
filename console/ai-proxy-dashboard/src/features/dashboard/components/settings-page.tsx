@@ -21,6 +21,7 @@ import type { GatewayTimeoutSettingsPayload, TimeoutLimit } from "@/features/das
 
 type TimeoutFormState = {
   defaultFirstByteTimeoutSeconds: string
+  streamFirstByteTimeoutSeconds: string
   imageFirstByteTimeoutSeconds: string
   responseIdleTimeoutSeconds: string
 }
@@ -38,6 +39,7 @@ function formatUpdatedAt(timestamp: number | null, language: string): string {
 function toForm(settings: GatewayTimeoutSettingsPayload): TimeoutFormState {
   return {
     defaultFirstByteTimeoutSeconds: secondsText(settings.defaultFirstByteTimeoutMs),
+    streamFirstByteTimeoutSeconds: secondsText(settings.streamFirstByteTimeoutMs),
     imageFirstByteTimeoutSeconds: secondsText(settings.imageFirstByteTimeoutMs),
     responseIdleTimeoutSeconds: secondsText(settings.responseIdleTimeoutMs),
   }
@@ -143,7 +145,8 @@ export function SettingsPage({ onUnauthorized }: { onUnauthorized: () => void })
   const { t, i18n } = useTranslation()
   const [settings, setSettings] = useState<GatewayTimeoutSettingsPayload | null>(null)
   const [form, setForm] = useState<TimeoutFormState>({
-    defaultFirstByteTimeoutSeconds: "30",
+    defaultFirstByteTimeoutSeconds: "300",
+    streamFirstByteTimeoutSeconds: "30",
     imageFirstByteTimeoutSeconds: "300",
     responseIdleTimeoutSeconds: "300",
   })
@@ -192,6 +195,11 @@ export function SettingsPage({ onUnauthorized }: { onUnauthorized: () => void })
         icon: Settings2,
       },
       {
+        label: t("settings.streamPolicy"),
+        value: `${secondsText(source.streamFirstByteTimeoutMs)}s`,
+        icon: TimerReset,
+      },
+      {
         label: t("settings.imagePolicy"),
         value: `${secondsText(source.imageFirstByteTimeoutMs)}s`,
         icon: Image,
@@ -214,6 +222,12 @@ export function SettingsPage({ onUnauthorized }: { onUnauthorized: () => void })
         defaultFirstByteTimeoutMs: parseSeconds(
           form.defaultFirstByteTimeoutSeconds,
           t("settings.defaultFirstByteLabel"),
+          settings.limits.firstByte,
+          t,
+        ),
+        streamFirstByteTimeoutMs: parseSeconds(
+          form.streamFirstByteTimeoutSeconds,
+          t("settings.streamFirstByteLabel"),
           settings.limits.firstByte,
           t,
         ),
@@ -315,6 +329,14 @@ export function SettingsPage({ onUnauthorized }: { onUnauthorized: () => void })
                   limit={settings.limits.firstByte}
                 />
                 <TimeoutField
+                  id="stream-first-byte-timeout"
+                  label={t("settings.streamFirstByteLabel")}
+                  value={form.streamFirstByteTimeoutSeconds}
+                  onChange={(value) => setForm((current) => ({ ...current, streamFirstByteTimeoutSeconds: value }))}
+                  defaultMs={settings.defaults.streamFirstByteTimeoutMs}
+                  limit={settings.limits.firstByte}
+                />
+                <TimeoutField
                   id="image-first-byte-timeout"
                   label={t("settings.imageFirstByteLabel")}
                   value={form.imageFirstByteTimeoutSeconds}
@@ -349,7 +371,7 @@ export function SettingsPage({ onUnauthorized }: { onUnauthorized: () => void })
             <CardHeader className="gap-2 border-b border-border/60">
               <CardTitle>{t("settings.currentPolicyTitle")}</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-4 pt-5 md:grid-cols-3">
+            <CardContent className="grid gap-4 pt-5 md:grid-cols-4">
               {currentPolicy.map((item) => (
                 <PolicyCard
                   key={item.label}

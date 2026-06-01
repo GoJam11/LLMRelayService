@@ -820,7 +820,12 @@ async function handleProxyRequest(c: any): Promise<Response> {
     });
     console.log('[REQ]', { request_id: requestId, method: c.req.method, path: url.pathname + url.search, target_url: attempt.upstreamTargetUrl });
 
-    const upstreamTimeoutMs = selectUpstreamFirstByteTimeoutMs(url.pathname, attempt.upstreamTargetUrl, timeoutSettings);
+    const upstreamTimeoutMs = selectUpstreamFirstByteTimeoutMs(
+      url.pathname,
+      attempt.upstreamTargetUrl,
+      timeoutSettings,
+      retryableStreamRequest,
+    );
     let upstreamResponse: Response;
     const proxyStart = nowPerfMs();
     try {

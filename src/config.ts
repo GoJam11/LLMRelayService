@@ -633,6 +633,14 @@ export function loadProviderConfigsForTest(nextProviderConfigs: Record<string, C
   providerConfigsLoaded = true;
 }
 
+export function loadModelAliasesForTest(nextAliasConfigs: Record<string, AliasTarget>): void {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('loadModelAliasesForTest is only available while running tests');
+  }
+  aliasConfigs = nextAliasConfigs;
+  aliasConfigsLoaded = true;
+}
+
 export interface ModelInfo {
   id: string;
   channelName: string;

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import { HelpDialogButton } from "@/components/help-dialog-button"
 import { PageHeader } from "@/components/ui/page-header"
 import {
   Dialog,
@@ -604,6 +605,30 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
                   {t("routes.failoverUpdatedAt", { time: formatUpdatedAt(failoverPolicy.updatedAt, i18n.language) })}
                 </Badge>
               ) : null}
+              <HelpDialogButton
+                title={t("routes.failoverHelpTitle")}
+                description={t("routes.failoverHelpDesc")}
+                buttonLabel={t("common.help")}
+              >
+                <div className="space-y-4">
+                  <div>
+                    <div className="font-medium text-foreground">{t("routes.failoverHelpCustomTitle")}</div>
+                    <p className="mt-1">{t("routes.failoverHelpCustomBody")}</p>
+                  </div>
+                  <div>
+                    <div className="font-medium text-foreground">{t("routes.failoverHelpAliasTitle")}</div>
+                    <p className="mt-1">{t("routes.failoverHelpAliasBody")}</p>
+                  </div>
+                  <div>
+                    <div className="font-medium text-foreground">{t("routes.failoverHelpOrderTitle")}</div>
+                    <p className="mt-1">{t("routes.failoverHelpOrderBody")}</p>
+                  </div>
+                  <div className="border border-border/70 bg-muted/30 p-3 font-mono text-xs text-foreground">
+                    <div>{t("routes.failoverHelpExampleRequest")}: gpt-4o</div>
+                    <div>{t("routes.failoverHelpExampleFallbacks")}: mini, deepseek-chat</div>
+                  </div>
+                </div>
+              </HelpDialogButton>
               <Button
                 type="button"
                 variant="outline"

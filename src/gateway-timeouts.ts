@@ -4,6 +4,7 @@ import { gatewaySettings } from './db/schema';
 
 export interface GatewayTimeoutSettings {
   defaultFirstByteTimeoutMs: number;
+  streamFirstByteTimeoutMs: number;
   imageFirstByteTimeoutMs: number;
   responseIdleTimeoutMs: number;
 }
@@ -30,7 +31,8 @@ const SETTINGS_CACHE_TTL_MS = 5_000;
 const SETTINGS_WARNING_INTERVAL_MS = 60_000;
 
 export const CODE_DEFAULT_GATEWAY_TIMEOUTS: GatewayTimeoutSettings = {
-  defaultFirstByteTimeoutMs: 30_000,
+  defaultFirstByteTimeoutMs: 300_000,
+  streamFirstByteTimeoutMs: 30_000,
   imageFirstByteTimeoutMs: 300_000,
   responseIdleTimeoutMs: 300_000,
 };
@@ -77,8 +79,12 @@ export function getGatewayTimeoutDefaults(): GatewayTimeoutSettings {
   return {
     defaultFirstByteTimeoutMs:
       readPositiveIntegerEnv('UPSTREAM_DEFAULT_FIRST_BYTE_TIMEOUT_MS')
-      ?? readPositiveIntegerEnv('UPSTREAM_STREAM_FIRST_BYTE_TIMEOUT_MS')
+      ?? readPositiveIntegerEnv('UPSTREAM_REQUEST_TIMEOUT_MS')
       ?? CODE_DEFAULT_GATEWAY_TIMEOUTS.defaultFirstByteTimeoutMs,
+    streamFirstByteTimeoutMs:
+      readPositiveIntegerEnv('UPSTREAM_STREAM_FIRST_BYTE_TIMEOUT_MS')
+      ?? readPositiveIntegerEnv('UPSTREAM_REQUEST_TIMEOUT_MS')
+      ?? CODE_DEFAULT_GATEWAY_TIMEOUTS.streamFirstByteTimeoutMs,
     imageFirstByteTimeoutMs:
       readPositiveIntegerEnv('UPSTREAM_IMAGE_FIRST_BYTE_TIMEOUT_MS')
       ?? readPositiveIntegerEnv('UPSTREAM_REQUEST_TIMEOUT_MS')
@@ -115,6 +121,11 @@ export function normalizeGatewayTimeoutSettings(
       'defaultFirstByteTimeoutMs',
       GATEWAY_TIMEOUT_LIMITS.firstByte,
     ),
+    streamFirstByteTimeoutMs: assertTimeoutInRange(
+      input.streamFirstByteTimeoutMs ?? defaults.streamFirstByteTimeoutMs,
+      'streamFirstByteTimeoutMs',
+      GATEWAY_TIMEOUT_LIMITS.firstByte,
+    ),
     imageFirstByteTimeoutMs: assertTimeoutInRange(
       input.imageFirstByteTimeoutMs ?? defaults.imageFirstByteTimeoutMs,
       'imageFirstByteTimeoutMs',
@@ -149,6 +160,10 @@ function parseStoredSettings(valueJson: string): GatewayTimeoutSettingsInput {
     defaultFirstByteTimeoutMs:
       typeof parsed.defaultFirstByteTimeoutMs === 'number'
         ? parsed.defaultFirstByteTimeoutMs
+        : undefined,
+    streamFirstByteTimeoutMs:
+      typeof parsed.streamFirstByteTimeoutMs === 'number'
+        ? parsed.streamFirstByteTimeoutMs
         : undefined,
     imageFirstByteTimeoutMs:
       typeof parsed.imageFirstByteTimeoutMs === 'number'
@@ -251,10 +266,10 @@ export function selectUpstreamFirstByteTimeoutMs(
   pathname: string,
   targetUrl: string,
   settings: GatewayTimeoutSettings,
+  isStreamingRequest = false,
 ): number {
-  return isImageRequestPath(pathname, targetUrl)
-    ? settings.imageFirstByteTimeoutMs
-    : settings.defaultFirstByteTimeoutMs;
+  if (isImageRequestPath(pathname, targetUrl)) return settings.imageFirstByteTimeoutMs;
+  return isStreamingRequest ? settings.streamFirstByteTimeoutMs : settings.defaultFirstByteTimeoutMs;
 }
 
 /**

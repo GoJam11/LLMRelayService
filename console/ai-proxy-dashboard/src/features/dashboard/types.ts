@@ -342,6 +342,7 @@ export type TimeoutLimit = {
 
 export type GatewayTimeoutSettings = {
   defaultFirstByteTimeoutMs: number
+  streamFirstByteTimeoutMs: number
   imageFirstByteTimeoutMs: number
   responseIdleTimeoutMs: number
 }
