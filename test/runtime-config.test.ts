@@ -70,6 +70,33 @@ describe('runtime config', () => {
     ]);
   });
 
+  it('treats model aliases as virtual models instead of expanding their target model', () => {
+    const configs = validateConfigEntries({
+      primary: {
+        type: 'openai',
+        targetBaseUrl: 'https://primary.example.com/v1',
+        models: ['gpt-4o'],
+        priority: 30,
+        providerUuid: 'provider-primary',
+      },
+      secondary: {
+        type: 'openai',
+        targetBaseUrl: 'https://secondary.example.com/v1',
+        models: ['gpt-4o'],
+        priority: 20,
+      },
+    } as any);
+
+    loadProviderConfigsForTest(configs);
+    loadModelAliasesForTest({ fast: { provider: 'provider-primary', model: 'gpt-4o' } });
+    const routes = resolveRoutesByModel('/v1/chat/completions', '', 'fast');
+    resetProviderConfigCache();
+
+    expect(routes.map((route) => `${route.channelName}:${route.resolvedModel}`)).toEqual([
+      'primary:gpt-4o',
+    ]);
+  });
+
   it('builds whole-site model fallback candidates without binding to the requested model name', () => {
     const configs = validateConfigEntries({
       primary: {
@@ -97,7 +124,7 @@ describe('runtime config', () => {
     ]);
   });
 
-  it('resolves custom fallback model candidates in configured model order', () => {
+  it('resolves custom fallback model candidates by explicit channel and model', () => {
     const configs = validateConfigEntries({
       primary: {
         type: 'openai',
@@ -133,14 +160,36 @@ describe('runtime config', () => {
     } as any);
 
     loadProviderConfigsForTest(configs);
-    const routes = resolveRoutesForFallbackModels('/v1/chat/completions', '', ['gpt-4o-mini', 'deepseek-chat', 'claude-ignored'], 'openai');
+    const routes = resolveRoutesForFallbackModels('/v1/chat/completions', '', ['miniLow:gpt-4o-mini', 'deepseek:deepseek-chat', 'disabled:claude-ignored'], 'openai');
     resetProviderConfigCache();
 
     expect(routes.map((route) => `${route.channelName}:${route.resolvedModel}`)).toEqual([
-      'miniHigh:gpt-4o-mini',
       'miniLow:gpt-4o-mini',
       'deepseek:deepseek-chat',
     ]);
+  });
+
+  it('does not expand custom fallback bare model names across providers', () => {
+    const configs = validateConfigEntries({
+      miniHigh: {
+        type: 'openai',
+        targetBaseUrl: 'https://mini-high.example.com/v1',
+        models: ['gpt-4o-mini'],
+        priority: 20,
+      },
+      miniLow: {
+        type: 'openai',
+        targetBaseUrl: 'https://mini-low.example.com/v1',
+        models: ['gpt-4o-mini'],
+        priority: 10,
+      },
+    } as any);
+
+    loadProviderConfigsForTest(configs);
+    const routes = resolveRoutesForFallbackModels('/v1/chat/completions', '', ['gpt-4o-mini'], 'openai');
+    resetProviderConfigCache();
+
+    expect(routes).toEqual([]);
   });
 
   it('resolves custom fallback candidates through model aliases', () => {

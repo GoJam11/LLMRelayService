@@ -159,6 +159,7 @@ export function validateConfigEntries(entries: Record<string, RawConfigEntry>): 
     const priority = normalizePriority(entry.priority);
     const auth = normalizeStaticAuthInput(entry.auth, type);
     const extraFields = normalizeExtraFields(entry.extraFields);
+    const providerUuid = normalizeOptionalString(entry.providerUuid);
     const responsesMode = normalizeOpenAiResponsesMode(
       entry.responsesMode ?? extraFields?.[RESPONSES_MODE_EXTRA_FIELD],
       type,
@@ -175,6 +176,7 @@ export function validateConfigEntries(entries: Record<string, RawConfigEntry>): 
       enabled: entry.enabled !== false,
       ...(responsesMode ? { responsesMode } : {}),
       ...(normalizedExtraFields ? { extraFields: normalizedExtraFields } : {}),
+      ...(providerUuid ? { providerUuid } : {}),
     };
   }
 
@@ -623,6 +625,9 @@ export function resetProviderConfigCache(): void {
   providerConfigs = {};
   providerConfigsLoaded = false;
   providerConfigsPromise = null;
+  aliasConfigs = {};
+  aliasConfigsLoaded = false;
+  uuidToChannelName = {};
 }
 
 export function loadProviderConfigsForTest(nextProviderConfigs: Record<string, ConfigEntry>): void {
@@ -696,18 +701,56 @@ export function resolveRoutesForAnyModelFallback(pathname: string, search: strin
   return routes;
 }
 
+function resolveAliasFallbackRoute(pathname: string, search: string, alias: string, expectedType: UpstreamType): RouteResult | null {
+  const aliasTarget = aliasConfigs[alias];
+  if (!aliasTarget) return null;
+
+  const resolvedChannelName = uuidToChannelName[aliasTarget.provider] ?? aliasTarget.provider;
+  const entry = getConfigs()[resolvedChannelName];
+  if (!entry || entry.enabled === false || entry.type !== expectedType) return null;
+
+  return {
+    ...buildRouteResult(resolvedChannelName, entry, pathname, search),
+    resolvedModel: aliasTarget.model,
+  };
+}
+
+function resolveChannelModelFallbackRoute(pathname: string, search: string, fallbackTarget: string, expectedType: UpstreamType): RouteResult | null {
+  const separatorIndex = fallbackTarget.indexOf(':');
+  if (separatorIndex <= 0 || separatorIndex === fallbackTarget.length - 1) return null;
+
+  const channelNameOrUuid = fallbackTarget.slice(0, separatorIndex).trim();
+  const model = fallbackTarget.slice(separatorIndex + 1).trim();
+  if (!channelNameOrUuid || !model) return null;
+
+  const channelName = uuidToChannelName[channelNameOrUuid] ?? channelNameOrUuid;
+  const entry = getConfigs()[channelName];
+  if (!entry || entry.enabled === false || entry.type !== expectedType) return null;
+  if (!(entry.models ?? []).some((candidate) => getModelId(candidate) === model)) return null;
+
+  return {
+    ...buildRouteResult(channelName, entry, pathname, search),
+    resolvedModel: model,
+  };
+}
+
 export function resolveRoutesForFallbackModels(pathname: string, search: string, fallbackModels: string[], forcedType?: UpstreamType): RouteResult[] {
   if (!isModelRoutedPath(pathname)) return [];
+
+  const expectedType = forcedType ?? inferExpectedProviderType(pathname);
+  if (!expectedType) return [];
 
   const routes: RouteResult[] = [];
   const seenRouteKeys = new Set<string>();
   for (const fallbackModel of fallbackModels) {
-    for (const route of resolveRoutesByModel(pathname, search, fallbackModel, forcedType)) {
-      const routeKey = `${route.channelName}:${route.resolvedModel ?? fallbackModel}:${route.targetUrl}`;
-      if (seenRouteKeys.has(routeKey)) continue;
-      seenRouteKeys.add(routeKey);
-      routes.push(route.resolvedModel ? route : { ...route, resolvedModel: fallbackModel });
-    }
+    const route = resolveAliasFallbackRoute(pathname, search, fallbackModel, expectedType)
+      ?? resolveChannelModelFallbackRoute(pathname, search, fallbackModel, expectedType);
+    if (!route) continue;
+
+    const routeKey = `${route.channelName}:${route.resolvedModel ?? fallbackModel}:${route.targetUrl}`;
+    if (seenRouteKeys.has(routeKey)) continue;
+    seenRouteKeys.add(routeKey);
+    routes.push(route);
   }
   return routes;
 }
@@ -730,19 +773,10 @@ export function resolveRoutesByModel(pathname: string, search: string, model: st
     const entry = getConfigs()[resolvedChannelName];
     if (entry && entry.enabled !== false && (!expectedType || entry.type === expectedType)) {
       const result = buildRouteResult(resolvedChannelName, entry, pathname, search);
-      routes.push({ ...result, resolvedModel: aliasTarget.model });
-      seenChannelNames.add(resolvedChannelName);
+      return [{ ...result, resolvedModel: aliasTarget.model }];
     }
 
-    for (const matched of findRoutesByModel(aliasTarget.model, expectedType)) {
-      if (seenChannelNames.has(matched.channelName)) continue;
-      const result = buildRouteResult(matched.channelName, matched.entry, pathname, search);
-      routes.push({ ...result, resolvedModel: aliasTarget.model });
-      seenChannelNames.add(matched.channelName);
-    }
-
-    if (routes.length > 0) return routes;
-    // alias 存在但没有可用目标时继续走普通查找（降级）
+    return [];
   }
 
   return findRoutesByModel(model, expectedType).map((matched) => buildRouteResult(matched.channelName, matched.entry, pathname, search));

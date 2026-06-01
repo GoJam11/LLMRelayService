@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
 import app from '../src/index';
 import {
+  loadModelAliasesForTest,
   loadProviderConfigsForTest,
   resetProviderConfigCache,
   validateConfigEntries,
@@ -698,7 +699,7 @@ describe('failover – model fallback', () => {
       maxFallbackAttempts: 1,
       modelFallbackMode: 'disabled', // site-wide fallback disabled
       customModelFallbacks: [
-        { model: 'gpt-4o', fallbacks: ['claude-3-5-sonnet'] },
+        { model: 'gpt-4o', fallbacks: ['fallback_provider:claude-3-5-sonnet'] },
       ],
       retryOnStatusRanges: ['5xx'],
       retryOnStatusCodes: [],
@@ -716,6 +717,62 @@ describe('failover – model fallback', () => {
 
     const fallbackBody = JSON.parse(requestLog[1]!.body) as Record<string, unknown>;
     expect(fallbackBody.model).toBe('claude-3-5-sonnet');
+  });
+
+  it('treats aliases as virtual models with independent fallback rules', async () => {
+    const configs = validateConfigEntries({
+      primary: {
+        type: 'openai',
+        targetBaseUrl: `${mockBaseUrl}/primary/v1`,
+        auth: { header: 'authorization', value: 'key' },
+        models: ['gpt-4o'],
+        priority: 10,
+        providerUuid: 'provider-primary',
+      },
+      real_model_fallback: {
+        type: 'openai',
+        targetBaseUrl: `${mockBaseUrl}/real-model-fallback/v1`,
+        auth: { header: 'authorization', value: 'key' },
+        models: ['claude-3-5-sonnet'],
+        priority: 5,
+      },
+      alias_fallback: {
+        type: 'openai',
+        targetBaseUrl: `${mockBaseUrl}/alias-fallback/v1`,
+        auth: { header: 'authorization', value: 'key' },
+        models: ['deepseek-chat'],
+        priority: 5,
+      },
+    } as any);
+    loadProviderConfigsForTest(configs);
+    loadModelAliasesForTest({ fast: { provider: 'provider-primary', model: 'gpt-4o' } });
+    loadFailoverPolicyForTest({
+      enabled: true,
+      retryAttempts: 0,
+      maxFallbackAttempts: 1,
+      modelFallbackMode: 'disabled',
+      customModelFallbacks: [
+        { model: 'gpt-4o', fallbacks: ['real_model_fallback:claude-3-5-sonnet'] },
+        { model: 'fast', fallbacks: ['alias_fallback:deepseek-chat'] },
+      ],
+      retryOnStatusRanges: ['5xx'],
+      retryOnStatusCodes: [],
+    });
+
+    responseQueue.push(() => errorResponse(500));
+    responseQueue.push(() => defaultOkResponse('deepseek-chat'));
+
+    const res = await app.fetch(gatewayReq('/v1/chat/completions', chatBody('fast')));
+
+    expect(res.status).toBe(200);
+    expect(requestLog).toHaveLength(2);
+    expect(requestLog[0]!.path).toBe('/primary/v1/chat/completions');
+    expect(requestLog[1]!.path).toBe('/alias-fallback/v1/chat/completions');
+
+    const initialBody = JSON.parse(requestLog[0]!.body) as Record<string, unknown>;
+    const fallbackBody = JSON.parse(requestLog[1]!.body) as Record<string, unknown>;
+    expect(initialBody.model).toBe('gpt-4o');
+    expect(fallbackBody.model).toBe('deepseek-chat');
   });
 
   it('passes through the last upstream error when all fallback routes are exhausted', async () => {

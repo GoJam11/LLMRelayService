@@ -625,7 +625,7 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
                   </div>
                   <div className="border border-border/70 bg-muted/30 p-3 font-mono text-xs text-foreground">
                     <div>{t("routes.failoverHelpExampleRequest")}: gpt-4o</div>
-                    <div>{t("routes.failoverHelpExampleFallbacks")}: mini, deepseek-chat</div>
+                    <div>{t("routes.failoverHelpExampleFallbacks")}: mini, backup:gpt-4o-mini</div>
                   </div>
                 </div>
               </HelpDialogButton>
