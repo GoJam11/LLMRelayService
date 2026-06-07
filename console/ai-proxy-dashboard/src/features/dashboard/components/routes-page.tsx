@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { CheckCircle, GitFork, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Save, Trash2, TriangleAlert, Wifi, X, XCircle } from "lucide-react"
+import { CheckCircle, GitFork, Loader2, MapIcon, Pencil, Plus, RefreshCw, RotateCcw, Save, Trash2, TriangleAlert, Wifi, X, XCircle } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Badge } from "@/components/ui/badge"
@@ -88,6 +88,165 @@ type FailoverFormState = {
   retryOnNetworkError: boolean
   retryOn429: boolean
   retryOn5xx: boolean
+}
+
+type RouteMapRoute = {
+  key: string
+  provider: string
+  type: ProviderInfo["type"]
+  model: string
+  source: "alias" | "model" | "custom" | "any_model"
+  modelKnown: boolean
+}
+
+type RouteMapEntry = {
+  requestModel: string
+  requestType: ProviderInfo["type"]
+  kind: "alias" | "model" | "alias_override"
+  primaryRoutes: RouteMapRoute[]
+  fallbackRoutes: RouteMapRoute[]
+  hiddenRoutes: RouteMapRoute[]
+}
+
+function getProviderRef(provider: ProviderInfo): string {
+  return provider.providerUuid || provider.channelName
+}
+
+function sortProvidersByRoutingPriority(providers: ProviderInfo[]): ProviderInfo[] {
+  return [...providers].sort((a, b) => {
+    if ((b.priority ?? 0) !== (a.priority ?? 0)) return (b.priority ?? 0) - (a.priority ?? 0)
+    return a.channelName.localeCompare(b.channelName)
+  })
+}
+
+function getModelRoutes(providers: ProviderInfo[], model: string, expectedType: ProviderInfo["type"], source: RouteMapRoute["source"] = "model"): RouteMapRoute[] {
+  return sortProvidersByRoutingPriority(providers)
+    .filter((provider) => provider.enabled)
+    .filter((provider) => provider.type === expectedType)
+    .filter((provider) => provider.models.some((candidate) => candidate.model === model))
+    .map((provider) => ({
+      key: `${source}:${provider.channelName}:${model}`,
+      provider: provider.channelName,
+      type: provider.type,
+      model,
+      source,
+      modelKnown: true,
+    }))
+}
+
+function getAliasRoute(alias: ModelAlias, providers: ProviderInfo[], source: RouteMapRoute["source"] = "alias"): RouteMapRoute {
+  const provider = providers.find((candidate) => getProviderRef(candidate) === alias.provider || candidate.channelName === alias.provider)
+  return {
+    key: `${source}:${alias.alias}:${provider?.channelName ?? alias.provider}:${alias.model}`,
+    provider: provider?.channelName ?? alias.provider,
+    type: provider?.type ?? "openai",
+    model: alias.model,
+    source,
+    modelKnown: provider?.models.some((candidate) => candidate.model === alias.model) ?? false,
+  }
+}
+
+function isAliasRoutable(alias: ModelAlias, providers: ProviderInfo[]): boolean {
+  if (!alias.enabled) return false
+  const provider = providers.find((candidate) => getProviderRef(candidate) === alias.provider || candidate.channelName === alias.provider)
+  return provider?.enabled === true
+}
+
+function getRouteIdentity(route: RouteMapRoute): string {
+  return `${route.provider}:${route.type}:${route.model}`
+}
+
+function resolveFallbackTarget(target: string, aliases: ModelAlias[], providers: ProviderInfo[], expectedType: ProviderInfo["type"]): RouteMapRoute[] {
+  const alias = aliases.find((candidate) => candidate.enabled && candidate.alias === target)
+  if (alias) {
+    const route = getAliasRoute(alias, providers, "custom")
+    return route.type === expectedType ? [route] : []
+  }
+
+  const separatorIndex = target.indexOf(":")
+  if (separatorIndex <= 0 || separatorIndex === target.length - 1) return []
+
+  const providerRef = target.slice(0, separatorIndex).trim()
+  const model = target.slice(separatorIndex + 1).trim()
+  const provider = providers.find((candidate) => getProviderRef(candidate) === providerRef || candidate.channelName === providerRef)
+  if (!provider?.enabled || provider.type !== expectedType || !provider.models.some((candidate) => candidate.model === model)) return []
+
+  return [{
+    key: `custom:${provider.channelName}:${model}`,
+    provider: provider.channelName,
+    type: provider.type,
+    model,
+    source: "custom",
+    modelKnown: true,
+  }]
+}
+
+function buildRouteMapEntries(
+  aliases: ModelAlias[],
+  providers: ProviderInfo[],
+  policy: GatewayFailoverPolicyPayload | null,
+): RouteMapEntry[] {
+  const allRequestModels = new Map<string, { model: string; type: ProviderInfo["type"] }>()
+  const routableAliases = aliases.filter((alias) => isAliasRoutable(alias, providers))
+  const enabledProviders = providers.filter((candidate) => candidate.enabled)
+
+  for (const provider of enabledProviders) {
+    for (const model of provider.models) allRequestModels.set(`${provider.type}:${model.model}`, { model: model.model, type: provider.type })
+  }
+  for (const alias of routableAliases) {
+    const route = getAliasRoute(alias, providers)
+    allRequestModels.set(`${route.type}:${alias.alias}`, { model: alias.alias, type: route.type })
+  }
+
+  const enabledAliasesByName = new Map(routableAliases.map((alias) => [alias.alias, alias]))
+  const customFallbacksByModel = new Map(policy?.customModelFallbacks.map((rule) => [rule.model, rule.fallbacks]) ?? [])
+  const anyModelRoutes = sortProvidersByRoutingPriority(enabledProviders).flatMap((provider) => provider.models.map((model) => ({
+    key: `any_model:${provider.channelName}:${model.model}`,
+    provider: provider.channelName,
+    type: provider.type,
+    model: model.model,
+    source: "any_model" as const,
+    modelKnown: true,
+  })))
+
+  return Array.from(allRequestModels.values()).sort((a, b) => {
+    const modelSort = a.model.localeCompare(b.model)
+    return modelSort !== 0 ? modelSort : a.type.localeCompare(b.type)
+  }).map(({ model: requestModel, type: requestType }) => {
+    const alias = enabledAliasesByName.get(requestModel)
+    const aliasRoute = alias ? getAliasRoute(alias, providers) : null
+    const matchedAlias = aliasRoute?.type === requestType ? alias : undefined
+    const modelRoutes = getModelRoutes(providers, requestModel, requestType)
+    const primaryRoutes = matchedAlias ? [aliasRoute!] : modelRoutes.slice(0, 1)
+    const customRoutes = policy?.enabled === false
+      ? []
+      : (customFallbacksByModel.get(requestModel) ?? []).flatMap((target) => resolveFallbackTarget(target, routableAliases, providers, requestType))
+    const sitePolicyRoutes = policy?.enabled === false
+      ? []
+      : policy?.modelFallbackMode === "any_model"
+      ? anyModelRoutes.filter((route) => route.type === requestType)
+      : policy?.modelFallbackMode === "same_model"
+        ? matchedAlias ? primaryRoutes : modelRoutes
+        : []
+    const seenRoutes = new Set(primaryRoutes.map(getRouteIdentity))
+    const fallbackRoutes = [...customRoutes, ...sitePolicyRoutes]
+      .filter((route) => {
+        const routeIdentity = getRouteIdentity(route)
+        if (seenRoutes.has(routeIdentity)) return false
+        seenRoutes.add(routeIdentity)
+        return true
+      })
+      .slice(0, policy?.maxFallbackAttempts ?? 0)
+
+    return {
+      requestModel,
+      requestType,
+      kind: matchedAlias && modelRoutes.length > 0 ? "alias_override" : matchedAlias ? "alias" : "model",
+      primaryRoutes,
+      fallbackRoutes,
+      hiddenRoutes: matchedAlias ? modelRoutes : [],
+    }
+  })
 }
 
 function formatUpdatedAt(timestamp: number | null, language: string): string {
@@ -329,6 +488,33 @@ function AliasStatus({
   return null
 }
 
+function RouteMapRouteList({ routes, emptyLabel }: { routes: RouteMapRoute[]; emptyLabel: string }) {
+  const { t } = useTranslation()
+
+  if (routes.length === 0) {
+    return <span className="text-xs text-muted-foreground">{emptyLabel}</span>
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {routes.map((route, index) => (
+        <div key={`${route.key}:${index}`} className="border border-border/70 bg-card px-2 py-1">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs font-medium text-foreground">{route.provider}</span>
+            <span className="text-xs text-muted-foreground">/</span>
+            <span className="font-mono text-xs text-foreground">{route.model}</span>
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span>{route.type}</span>
+            <span>{route.source === "alias" ? "alias" : route.source === "custom" ? "custom fallback" : route.source === "any_model" ? "any model" : "model"}</span>
+            {!route.modelKnown ? <span>{t("routes.routeMapModelNotListed")}</span> : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
   const { t, i18n } = useTranslation()
   const [aliases, setAliases] = useState<ModelAlias[] | null>(null)
@@ -482,6 +668,10 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
   }
 
   const hasAliases = useMemo(() => (aliases?.length ?? 0) > 0, [aliases])
+  const routeMapEntries = useMemo(
+    () => buildRouteMapEntries(aliases ?? [], providers, failoverPolicy),
+    [aliases, providers, failoverPolicy],
+  )
 
   const handleFailoverSave = async () => {
     if (!failoverPolicy || !failoverForm) return
@@ -850,6 +1040,76 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
 
           {failoverError ? <p className="mt-4 text-sm text-destructive">{failoverError}</p> : null}
           {failoverFeedback ? <p className="mt-4 text-sm text-muted-foreground">{failoverFeedback}</p> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="gap-2 border-b border-border/60">
+          <div className="flex items-start gap-3">
+            <MapIcon className="mt-0.5 h-4 w-4 text-muted-foreground" />
+            <div>
+              <CardTitle>{t("routes.routeMapTitle")}</CardTitle>
+              <CardDescription className="mt-1">{t("routes.routeMapDesc")}</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {aliases === null ? (
+            <div className="space-y-2 p-6">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : routeMapEntries.length === 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <MapIcon className="h-8 w-8 text-muted-foreground" />
+              </EmptyHeader>
+              <EmptyContent>
+                <EmptyTitle>{t("routes.routeMapEmptyTitle")}</EmptyTitle>
+                <EmptyDescription>{t("routes.routeMapEmptyDesc")}</EmptyDescription>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("routes.routeMapRequestModel")}</TableHead>
+                  <TableHead>{t("routes.routeMapPrimaryRoute")}</TableHead>
+                  <TableHead>{t("routes.routeMapFallbackRoutes")}</TableHead>
+                  <TableHead>{t("routes.routeMapCoveredRoutes")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {routeMapEntries.map((entry) => (
+                  <TableRow key={`${entry.requestType}:${entry.requestModel}`}>
+                    <TableCell className="align-top">
+                      <div className="font-mono text-xs font-medium">{entry.requestModel}</div>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        <Badge variant="secondary" className="text-xs">{entry.requestType}</Badge>
+                        <Badge variant={entry.kind === "model" ? "secondary" : "outline"} className="text-xs">
+                          {entry.kind === "alias_override"
+                            ? t("routes.routeMapAliasOverride")
+                            : entry.kind === "alias"
+                              ? t("routes.routeMapAlias")
+                              : t("routes.routeMapModel")}
+                        </Badge>
+                      </div>
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <RouteMapRouteList routes={entry.primaryRoutes} emptyLabel={t("routes.routeMapNoRoute")} />
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <RouteMapRouteList routes={entry.fallbackRoutes} emptyLabel={t("routes.routeMapNoFallback")} />
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <RouteMapRouteList routes={entry.hiddenRoutes} emptyLabel={t("routes.routeMapNoCoveredRoute")} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
