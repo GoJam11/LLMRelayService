@@ -496,20 +496,26 @@ function RouteMapRouteList({ routes, emptyLabel }: { routes: RouteMapRoute[]; em
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-1.5">
       {routes.map((route, index) => (
-        <div key={`${route.key}:${index}`} className="border border-border/70 bg-card px-2 py-1">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-xs font-medium text-foreground">{route.provider}</span>
-            <span className="text-xs text-muted-foreground">/</span>
-            <span className="font-mono text-xs text-foreground">{route.model}</span>
-          </div>
-          <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span>{route.type}</span>
-            <span>{route.source === "alias" ? "alias" : route.source === "custom" ? "custom fallback" : route.source === "any_model" ? "any model" : "model"}</span>
-            {!route.modelKnown ? <span>{t("routes.routeMapModelNotListed")}</span> : null}
-          </div>
-        </div>
+        <Badge key={`${route.key}:${index}`} variant="outline" className="gap-1.5 font-normal">
+          <span className="font-mono text-xs font-medium text-foreground">{route.provider}</span>
+          <span className="text-muted-foreground">/</span>
+          <span className="font-mono text-xs text-foreground">{route.model}</span>
+          <span className="text-muted-foreground">·</span>
+          <span className="text-muted-foreground">{route.type}</span>
+          <span className="text-muted-foreground">·</span>
+          <span className="text-muted-foreground">
+            {route.source === "alias"
+              ? t("routes.routeMapSourceAlias")
+              : route.source === "custom"
+                ? t("routes.routeMapSourceCustom")
+                : route.source === "any_model"
+                  ? t("routes.routeMapSourceAnyModel")
+                  : t("routes.routeMapSourceModel")}
+          </span>
+          {!route.modelKnown ? <span className="text-yellow-600 dark:text-yellow-400">· {t("routes.routeMapModelNotListed")}</span> : null}
+        </Badge>
       ))}
     </div>
   )
@@ -1074,10 +1080,10 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t("routes.routeMapRequestModel")}</TableHead>
-                  <TableHead>{t("routes.routeMapPrimaryRoute")}</TableHead>
-                  <TableHead>{t("routes.routeMapFallbackRoutes")}</TableHead>
-                  <TableHead>{t("routes.routeMapCoveredRoutes")}</TableHead>
+                  <TableHead className="w-52">{t("routes.routeMapRequestModel")}</TableHead>
+                  <TableHead className="min-w-72">{t("routes.routeMapPrimaryRoute")}</TableHead>
+                  <TableHead className="min-w-72">{t("routes.routeMapFallbackRoutes")}</TableHead>
+                  <TableHead className="min-w-72">{t("routes.routeMapCoveredRoutes")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
