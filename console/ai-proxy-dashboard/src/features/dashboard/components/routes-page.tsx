@@ -514,7 +514,7 @@ function RouteMapRouteList({ routes, emptyLabel }: { routes: RouteMapRoute[]; em
                   ? t("routes.routeMapSourceAnyModel")
                   : t("routes.routeMapSourceModel")}
           </span>
-          {!route.modelKnown ? <span className="text-yellow-600 dark:text-yellow-400">· {t("routes.routeMapModelNotListed")}</span> : null}
+          {!route.modelKnown ? <span className="text-amber-600 dark:text-amber-300">· {t("routes.routeMapModelNotListed")}</span> : null}
         </Badge>
       ))}
     </div>
@@ -1049,7 +1049,7 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="c4d-table-shell">
         <CardHeader className="gap-2 border-b border-border/60">
           <div className="flex items-start gap-3">
             <MapIcon className="mt-0.5 h-4 w-4 text-muted-foreground" />
