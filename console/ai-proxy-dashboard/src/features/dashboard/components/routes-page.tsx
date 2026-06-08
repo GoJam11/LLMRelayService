@@ -73,9 +73,23 @@ import type { TestProviderResult } from "@/features/dashboard/api"
 
 const EMPTY_FORM = {
   alias: "",
-  provider: "",
-  model: "",
+  targets: [] as RouteTargetDraft[],
   description: "",
+  visible: true,
+}
+
+type RouteTargetDraft = {
+  id: string
+  provider: string
+  model: string
+}
+
+function createTargetDraft(provider = "", model = ""): RouteTargetDraft {
+  return {
+    id: typeof crypto !== "undefined" && typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+    provider,
+    model,
+  }
 }
 
 type FailoverFormState = {
@@ -122,6 +136,7 @@ function sortProvidersByRoutingPriority(providers: ProviderInfo[]): ProviderInfo
 function getModelRoutes(providers: ProviderInfo[], model: string, expectedType: ProviderInfo["type"], source: RouteMapRoute["source"] = "model"): RouteMapRoute[] {
   return sortProvidersByRoutingPriority(providers)
     .filter((provider) => provider.enabled)
+    .filter((provider) => provider.routingVisibility === "direct")
     .filter((provider) => provider.type === expectedType)
     .filter((provider) => provider.models.some((candidate) => candidate.model === model))
     .map((provider) => ({
@@ -134,22 +149,32 @@ function getModelRoutes(providers: ProviderInfo[], model: string, expectedType: 
     }))
 }
 
-function getAliasRoute(alias: ModelAlias, providers: ProviderInfo[], source: RouteMapRoute["source"] = "alias"): RouteMapRoute {
-  const provider = providers.find((candidate) => getProviderRef(candidate) === alias.provider || candidate.channelName === alias.provider)
+function getAliasTargets(alias: ModelAlias): Array<{ provider: string; model: string }> {
+  return alias.targets?.length ? alias.targets : [{ provider: alias.provider, model: alias.model }]
+}
+
+function getAliasRoute(alias: ModelAlias, providers: ProviderInfo[], source: RouteMapRoute["source"] = "alias", target = getAliasTargets(alias)[0]!): RouteMapRoute {
+  const provider = providers.find((candidate) => getProviderRef(candidate) === target.provider || candidate.channelName === target.provider)
   return {
-    key: `${source}:${alias.alias}:${provider?.channelName ?? alias.provider}:${alias.model}`,
-    provider: provider?.channelName ?? alias.provider,
+    key: `${source}:${alias.alias}:${provider?.channelName ?? target.provider}:${target.model}`,
+    provider: provider?.channelName ?? target.provider,
     type: provider?.type ?? "openai",
-    model: alias.model,
+    model: target.model,
     source,
-    modelKnown: provider?.models.some((candidate) => candidate.model === alias.model) ?? false,
+    modelKnown: provider?.models.some((candidate) => candidate.model === target.model) ?? false,
   }
+}
+
+function getAliasRoutes(alias: ModelAlias, providers: ProviderInfo[], source: RouteMapRoute["source"] = "alias"): RouteMapRoute[] {
+  return getAliasTargets(alias).map((target) => getAliasRoute(alias, providers, source, target))
 }
 
 function isAliasRoutable(alias: ModelAlias, providers: ProviderInfo[]): boolean {
   if (!alias.enabled) return false
-  const provider = providers.find((candidate) => getProviderRef(candidate) === alias.provider || candidate.channelName === alias.provider)
-  return provider?.enabled === true
+  return getAliasTargets(alias).some((target) => {
+    const provider = providers.find((candidate) => getProviderRef(candidate) === target.provider || candidate.channelName === target.provider)
+    return provider?.enabled === true
+  })
 }
 
 function getRouteIdentity(route: RouteMapRoute): string {
@@ -159,8 +184,7 @@ function getRouteIdentity(route: RouteMapRoute): string {
 function resolveFallbackTarget(target: string, aliases: ModelAlias[], providers: ProviderInfo[], expectedType: ProviderInfo["type"]): RouteMapRoute[] {
   const alias = aliases.find((candidate) => candidate.enabled && candidate.alias === target)
   if (alias) {
-    const route = getAliasRoute(alias, providers, "custom")
-    return route.type === expectedType ? [route] : []
+    return getAliasRoutes(alias, providers, "custom").filter((route) => route.type === expectedType)
   }
 
   const separatorIndex = target.indexOf(":")
@@ -189,18 +213,20 @@ function buildRouteMapEntries(
   const allRequestModels = new Map<string, { model: string; type: ProviderInfo["type"] }>()
   const routableAliases = aliases.filter((alias) => isAliasRoutable(alias, providers))
   const enabledProviders = providers.filter((candidate) => candidate.enabled)
+  const directEnabledProviders = enabledProviders.filter((candidate) => candidate.routingVisibility === "direct")
 
-  for (const provider of enabledProviders) {
+  for (const provider of directEnabledProviders) {
     for (const model of provider.models) allRequestModels.set(`${provider.type}:${model.model}`, { model: model.model, type: provider.type })
   }
   for (const alias of routableAliases) {
-    const route = getAliasRoute(alias, providers)
-    allRequestModels.set(`${route.type}:${alias.alias}`, { model: alias.alias, type: route.type })
+    for (const route of getAliasRoutes(alias, providers)) {
+      allRequestModels.set(`${route.type}:${alias.alias}`, { model: alias.alias, type: route.type })
+    }
   }
 
   const enabledAliasesByName = new Map(routableAliases.map((alias) => [alias.alias, alias]))
   const customFallbacksByModel = new Map(policy?.customModelFallbacks.map((rule) => [rule.model, rule.fallbacks]) ?? [])
-  const anyModelRoutes = sortProvidersByRoutingPriority(enabledProviders).flatMap((provider) => provider.models.map((model) => ({
+  const anyModelRoutes = sortProvidersByRoutingPriority(directEnabledProviders).flatMap((provider) => provider.models.map((model) => ({
     key: `any_model:${provider.channelName}:${model.model}`,
     provider: provider.channelName,
     type: provider.type,
@@ -214,10 +240,10 @@ function buildRouteMapEntries(
     return modelSort !== 0 ? modelSort : a.type.localeCompare(b.type)
   }).map(({ model: requestModel, type: requestType }) => {
     const alias = enabledAliasesByName.get(requestModel)
-    const aliasRoute = alias ? getAliasRoute(alias, providers) : null
-    const matchedAlias = aliasRoute?.type === requestType ? alias : undefined
+    const aliasRoutes = alias ? getAliasRoutes(alias, providers).filter((route) => route.type === requestType) : []
+    const matchedAlias = aliasRoutes.length > 0 ? alias : undefined
     const modelRoutes = getModelRoutes(providers, requestModel, requestType)
-    const primaryRoutes = matchedAlias ? [aliasRoute!] : modelRoutes.slice(0, 1)
+    const primaryRoutes = matchedAlias ? aliasRoutes : modelRoutes.slice(0, 1)
     const customRoutes = policy?.enabled === false
       ? []
       : (customFallbacksByModel.get(requestModel) ?? []).flatMap((target) => resolveFallbackTarget(target, routableAliases, providers, requestType))
@@ -346,8 +372,16 @@ function AliasForm({
   onChange: (patch: Partial<typeof EMPTY_FORM>) => void
 }) {
   const { t } = useTranslation()
-  const selectedProvider = providers.find((p) => (p.providerUuid || p.channelName) === draft.provider)
-  const availableModels = selectedProvider?.models ?? []
+  const targets = draft.targets.length > 0 ? draft.targets : [createTargetDraft()]
+  const updateTarget = (id: string, patch: Partial<RouteTargetDraft>) => {
+    onChange({
+      targets: targets.map((target) => target.id === id ? { ...target, ...patch } : target),
+    })
+  }
+  const removeTarget = (id: string) => {
+    if (targets.length <= 1) return
+    onChange({ targets: targets.filter((target) => target.id !== id) })
+  }
 
   return (
     <FieldGroup className="gap-4">
@@ -363,58 +397,70 @@ function AliasForm({
         />
       </Field>
       <Field>
-        <FieldLabel>{t("routes.targetProvider")}</FieldLabel>
-        <Select
-          value={draft.provider}
-          onValueChange={(v) => onChange({ provider: v, model: "" })}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder={t("routes.selectProvider")} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {providers.map((p) => (
-                <SelectItem key={p.providerUuid || p.channelName} value={p.providerUuid || p.channelName}>
-                  <span className="flex items-center gap-2">
-                    {p.channelName}
-                    {!p.enabled && (
-                      <Badge variant="secondary" className="text-xs">{t("common.disabled")}</Badge>
-                    )}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <FieldLabel>{t("routes.routeTargetsLabel")}</FieldLabel>
+            <FieldDescription>{t("routes.routeTargetsHint")}</FieldDescription>
+          </div>
+          <Button type="button" variant="outline" size="xs" onClick={() => onChange({ targets: [...targets, createTargetDraft()] })}>
+            <Plus data-icon="inline-start" />
+            {t("routes.routeTargetAdd")}
+          </Button>
+        </div>
+        <div className="grid gap-3">
+          {targets.map((target, index) => {
+            const selectedProvider = providers.find((p) => (p.providerUuid || p.channelName) === target.provider)
+            const availableModels = selectedProvider?.models ?? []
+
+            return (
+              <div key={target.id} className="grid gap-2 border border-border/70 p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                <Select value={target.provider} onValueChange={(value) => updateTarget(target.id, { provider: value, model: "" })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={t("routes.selectProvider")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {providers.map((p) => (
+                        <SelectItem key={p.providerUuid || p.channelName} value={p.providerUuid || p.channelName}>
+                          <span className="flex items-center gap-2">
+                            {p.channelName}
+                            <Badge variant={p.routingVisibility === "explicit_only" ? "outline" : "secondary"} className="text-xs">
+                              {p.routingVisibility === "explicit_only" ? t("routes.providerExplicitOnly") : t("routes.providerDirect")}
+                            </Badge>
+                            {!p.enabled && <Badge variant="secondary" className="text-xs">{t("common.disabled")}</Badge>}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <Select value={target.model} onValueChange={(value) => updateTarget(target.id, { model: value })} disabled={!target.provider || availableModels.length === 0}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={!target.provider ? t("routes.selectFirstProvider") : availableModels.length === 0 ? t("routes.noProviderModels") : t("routes.selectTargetModel")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {availableModels.map((m) => (
+                        <SelectItem key={m.model} value={m.model}>{m.model}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <Button type="button" variant="ghost" size="xs" className="justify-self-end text-destructive hover:text-destructive" onClick={() => removeTarget(target.id)} disabled={targets.length <= 1}>
+                  <X data-icon="inline-start" />
+                  {index === 0 ? t("routes.routeTargetPrimary") : t("common.delete")}
+                </Button>
+              </div>
+            )
+          })}
+        </div>
       </Field>
       <Field>
-        <FieldLabel>{t("routes.targetModel")}</FieldLabel>
-        <Select
-          value={draft.model}
-          onValueChange={(v) => onChange({ model: v })}
-          disabled={!draft.provider || availableModels.length === 0}
-        >
-          <SelectTrigger>
-            <SelectValue
-              placeholder={
-                !draft.provider
-                  ? t("routes.selectFirstProvider")
-                  : availableModels.length === 0
-                    ? t("routes.noProviderModels")
-                    : t("routes.selectTargetModel")
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              {availableModels.map((m) => (
-                <SelectItem key={m.model} value={m.model}>
-                  {m.model}
-                </SelectItem>
-              ))}
-            </SelectGroup>
-          </SelectContent>
-        </Select>
+        <label className="flex items-center gap-2 text-sm text-foreground">
+          <Checkbox checked={draft.visible} onCheckedChange={(value) => onChange({ visible: value === true })} />
+          {t("routes.visibleToClients")}
+        </label>
+        <FieldDescription>{t("routes.visibleToClientsHint")}</FieldDescription>
       </Field>
       <Field>
         <FieldLabel>{t("routes.notesLabel")}</FieldLabel>
@@ -436,9 +482,10 @@ function AliasStatus({
   providers: ProviderInfo[]
 }) {
   const { t } = useTranslation()
-  const provider = providers.find((p) => p.providerUuid === alias.provider) ?? providers.find((p) => p.channelName === alias.provider)
-  const providerLabel = provider?.channelName ?? alias.provider
-  if (!provider) {
+  const targets = alias.targets?.length ? alias.targets : [{ provider: alias.provider, model: alias.model }]
+  const missingProvider = targets.find((target) => !(providers.find((p) => p.providerUuid === target.provider) ?? providers.find((p) => p.channelName === target.provider)))
+  const providerLabel = missingProvider?.provider ?? alias.provider
+  if (missingProvider) {
     return (
       <TooltipProvider>
         <Tooltip>
@@ -455,8 +502,12 @@ function AliasStatus({
       </TooltipProvider>
     )
   }
-  const modelExists = provider.models.some((m) => m.model === alias.model)
-  if (!modelExists) {
+  const missingModel = targets.find((target) => {
+    const provider = providers.find((p) => p.providerUuid === target.provider) ?? providers.find((p) => p.channelName === target.provider)
+    return provider && !provider.models.some((m) => m.model === target.model)
+  })
+  if (missingModel) {
+    const provider = providers.find((p) => p.providerUuid === missingModel.provider) ?? providers.find((p) => p.channelName === missingModel.provider)
     return (
       <TooltipProvider>
         <Tooltip>
@@ -467,20 +518,21 @@ function AliasStatus({
             </Badge>
           </TooltipTrigger>
           <TooltipContent>
-            {t("providers.modelRemovedHint", { model: alias.model, provider: providerLabel })}
+            {t("providers.modelRemovedHint", { model: missingModel.model, provider: provider?.channelName ?? missingModel.provider })}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
     )
   }
-  if (!provider.enabled) {
+  const disabledProvider = targets.map((target) => providers.find((p) => p.providerUuid === target.provider) ?? providers.find((p) => p.channelName === target.provider)).find((provider) => provider && !provider.enabled)
+  if (disabledProvider) {
     return (
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
             <Badge variant="secondary" className="text-xs">{t("providers.providerDisabled")}</Badge>
           </TooltipTrigger>
-          <TooltipContent>{t("providers.providerDisabledHint", { name: providerLabel })}</TooltipContent>
+          <TooltipContent>{t("providers.providerDisabledHint", { name: disabledProvider.channelName })}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
     )
@@ -583,7 +635,7 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
 
   const openCreate = () => {
     setEditTarget(null)
-    setDraft(EMPTY_FORM)
+    setDraft({ ...EMPTY_FORM, targets: [createTargetDraft()] })
     setSubmitError("")
     setDialogOpen(true)
   }
@@ -592,9 +644,9 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
     setEditTarget(alias)
     setDraft({
       alias: alias.alias,
-      provider: alias.provider,
-      model: alias.model,
+      targets: (alias.targets?.length ? alias.targets : [{ provider: alias.provider, model: alias.model }]).map((target) => createTargetDraft(target.provider, target.model)),
       description: alias.description ?? "",
+      visible: alias.visible,
     })
     setSubmitError("")
     setDialogOpen(true)
@@ -603,11 +655,11 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
   const handleSubmit = async () => {
     const trimmed = {
       alias: draft.alias.trim(),
-      provider: draft.provider.trim(),
-      model: draft.model.trim(),
+      targets: draft.targets.map((target) => ({ provider: target.provider.trim(), model: target.model.trim() })),
       description: draft.description.trim() || null,
+      visible: draft.visible,
     }
-    if (!trimmed.alias || !trimmed.provider || !trimmed.model) {
+    if (!trimmed.alias || trimmed.targets.length === 0 || trimmed.targets.some((target) => !target.provider || !target.model)) {
       setSubmitError(t("routes.requiredFieldsError"))
       return
     }
@@ -661,8 +713,9 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
   const handleTest = async (alias: ModelAlias) => {
     setTestResults((cur) => new Map(cur).set(alias.id, "loading"))
     try {
-      const resolvedChannelName = providers.find((p) => p.providerUuid === alias.provider)?.channelName ?? alias.provider
-      const result = await testProvider(resolvedChannelName, alias.model)
+      const firstTarget = getAliasTargets(alias)[0]!
+      const resolvedChannelName = providers.find((p) => p.providerUuid === firstTarget.provider)?.channelName ?? firstTarget.provider
+      const result = await testProvider(resolvedChannelName, firstTarget.model)
       setTestResults((cur) => new Map(cur).set(alias.id, result))
     } catch (err) {
       setTestResults((cur) => new Map(cur).set(alias.id, {
@@ -1150,8 +1203,7 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
               <TableHeader>
                 <TableRow>
                   <TableHead>{t("routes.colAlias")}</TableHead>
-                  <TableHead>{t("routes.colProvider")}</TableHead>
-                  <TableHead>{t("routes.colTargetModel")}</TableHead>
+                  <TableHead>{t("routes.colTargets")}</TableHead>
                   <TableHead>{t("routes.colNotes")}</TableHead>
                   <TableHead>{t("routes.colStatus")}</TableHead>
                   <TableHead className="w-24 text-right">{t("routes.colActions")}</TableHead>
@@ -1161,11 +1213,11 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
                 {aliases.map((alias) => (
                   <TableRow key={alias.id} className={!alias.enabled ? "opacity-50" : ""}>
                     <TableCell className="font-mono text-xs font-medium">{alias.alias}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {providers.find((p) => p.providerUuid === alias.provider)?.channelName ?? alias.provider}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      {alias.model}
+                    <TableCell>
+                      <RouteMapRouteList
+                        routes={getAliasTargets(alias).map((target) => getAliasRoute(alias, providers, "alias", target))}
+                        emptyLabel={t("routes.routeMapNoRoute")}
+                      />
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {alias.description ?? "—"}

@@ -97,6 +97,7 @@ import type {
   ProviderInfo,
   ProviderModelInfo,
   ProviderMutationPayload,
+  RoutingVisibility,
   TestProviderResult,
 } from "@/features/dashboard/types"
 
@@ -116,6 +117,11 @@ const responseModeVariants: Record<OpenAiResponsesMode, "default" | "secondary" 
   native: "secondary",
   chat_compat: "outline",
   disabled: "outline",
+}
+
+const routingVisibilityLabels: Record<RoutingVisibility, string> = {
+  direct: "Direct",
+  explicit_only: "Explicit only",
 }
 
 const healthColors: Record<string, string> = {
@@ -144,6 +150,7 @@ type ProviderFormState = {
   type: "anthropic" | "openai"
   targetBaseUrl: string
   priority: string
+  routingVisibility: RoutingVisibility
   systemPrompt: string
   authHeader: "auto" | "x-api-key" | "authorization"
   responsesMode: OpenAiResponsesMode
@@ -199,6 +206,7 @@ function createFormState(provider?: ProviderInfo): ProviderFormState {
     type,
     targetBaseUrl: provider?.targetBaseUrl ?? "",
     priority: String(provider?.priority ?? 0),
+    routingVisibility: provider?.routingVisibility ?? "direct",
     systemPrompt: provider?.systemPrompt ?? "",
     authHeader: (() => {
       if (!provider?.auth?.header) return "auto"
@@ -265,6 +273,7 @@ function buildProviderPayload(
     systemPrompt: state.systemPrompt.trim() || null,
     models: buildModels(state.models),
     priority: priorityText ? Number(priorityText) : 0,
+    routingVisibility: state.routingVisibility,
     responsesMode: state.type === "openai" ? state.responsesMode : null,
     extraFields: parseExtraJson(state.extraFieldsJson),
   }
@@ -409,6 +418,7 @@ export function ProvidersPage({
       anthropicCount: list.filter((provider) => provider.type === "anthropic").length,
       openAiCount: list.filter((provider) => provider.type === "openai").length,
       enabledCount: list.filter((provider) => provider.enabled).length,
+      explicitOnlyCount: list.filter((provider) => provider.routingVisibility === "explicit_only").length,
     }
   }, [providers])
 
@@ -421,6 +431,7 @@ export function ProvidersPage({
         provider.channelName,
         provider.targetBaseUrl,
         provider.type,
+        provider.routingVisibility,
         provider.models.map((model) => model.model).join(" "),
       ].some((value) => value.toLowerCase().includes(query))
       const matchesType = typeFilter === "all" || provider.type === typeFilter
@@ -717,7 +728,7 @@ export function ProvidersPage({
               <CardTitle className="text-3xl font-bold">{providerStats.enabledCount}</CardTitle>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground">
-              {providerStats.total - providerStats.enabledCount} {t("common.disabled")}
+              {providerStats.total - providerStats.enabledCount} {t("common.disabled")} · {providerStats.explicitOnlyCount} backend-only
             </CardContent>
           </Card>
           <Card size="sm">
@@ -822,6 +833,7 @@ export function ProvidersPage({
                     <TableRow>
                       <TableHead>渠道</TableHead>
                       <TableHead>类型</TableHead>
+                      <TableHead>暴露</TableHead>
                       <TableHead>模型</TableHead>
                       <TableHead>状态</TableHead>
                       <TableHead>优先级</TableHead>
@@ -832,7 +844,7 @@ export function ProvidersPage({
                   <TableBody>
                     {displayedProviders.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="h-28 text-center text-muted-foreground">
+                          <TableCell colSpan={8} className="h-28 text-center text-muted-foreground">
                           {t("common.noData")}
                         </TableCell>
                       </TableRow>
@@ -858,6 +870,11 @@ export function ProvidersPage({
                             <TableCell>
                               <Badge variant={typeVariants[provider.type] ?? "outline"}>
                                 {typeLabels[provider.type] ?? provider.type}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={provider.routingVisibility === "explicit_only" ? "outline" : "secondary"}>
+                                {routingVisibilityLabels[provider.routingVisibility]}
                               </Badge>
                             </TableCell>
                             <TableCell className="font-mono text-xs text-muted-foreground">
@@ -1069,6 +1086,32 @@ export function ProvidersPage({
                     />
                     <FieldDescription>
                       {t("providers.priorityHint")}
+                    </FieldDescription>
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="provider-routing-visibility">Routing Visibility</FieldLabel>
+                    <Select
+                      value={formState.routingVisibility}
+                      onValueChange={(value) =>
+                        setFormState((current) => ({
+                          ...current,
+                          routingVisibility: value as RoutingVisibility,
+                        }))
+                      }
+                    >
+                      <SelectTrigger id="provider-routing-visibility" className="w-full">
+                        <SelectValue placeholder="Routing visibility" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="direct">Direct</SelectItem>
+                          <SelectItem value="explicit_only">Explicit only</SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FieldDescription>
+                      Direct providers can be matched by client model names. Explicit-only providers are only used by virtual routes and custom fallback targets.
                     </FieldDescription>
                   </Field>
 
@@ -1697,6 +1740,9 @@ function ProviderCard({
               {t(`providers.responsesModeBadge.${provider.responsesMode ?? "native"}`)}
             </Badge>
           ) : null}
+          <Badge variant={provider.routingVisibility === "explicit_only" ? "outline" : "secondary"}>
+            {routingVisibilityLabels[provider.routingVisibility]}
+          </Badge>
           <Badge variant="outline">priority {provider.priority}</Badge>
         </div>
       </CardHeader>

@@ -4,6 +4,7 @@ import { listModelAliases } from './console-model-alias-store';
 export type UpstreamType = 'anthropic' | 'openai';
 export type RouteAuthHeader = 'x-api-key' | 'authorization';
 export type OpenAiResponsesMode = 'native' | 'chat_compat' | 'disabled';
+export type RoutingVisibility = 'direct' | 'explicit_only';
 
 const CHANNEL_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 export const DEFAULT_OPENAI_RESPONSES_MODE: OpenAiResponsesMode = 'native';
@@ -21,6 +22,11 @@ export interface ModelConfig {
   [key: string]: unknown;
 }
 
+export interface VirtualRouteTarget {
+  provider: string;
+  model: string;
+}
+
 export interface ConfigEntry {
   type?: UpstreamType;
   targetBaseUrl: string;
@@ -29,6 +35,7 @@ export interface ConfigEntry {
   models?: ModelConfig[];
   priority?: number;
   enabled?: boolean;
+  routingVisibility?: RoutingVisibility;
   responsesMode?: OpenAiResponsesMode;
   extraFields?: Record<string, unknown>;
   providerUuid?: string;
@@ -44,6 +51,8 @@ export interface RouteResult {
   responsesMode?: OpenAiResponsesMode;
   /** 当请求 model 是一个别名时，此字段为真实的上游模型名，需要改写请求体 */
   resolvedModel?: string;
+  /** Public virtual model name that selected this explicit target. */
+  virtualModel?: string;
 }
 
 export interface ProviderAuthInfo {
@@ -59,6 +68,7 @@ export interface ProviderInfo {
   systemPrompt: string | null;
   priority: number;
   enabled: boolean;
+  routingVisibility: RoutingVisibility;
   models: ModelConfig[];
   auth: ProviderAuthInfo | null;
   responsesMode?: OpenAiResponsesMode;
@@ -78,6 +88,7 @@ export interface ProviderMutationInput {
   systemPrompt?: string | null;
   models?: Array<string | ModelConfig> | null;
   priority?: number;
+  routingVisibility?: RoutingVisibility | null;
   auth?: ProviderMutationAuthInput | null;
   responsesMode?: OpenAiResponsesMode | null;
   extraFields?: Record<string, unknown> | null;
@@ -157,6 +168,7 @@ export function validateConfigEntries(entries: Record<string, RawConfigEntry>): 
     const systemPrompt = normalizeOptionalString(entry.systemPrompt);
     const models = normalizeModels(entry.models);
     const priority = normalizePriority(entry.priority);
+    const routingVisibility = normalizeRoutingVisibility(entry.routingVisibility);
     const auth = normalizeStaticAuthInput(entry.auth, type);
     const extraFields = normalizeExtraFields(entry.extraFields);
     const providerUuid = normalizeOptionalString(entry.providerUuid);
@@ -173,6 +185,7 @@ export function validateConfigEntries(entries: Record<string, RawConfigEntry>): 
       ...(auth ? { auth } : {}),
       models,
       priority,
+      routingVisibility,
       enabled: entry.enabled !== false,
       ...(responsesMode ? { responsesMode } : {}),
       ...(normalizedExtraFields ? { extraFields: normalizedExtraFields } : {}),
@@ -187,8 +200,8 @@ let providerConfigs: Record<string, ConfigEntry> = {};
 let providerConfigsLoaded = false;
 let providerConfigsPromise: Promise<void> | null = null;
 
-// Model alias cache: alias name → { provider (uuid or channelName), model }
-interface AliasTarget { provider: string; model: string; }
+// Virtual route cache: public model name → one or more explicit backend targets.
+interface AliasTarget { provider: string; model: string; targets?: VirtualRouteTarget[]; visible?: boolean; }
 let aliasConfigs: Record<string, AliasTarget> = {};
 let aliasConfigsLoaded = false;
 // UUID → channelName map for alias routing
@@ -214,7 +227,12 @@ async function reloadProviderConfigs(): Promise<void> {
   aliasConfigs = {};
   for (const entry of nextAliases) {
     if (entry.enabled) {
-      aliasConfigs[entry.alias] = { provider: entry.provider, model: entry.model };
+      aliasConfigs[entry.alias] = {
+        provider: entry.provider,
+        model: entry.model,
+        targets: entry.targets,
+        visible: entry.visible,
+      };
     }
   }
   providerConfigsLoaded = true;
@@ -267,6 +285,7 @@ function parseExplicitRoutePath(pathname: string): { channelName: string; path: 
   // 跳过禁用的渠道
   const entry = getConfigs()[channelName];
   if (entry?.enabled === false) return null;
+  if (entry && !isDirectRoutingEntry(entry)) return null;
 
   return {
     channelName,
@@ -286,7 +305,7 @@ function inferExpectedProviderType(pathname: string): UpstreamType | null {
   return null;
 }
 
-function findRoutesByModel(model: string, expectedType?: UpstreamType): Array<{ channelName: string; entry: ConfigEntry }> {
+function findRoutesByModel(model: string, expectedType?: UpstreamType, options?: { includeExplicitOnly?: boolean }): Array<{ channelName: string; entry: ConfigEntry }> {
   const sortedConfigs = Object.entries(getConfigs()).filter(([, entry]) => entry != null) as [string, ConfigEntry][];
   sortedConfigs.sort((a, b) => {
     const priorityA = a[1].priority ?? 0;
@@ -299,6 +318,9 @@ function findRoutesByModel(model: string, expectedType?: UpstreamType): Array<{ 
   for (const [channelName, entry] of sortedConfigs) {
     // 跳过禁用的渠道
     if (entry.enabled === false) {
+      continue;
+    }
+    if (!options?.includeExplicitOnly && !isDirectRoutingEntry(entry)) {
       continue;
     }
     // 如果指定了期望的 provider 类型，只匹配该类型
@@ -348,6 +370,27 @@ function buildRouteResult(channelName: string, entry: ConfigEntry, path: string,
   };
 }
 
+function resolveExplicitTargetRoute(pathname: string, search: string, target: VirtualRouteTarget, expectedType: UpstreamType, options?: { requireListedModel?: boolean }): RouteResult | null {
+  const resolvedChannelName = uuidToChannelName[target.provider] ?? target.provider;
+  const entry = getConfigs()[resolvedChannelName];
+  if (!entry || entry.enabled === false || entry.type !== expectedType) return null;
+  if (options?.requireListedModel && !(entry.models ?? []).some((candidate) => getModelId(candidate) === target.model)) return null;
+  return {
+    ...buildRouteResult(resolvedChannelName, entry, pathname, search),
+    resolvedModel: target.model,
+  };
+}
+
+function dedupeRouteResults(routes: RouteResult[]): RouteResult[] {
+  const seenRouteKeys = new Set<string>();
+  return routes.filter((route) => {
+    const routeKey = `${route.channelName}:${route.resolvedModel ?? ''}:${route.targetUrl}`;
+    if (seenRouteKeys.has(routeKey)) return false;
+    seenRouteKeys.add(routeKey);
+    return true;
+  });
+}
+
 function getEditableAuthValue(auth: RouteAuthConfig): string {
   if (auth.header === 'authorization') {
     return auth.value.replace(/^Bearer\s+/i, '').trim();
@@ -370,6 +413,7 @@ function buildProviderInfo(
     targetBaseUrl: entry.targetBaseUrl,
     systemPrompt: entry.systemPrompt ?? null,
     priority: entry.priority ?? 0,
+    routingVisibility: entry.routingVisibility ?? 'direct',
     enabled: entry.enabled !== false,
     models: entry.models ?? [],
     auth: entry.auth
@@ -425,6 +469,16 @@ function normalizeProviderType(value: unknown): UpstreamType {
     return value;
   }
   throw new Error('type 必须是 anthropic 或 openai');
+}
+
+function normalizeRoutingVisibility(value: unknown): RoutingVisibility {
+  if (value == null || value === '') return 'direct';
+  if (value === 'direct' || value === 'explicit_only') return value;
+  throw new Error('routingVisibility 必须是 direct 或 explicit_only');
+}
+
+function isDirectRoutingEntry(entry: ConfigEntry): boolean {
+  return (entry.routingVisibility ?? 'direct') === 'direct';
 }
 
 function normalizeTargetBaseUrl(value: unknown): string {
@@ -576,6 +630,9 @@ function buildNormalizedEntry(payload: ProviderMutationInput, existingEntry?: Co
   const priority = payload.priority === undefined
     ? (existingEntry?.priority ?? 0)
     : normalizePriority(payload.priority);
+  const routingVisibility = payload.routingVisibility === undefined
+    ? (existingEntry?.routingVisibility ?? 'direct')
+    : normalizeRoutingVisibility(payload.routingVisibility);
   const auth = normalizeStaticAuthInput(payload.auth, type, existingEntry?.auth);
   const rawExtraFields = payload.extraFields === undefined
     ? existingEntry?.extraFields
@@ -593,6 +650,7 @@ function buildNormalizedEntry(payload: ProviderMutationInput, existingEntry?: Co
     targetBaseUrl,
     models,
     priority,
+    routingVisibility,
   };
 
   if (systemPrompt) normalized.systemPrompt = systemPrompt;
@@ -690,6 +748,7 @@ export function resolveRoutesForAnyModelFallback(pathname: string, search: strin
   const routes: RouteResult[] = [];
   for (const [channelName, entry] of sortedConfigs) {
     if (entry.enabled === false) continue;
+    if (!isDirectRoutingEntry(entry)) continue;
     if (entry.type !== expectedType) continue;
     for (const model of entry.models ?? []) {
       routes.push({
@@ -701,18 +760,15 @@ export function resolveRoutesForAnyModelFallback(pathname: string, search: strin
   return routes;
 }
 
-function resolveAliasFallbackRoute(pathname: string, search: string, alias: string, expectedType: UpstreamType): RouteResult | null {
+function resolveAliasFallbackRoutes(pathname: string, search: string, alias: string, expectedType: UpstreamType): RouteResult[] {
   const aliasTarget = aliasConfigs[alias];
-  if (!aliasTarget) return null;
-
-  const resolvedChannelName = uuidToChannelName[aliasTarget.provider] ?? aliasTarget.provider;
-  const entry = getConfigs()[resolvedChannelName];
-  if (!entry || entry.enabled === false || entry.type !== expectedType) return null;
-
-  return {
-    ...buildRouteResult(resolvedChannelName, entry, pathname, search),
-    resolvedModel: aliasTarget.model,
-  };
+  if (!aliasTarget) return [];
+  return dedupeRouteResults((aliasTarget.targets ?? [aliasTarget])
+    .map((target) => {
+      const route = resolveExplicitTargetRoute(pathname, search, target, expectedType);
+      return route ? { ...route, virtualModel: alias } : null;
+    })
+    .filter((route): route is RouteResult => route !== null));
 }
 
 function resolveChannelModelFallbackRoute(pathname: string, search: string, fallbackTarget: string, expectedType: UpstreamType): RouteResult | null {
@@ -727,11 +783,7 @@ function resolveChannelModelFallbackRoute(pathname: string, search: string, fall
   const entry = getConfigs()[channelName];
   if (!entry || entry.enabled === false || entry.type !== expectedType) return null;
   if (!(entry.models ?? []).some((candidate) => getModelId(candidate) === model)) return null;
-
-  return {
-    ...buildRouteResult(channelName, entry, pathname, search),
-    resolvedModel: model,
-  };
+  return resolveExplicitTargetRoute(pathname, search, { provider: channelName, model }, expectedType);
 }
 
 export function resolveRoutesForFallbackModels(pathname: string, search: string, fallbackModels: string[], forcedType?: UpstreamType): RouteResult[] {
@@ -741,18 +793,17 @@ export function resolveRoutesForFallbackModels(pathname: string, search: string,
   if (!expectedType) return [];
 
   const routes: RouteResult[] = [];
-  const seenRouteKeys = new Set<string>();
   for (const fallbackModel of fallbackModels) {
-    const route = resolveAliasFallbackRoute(pathname, search, fallbackModel, expectedType)
-      ?? resolveChannelModelFallbackRoute(pathname, search, fallbackModel, expectedType);
-    if (!route) continue;
+    const aliasRoutes = resolveAliasFallbackRoutes(pathname, search, fallbackModel, expectedType);
+    if (aliasRoutes.length > 0) {
+      routes.push(...aliasRoutes);
+      continue;
+    }
 
-    const routeKey = `${route.channelName}:${route.resolvedModel ?? fallbackModel}:${route.targetUrl}`;
-    if (seenRouteKeys.has(routeKey)) continue;
-    seenRouteKeys.add(routeKey);
-    routes.push(route);
+    const route = resolveChannelModelFallbackRoute(pathname, search, fallbackModel, expectedType);
+    if (route) routes.push(route);
   }
-  return routes;
+  return dedupeRouteResults(routes);
 }
 
 export function resolveRoutesByModel(pathname: string, search: string, model: string, forcedType?: UpstreamType): RouteResult[] {
@@ -769,14 +820,12 @@ export function resolveRoutesByModel(pathname: string, search: string, model: st
   const aliasTarget = aliasConfigs[model];
   if (aliasTarget) {
     // provider 字段可能是 uuid 或 channelName（兼容旧数据）
-    const resolvedChannelName = uuidToChannelName[aliasTarget.provider] ?? aliasTarget.provider;
-    const entry = getConfigs()[resolvedChannelName];
-    if (entry && entry.enabled !== false && (!expectedType || entry.type === expectedType)) {
-      const result = buildRouteResult(resolvedChannelName, entry, pathname, search);
-      return [{ ...result, resolvedModel: aliasTarget.model }];
-    }
-
-    return [];
+    return dedupeRouteResults((aliasTarget.targets ?? [aliasTarget])
+      .map((target) => {
+        const route = resolveExplicitTargetRoute(pathname, search, target, expectedType);
+        return route ? { ...route, virtualModel: model } : null;
+      })
+      .filter((route): route is RouteResult => route !== null));
   }
 
   return findRoutesByModel(model, expectedType).map((matched) => buildRouteResult(matched.channelName, matched.entry, pathname, search));
@@ -794,6 +843,7 @@ export function getModels(): ModelInfo[] {
 
   for (const [channelName, entry] of sortedConfigs) {
     if (entry.enabled === false) continue;
+    if (!isDirectRoutingEntry(entry)) continue;
     const routeType = entry.type ?? 'openai';
     for (const model of entry.models ?? []) {
       const modelId = getModelId(model);
@@ -807,6 +857,30 @@ export function getModels(): ModelInfo[] {
         context: model.context,
       });
     }
+  }
+
+  for (const [alias, target] of Object.entries(aliasConfigs)) {
+    if (target.visible === false) continue;
+    const firstRoute = (target.targets ?? [target])
+      .map((routeTarget) => {
+        const channelName = uuidToChannelName[routeTarget.provider] ?? routeTarget.provider;
+        const entry = getConfigs()[channelName];
+        if (!entry || entry.enabled === false) return null;
+        const matchedModel = (entry.models ?? []).find((candidate) => getModelId(candidate) === routeTarget.model);
+        return { entry, matchedModel };
+      })
+      .find((item): item is { entry: ConfigEntry; matchedModel: ModelConfig | undefined } => item !== null);
+    if (!firstRoute) continue;
+    const routeType = firstRoute.entry.type ?? 'openai';
+    const dedupeKey = `${alias}:${routeType}`;
+    if (seenModelKeys.has(dedupeKey)) continue;
+    seenModelKeys.add(dedupeKey);
+    models.push({
+      id: alias,
+      channelName: 'virtual-route',
+      type: routeType,
+      context: firstRoute.matchedModel?.context,
+    });
   }
   return models;
 }

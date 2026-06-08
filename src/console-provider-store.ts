@@ -5,6 +5,7 @@ import { consoleProviders } from './db/schema';
 
 type UpstreamType = 'anthropic' | 'openai';
 type RouteAuthHeader = 'x-api-key' | 'authorization';
+type RoutingVisibility = 'direct' | 'explicit_only';
 
 interface RouteAuthConfig {
   header: RouteAuthHeader;
@@ -25,6 +26,7 @@ interface ConfigEntry {
   models?: ModelConfig[];
   priority?: number;
   enabled?: boolean;
+  routingVisibility?: RoutingVisibility;
   extraFields?: Record<string, unknown>;
   providerUuid?: string;
 }
@@ -44,6 +46,10 @@ function normalizeStoredAuthHeader(value: string | null, type: UpstreamType): Ro
     return value;
   }
   throw new Error(`Provider auth_header must be x-api-key or authorization, got: ${value}`);
+}
+
+function normalizeStoredRoutingVisibility(value: string | null): RoutingVisibility {
+  return value === 'explicit_only' ? 'explicit_only' : 'direct';
 }
 
 function parseJsonArray<T>(value: string, fieldName: string): T[] {
@@ -81,6 +87,7 @@ function rowToConfigEntry(row: typeof consoleProviders.$inferSelect): ConfigEntr
     ...(row.systemPrompt ? { systemPrompt: row.systemPrompt } : {}),
     models: parseJsonArray<ModelConfig>(row.modelsJson, `${row.channelName}.models`),
     priority: row.priority,
+    routingVisibility: normalizeStoredRoutingVisibility(row.routingVisibility),
     ...(auth ? { auth } : {}),
     ...(row.enabled === 0 ? { enabled: false } : {}),
     ...(row.extraFieldsJson && row.extraFieldsJson.trim()
@@ -104,6 +111,7 @@ function serializeEntry(channelName: string, entry: ConfigEntry, now = Date.now(
     extraFieldsJson: entry.extraFields && Object.keys(entry.extraFields).length > 0
       ? JSON.stringify(entry.extraFields)
       : '',
+    routingVisibility: entry.routingVisibility ?? 'direct',
     enabled: entry.enabled !== false ? 1 : 0,
     createdAt: now,
     updatedAt: now,
@@ -157,6 +165,7 @@ export async function upsertConsoleProviderEntry(channelName: string, entry: Con
         extraFieldsJson: entry.extraFields && Object.keys(entry.extraFields).length > 0
           ? JSON.stringify(entry.extraFields)
           : '',
+        routingVisibility: entry.routingVisibility ?? 'direct',
         enabled: entry.enabled !== false ? 1 : 0,
         updatedAt: now,
       },
@@ -183,6 +192,7 @@ export async function updateConsoleProviderEntry(currentChannelName: string, nex
       extraFieldsJson: entry.extraFields && Object.keys(entry.extraFields).length > 0
         ? JSON.stringify(entry.extraFields)
         : '',
+      routingVisibility: entry.routingVisibility ?? 'direct',
       providerUuid: existingUuid,
       enabled: entry.enabled !== false ? 1 : 0,
       updatedAt: now,

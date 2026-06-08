@@ -50,6 +50,13 @@
       "when": 1780331369381,
       "tag": "0006_equal_power_man",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780930589942,
+      "tag": "0007_daily_johnny_storm",
+      "breakpoints": true
     }
   ]
 }

@@ -7,22 +7,63 @@ export interface ModelAliasEntry {
   alias: string;
   provider: string;
   model: string;
+  targets: ModelAliasTarget[];
   description: string | null;
+  visible: boolean;
   enabled: boolean;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface ModelAliasTarget {
+  provider: string;
+  model: string;
 }
 
 export interface ModelAliasMutationInput {
   alias?: string;
   provider?: string;
   model?: string;
+  targets?: ModelAliasTarget[];
   description?: string | null;
+  visible?: boolean;
   enabled?: boolean;
 }
 
 const db = createDbClient();
 const storeReady = Promise.resolve();
+
+function normalizeTarget(target: unknown, index: number): ModelAliasTarget {
+  if (!target || typeof target !== 'object' || Array.isArray(target)) {
+    throw new Error(`targets[${index}] 必须是对象`);
+  }
+  const record = target as Record<string, unknown>;
+  const provider = typeof record.provider === 'string' ? record.provider.trim() : '';
+  const model = typeof record.model === 'string' ? record.model.trim() : '';
+  if (!provider) throw new Error(`targets[${index}].provider 不能为空`);
+  if (!model) throw new Error(`targets[${index}].model 不能为空`);
+  return { provider, model };
+}
+
+function normalizeTargets(value: unknown, fallback: ModelAliasTarget[]): ModelAliasTarget[] {
+  if (value === undefined) return fallback;
+  if (!Array.isArray(value)) throw new Error('targets 必须是数组');
+  const targets = value.map((target, index) => normalizeTarget(target, index));
+  if (targets.length === 0) throw new Error('targets 至少需要一个目标');
+  return targets;
+}
+
+function parseTargets(row: typeof modelAliases.$inferSelect): ModelAliasTarget[] {
+  const rawTargets = row.targetsJson?.trim();
+  if (rawTargets) {
+    try {
+      return normalizeTargets(JSON.parse(rawTargets), []);
+    } catch (error) {
+      throw new Error(`Invalid targets_json for alias "${row.alias}": ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return [{ provider: row.provider, model: row.model }];
+}
 
 function rowToEntry(row: typeof modelAliases.$inferSelect): ModelAliasEntry {
   return {
@@ -30,7 +71,9 @@ function rowToEntry(row: typeof modelAliases.$inferSelect): ModelAliasEntry {
     alias: row.alias,
     provider: row.provider,
     model: row.model,
+    targets: parseTargets(row),
     description: row.description,
+    visible: row.visible !== 0,
     enabled: row.enabled !== 0,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -59,8 +102,9 @@ export async function createModelAlias(input: ModelAliasMutationInput): Promise<
   await storeReady;
 
   const alias = (input.alias ?? '').trim();
-  const provider = (input.provider ?? '').trim();
-  const model = (input.model ?? '').trim();
+  const targets = normalizeTargets(input.targets, [{ provider: (input.provider ?? '').trim(), model: (input.model ?? '').trim() }]);
+  const provider = targets[0]!.provider;
+  const model = targets[0]!.model;
 
   if (!alias) throw new Error('alias 不能为空');
   if (!provider) throw new Error('provider 不能为空');
@@ -76,7 +120,9 @@ export async function createModelAlias(input: ModelAliasMutationInput): Promise<
       alias,
       provider,
       model,
+      targetsJson: JSON.stringify(targets),
       description: input.description ?? null,
+      visible: input.visible !== false ? 1 : 0,
       enabled: input.enabled !== false ? 1 : 0,
       createdAt: now,
       updatedAt: now,
@@ -94,8 +140,17 @@ export async function updateModelAlias(id: number, input: ModelAliasMutationInpu
   if (!existing) throw new Error('模型别名不存在');
 
   const alias = input.alias !== undefined ? (input.alias ?? '').trim() : existing.alias;
-  const provider = input.provider !== undefined ? (input.provider ?? '').trim() : existing.provider;
-  const model = input.model !== undefined ? (input.model ?? '').trim() : existing.model;
+  const targets = normalizeTargets(
+    input.targets,
+    input.provider !== undefined || input.model !== undefined
+      ? [{
+          provider: input.provider !== undefined ? (input.provider ?? '').trim() : existing.provider,
+          model: input.model !== undefined ? (input.model ?? '').trim() : existing.model,
+        }]
+      : existing.targets,
+  );
+  const provider = targets[0]!.provider;
+  const model = targets[0]!.model;
 
   if (!alias) throw new Error('alias 不能为空');
   if (!provider) throw new Error('provider 不能为空');
@@ -110,7 +165,9 @@ export async function updateModelAlias(id: number, input: ModelAliasMutationInpu
       alias,
       provider,
       model,
+      targetsJson: JSON.stringify(targets),
       description: input.description !== undefined ? (input.description ?? null) : existing.description,
+      visible: input.visible !== undefined ? (input.visible ? 1 : 0) : (existing.visible ? 1 : 0),
       enabled: input.enabled !== undefined ? (input.enabled ? 1 : 0) : (existing.enabled ? 1 : 0),
       updatedAt: Date.now(),
     })

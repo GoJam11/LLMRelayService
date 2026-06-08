@@ -496,6 +496,9 @@ async function handleProxyRequest(c: any): Promise<Response> {
   const timeoutSettings = await getGatewayTimeoutSettings();
   const failoverPolicy = await getGatewayFailoverPolicy();
   const customFallbackModels = explicitRoute ? [] : getCustomModelFallbackModels(failoverPolicy, requestedModel);
+  const virtualRouteFallbackCandidates = explicitRoute
+    ? []
+    : routeCandidates.filter((route) => route.virtualModel === requestedModel).slice(1);
   const retryableStreamRequest = isEventStreamRequestBody(rawPayloadForLog);
   const attemptedRouteKeys = new Set<string>();
   const failedRouteChain: string[] = [];
@@ -521,7 +524,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
       : failoverPolicy.modelFallbackMode === 'same_model'
         ? routeCandidates
         : [];
-    const routes = [...customRoutes, ...sitePolicyRoutes];
+    const routes = [...virtualRouteFallbackCandidates, ...customRoutes, ...sitePolicyRoutes];
     const queuedRouteKeys = new Set(activeRoutes.map((route) => routeKey(route)));
     return routes.filter((candidate) => {
       const candidateKey = routeKey(candidate);

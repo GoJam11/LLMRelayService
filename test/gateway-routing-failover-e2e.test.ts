@@ -775,6 +775,59 @@ describe('failover – model fallback', () => {
     expect(fallbackBody.model).toBe('deepseek-chat');
   });
 
+  it('tries additional virtual route targets even when site-wide model fallback is disabled', async () => {
+    const configs = validateConfigEntries({
+      cheap1: {
+        type: 'openai',
+        targetBaseUrl: `${mockBaseUrl}/cheap1/v1`,
+        auth: { header: 'authorization', value: 'key' },
+        models: ['gpt-5.5'],
+        routingVisibility: 'explicit_only',
+        providerUuid: 'provider-cheap1',
+      },
+      cheap2: {
+        type: 'openai',
+        targetBaseUrl: `${mockBaseUrl}/cheap2/v1`,
+        auth: { header: 'authorization', value: 'key' },
+        models: ['gpt-5.5'],
+        routingVisibility: 'explicit_only',
+        providerUuid: 'provider-cheap2',
+      },
+    } as any);
+    loadProviderConfigsForTest(configs);
+    loadModelAliasesForTest({
+      'gpt-5.5-third': {
+        provider: 'provider-cheap1',
+        model: 'gpt-5.5',
+        targets: [
+          { provider: 'provider-cheap1', model: 'gpt-5.5' },
+          { provider: 'provider-cheap2', model: 'gpt-5.5' },
+        ],
+      },
+    });
+    loadFailoverPolicyForTest({
+      enabled: true,
+      retryAttempts: 0,
+      maxFallbackAttempts: 1,
+      modelFallbackMode: 'disabled',
+      customModelFallbacks: [],
+      retryOnStatusRanges: ['5xx'],
+      retryOnStatusCodes: [],
+    });
+
+    responseQueue.push(() => errorResponse(500));
+    responseQueue.push(() => defaultOkResponse('gpt-5.5'));
+
+    const res = await app.fetch(gatewayReq('/v1/chat/completions', chatBody('gpt-5.5-third')));
+
+    expect(res.status).toBe(200);
+    expect(requestLog).toHaveLength(2);
+    expect(requestLog[0]!.path).toBe('/cheap1/v1/chat/completions');
+    expect(requestLog[1]!.path).toBe('/cheap2/v1/chat/completions');
+    expect(JSON.parse(requestLog[0]!.body).model).toBe('gpt-5.5');
+    expect(JSON.parse(requestLog[1]!.body).model).toBe('gpt-5.5');
+  });
+
   it('passes through the last upstream error when all fallback routes are exhausted', async () => {
     const configs = validateConfigEntries({
       primary: {

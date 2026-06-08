@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { getDatabaseUrl } from '../src/db/config';
 import { TEST_DATABASE_URL, isTrustedTestDatabaseUrl } from '../src/db/test-database';
-import { loadModelAliasesForTest, loadProviderConfigsForTest, resetProviderConfigCache, resolveRoutesByModel, resolveRoutesForAnyModelFallback, resolveRoutesForFallbackModels, validateConfigEntries } from '../src/config';
+import { getModels, loadModelAliasesForTest, loadProviderConfigsForTest, resetProviderConfigCache, resolveRoutesByModel, resolveRoutesForAnyModelFallback, resolveRoutesForFallbackModels, validateConfigEntries } from '../src/config';
 
 describe('runtime config', () => {
   it('uses TEST_DATABASE_URL env var when running under bun test', () => {
@@ -95,6 +95,62 @@ describe('runtime config', () => {
     expect(routes.map((route) => `${route.channelName}:${route.resolvedModel}`)).toEqual([
       'primary:gpt-4o',
     ]);
+  });
+
+  it('keeps explicit-only providers out of direct model routing but allows virtual routes to target them', () => {
+    const configs = validateConfigEntries({
+      official: {
+        type: 'openai',
+        targetBaseUrl: 'https://official.example.com/v1',
+        models: ['gpt-5.5'],
+        priority: 30,
+      },
+      cheap: {
+        type: 'openai',
+        targetBaseUrl: 'https://cheap.example.com/v1',
+        models: ['gpt-5.5'],
+        priority: 100,
+        routingVisibility: 'explicit_only',
+        providerUuid: 'provider-cheap',
+      },
+    } as any);
+
+    loadProviderConfigsForTest(configs);
+    loadModelAliasesForTest({ third: { provider: 'provider-cheap', model: 'gpt-5.5', targets: [{ provider: 'provider-cheap', model: 'gpt-5.5' }] } });
+    const directRoutes = resolveRoutesByModel('/v1/chat/completions', '', 'gpt-5.5');
+    const virtualRoutes = resolveRoutesByModel('/v1/chat/completions', '', 'third');
+    const models = getModels();
+    resetProviderConfigCache();
+
+    expect(directRoutes.map((route) => `${route.channelName}:${route.resolvedModel ?? 'direct'}`)).toEqual(['official:direct']);
+    expect(virtualRoutes.map((route) => `${route.channelName}:${route.resolvedModel}`)).toEqual(['cheap:gpt-5.5']);
+    expect(models.map((model) => model.id).sort()).toEqual(['gpt-5.5', 'third']);
+  });
+
+  it('excludes explicit-only providers from site-wide fallback but permits explicit custom targets', () => {
+    const configs = validateConfigEntries({
+      direct: {
+        type: 'openai',
+        targetBaseUrl: 'https://direct.example.com/v1',
+        models: ['gpt-4o'],
+      },
+      backend: {
+        type: 'openai',
+        targetBaseUrl: 'https://backend.example.com/v1',
+        models: ['gpt-4o'],
+        routingVisibility: 'explicit_only',
+      },
+    } as any);
+
+    loadProviderConfigsForTest(configs);
+    const sameModel = resolveRoutesByModel('/v1/chat/completions', '', 'gpt-4o');
+    const anyModel = resolveRoutesForAnyModelFallback('/v1/chat/completions', '', 'openai');
+    const custom = resolveRoutesForFallbackModels('/v1/chat/completions', '', ['backend:gpt-4o'], 'openai');
+    resetProviderConfigCache();
+
+    expect(sameModel.map((route) => route.channelName)).toEqual(['direct']);
+    expect(anyModel.map((route) => route.channelName)).toEqual(['direct']);
+    expect(custom.map((route) => `${route.channelName}:${route.resolvedModel}`)).toEqual(['backend:gpt-4o']);
   });
 
   it('builds whole-site model fallback candidates without binding to the requested model name', () => {

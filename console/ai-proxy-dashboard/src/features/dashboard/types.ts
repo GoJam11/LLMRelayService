@@ -228,6 +228,7 @@ export type ProviderAuthInfo = {
 }
 
 export type OpenAiResponsesMode = "native" | "chat_compat" | "disabled"
+export type RoutingVisibility = "direct" | "explicit_only"
 
 export type ProviderInfo = {
   channelName: string
@@ -236,6 +237,7 @@ export type ProviderInfo = {
   systemPrompt: string | null
   priority: number
   enabled: boolean
+  routingVisibility: RoutingVisibility
   models: ProviderModelInfo[]
   auth: ProviderAuthInfo | null
   responsesMode?: OpenAiResponsesMode
@@ -255,6 +257,7 @@ export type ProviderMutationPayload = {
   systemPrompt?: string | null
   models?: Array<string | ProviderModelInfo> | null
   priority?: number
+  routingVisibility?: RoutingVisibility | null
   auth?: {
     header?: "x-api-key" | "authorization"
     value?: string
@@ -317,7 +320,9 @@ export type ModelAlias = {
   alias: string
   provider: string
   model: string
+  targets: Array<{ provider: string; model: string }>
   description: string | null
+  visible: boolean
   enabled: boolean
   createdAt: number
   updatedAt: number
@@ -331,7 +336,9 @@ export type ModelAliasMutationPayload = {
   alias?: string
   provider?: string
   model?: string
+  targets?: Array<{ provider: string; model: string }>
   description?: string | null
+  visible?: boolean
   enabled?: boolean
 }
 
