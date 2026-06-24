@@ -880,8 +880,13 @@ async function handleProxyRequest(c: any): Promise<Response> {
         continue;
       }
 
+      const perAttemptTimeoutSeconds = Math.round(upstreamTimeoutMs / 1000);
+      const attemptsOnRoute = retryIndexForRoute + 1;
+      const timeoutDetail = attemptsOnRoute > 1
+        ? `No first byte received within ${perAttemptTimeoutSeconds}s per attempt (${attemptsOnRoute} attempts, ~${perAttemptTimeoutSeconds * attemptsOnRoute}s total)`
+        : `No first byte received within ${perAttemptTimeoutSeconds}s`;
       const terminalErrorResponse = isTimeoutError
-        ? buildGatewayErrorResponse(route.type, 504, 'Upstream timeout', `No first byte received within ${Math.round(upstreamTimeoutMs / 1000)}s`)
+        ? buildGatewayErrorResponse(route.type, 504, 'Upstream timeout', timeoutDetail)
         : buildGatewayErrorResponse(route.type, 502, 'Upstream request failed', err?.message || String(err));
       saveRequestLogForAttempt({
         route,

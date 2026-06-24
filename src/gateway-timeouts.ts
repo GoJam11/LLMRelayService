@@ -32,7 +32,7 @@ const SETTINGS_WARNING_INTERVAL_MS = 60_000;
 
 export const CODE_DEFAULT_GATEWAY_TIMEOUTS: GatewayTimeoutSettings = {
   defaultFirstByteTimeoutMs: 300_000,
-  streamFirstByteTimeoutMs: 30_000,
+  streamFirstByteTimeoutMs: 300_000,
   imageFirstByteTimeoutMs: 300_000,
   responseIdleTimeoutMs: 300_000,
 };

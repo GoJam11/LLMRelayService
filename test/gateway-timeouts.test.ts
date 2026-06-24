@@ -20,7 +20,7 @@ describe('gateway timeout settings', () => {
     const settings = normalizeGatewayTimeoutSettings({}, CODE_DEFAULT_GATEWAY_TIMEOUTS);
 
     expect(settings.defaultFirstByteTimeoutMs).toBe(300_000);
-    expect(settings.streamFirstByteTimeoutMs).toBe(30_000);
+    expect(settings.streamFirstByteTimeoutMs).toBe(300_000);
     expect(settings.imageFirstByteTimeoutMs).toBe(300_000);
     expect(
       selectUpstreamFirstByteTimeoutMs(
@@ -33,10 +33,10 @@ describe('gateway timeout settings', () => {
       selectUpstreamFirstByteTimeoutMs(
         '/v1/chat/completions',
         'https://api.example.com/v1/chat/completions',
-        settings,
+        { ...settings, streamFirstByteTimeoutMs: 120_000 },
         true,
       ),
-    ).toBe(30_000);
+    ).toBe(120_000);
     expect(
       selectUpstreamFirstByteTimeoutMs(
         '/v1/images/generations',

@@ -146,7 +146,7 @@ export function SettingsPage({ onUnauthorized }: { onUnauthorized: () => void })
   const [settings, setSettings] = useState<GatewayTimeoutSettingsPayload | null>(null)
   const [form, setForm] = useState<TimeoutFormState>({
     defaultFirstByteTimeoutSeconds: "300",
-    streamFirstByteTimeoutSeconds: "30",
+    streamFirstByteTimeoutSeconds: "300",
     imageFirstByteTimeoutSeconds: "300",
     responseIdleTimeoutSeconds: "300",
   })

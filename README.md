@@ -169,7 +169,7 @@ docker run -d \
 | `GATEWAY_API_KEY` | ✅ | 客户端访问网关所需的 key，同时用作控制台登录密码 |
 | `PORT` | — | 监听端口，默认 `3300` |
 | `UPSTREAM_DEFAULT_FIRST_BYTE_TIMEOUT_MS` | — | 普通请求等待上游响应头的默认超时时间，默认 `300000` 毫秒；可在控制台配置页持久化覆盖 |
-| `UPSTREAM_STREAM_FIRST_BYTE_TIMEOUT_MS` | — | 流式请求等待上游响应头的默认超时时间，默认 `30000` 毫秒；可在控制台配置页持久化覆盖 |
+| `UPSTREAM_STREAM_FIRST_BYTE_TIMEOUT_MS` | — | 流式请求等待上游响应头的默认超时时间，默认 `300000` 毫秒；可在控制台配置页持久化覆盖 |
 | `UPSTREAM_IMAGE_FIRST_BYTE_TIMEOUT_MS` | — | 图片端点等待上游响应头的默认超时时间，默认 `300000` 毫秒；可在控制台配置页持久化覆盖 |
 | `UPSTREAM_REQUEST_TIMEOUT_MS` | — | 兼容旧配置名；当上述首字节超时变量未设置时作为 fallback 使用 |
 | `UPSTREAM_RESPONSE_IDLE_TIMEOUT_MS` | — | 上游响应 body 空闲超时时间，默认 `300000` 毫秒；设为 `0` 可关闭，也可在控制台配置页持久化覆盖 |
