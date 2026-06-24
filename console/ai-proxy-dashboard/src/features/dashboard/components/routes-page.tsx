@@ -42,6 +42,12 @@ import {
 } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Table,
@@ -841,6 +847,16 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
         }
       />
 
+      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+      <Tabs defaultValue="map" className="gap-4">
+        <TabsList variant="line" className="w-full justify-start overflow-x-auto">
+          <TabsTrigger value="map">{t("routes.tabRouteMap")}</TabsTrigger>
+          <TabsTrigger value="aliases">{t("routes.tabAliases")}</TabsTrigger>
+          <TabsTrigger value="failover">{t("routes.tabFailover")}</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="failover" className="mt-0">
       <Card>
         <CardHeader className="gap-2 border-b border-border/60">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1101,7 +1117,9 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
           {failoverFeedback ? <p className="mt-4 text-sm text-muted-foreground">{failoverFeedback}</p> : null}
         </CardContent>
       </Card>
+        </TabsContent>
 
+        <TabsContent value="map" className="mt-0">
       <Card className="c4d-table-shell">
         <CardHeader className="gap-2 border-b border-border/60">
           <div className="flex items-start gap-3">
@@ -1171,14 +1189,19 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
 
-      <Card>
-        {error && (
-          <CardContent>
-            <p className="text-sm text-destructive">{error}</p>
-          </CardContent>
-        )}
-
+        <TabsContent value="aliases" className="mt-0">
+      <Card className="c4d-table-shell">
+        <CardHeader className="gap-2 border-b border-border/60">
+          <div className="flex items-start gap-3">
+            <GitFork className="mt-0.5 h-4 w-4 text-muted-foreground" />
+            <div>
+              <CardTitle>{t("routes.aliasesTitle")}</CardTitle>
+              <CardDescription className="mt-1">{t("routes.aliasesDesc")}</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
         <CardContent className="p-0">
           {aliases === null ? (
             <div className="space-y-2 p-6">
@@ -1316,6 +1339,8 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
