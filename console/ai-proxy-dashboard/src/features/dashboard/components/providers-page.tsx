@@ -508,6 +508,16 @@ export function ProvidersPage({
     }))
   }
 
+  function clearAllModels() {
+    const nonEmptyCount = formState.models.filter((r) => r.model.trim() !== "").length
+    if (nonEmptyCount === 0) {
+      setFormState((current) => ({ ...current, models: [createModelRow()] }))
+      return
+    }
+    if (!window.confirm(t("providers.clearAllModelsConfirm", { count: nonEmptyCount }))) return
+    setFormState((current) => ({ ...current, models: [createModelRow()] }))
+  }
+
   async function openSyncDialog() {
     if (!dialogMode || !formState.targetBaseUrl.trim()) return
     setSyncError("")
@@ -1226,6 +1236,17 @@ export function ProvidersPage({
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Models</span>
                   <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={clearAllModels}
+                      disabled={formState.models.every((r) => r.model.trim() === "")}
+                    >
+                      <Trash2 data-icon="inline-start" />
+                      {t("providers.clearAllModels")}
+                    </Button>
                     <Button
                       type="button"
                       variant="ghost"
