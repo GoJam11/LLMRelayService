@@ -324,6 +324,7 @@ export type ModelAlias = {
   description: string | null
   visible: boolean
   enabled: boolean
+  returnRealModel: boolean
   createdAt: number
   updatedAt: number
 }
@@ -340,6 +341,7 @@ export type ModelAliasMutationPayload = {
   description?: string | null
   visible?: boolean
   enabled?: boolean
+  returnRealModel?: boolean
 }
 
 export type TimeoutLimit = {

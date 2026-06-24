@@ -511,6 +511,13 @@ async function handleProxyRequest(c: any): Promise<Response> {
     ? `${route.channelName}:${route.resolvedModel}`
     : route.channelName;
   const isFallbackRoute = (route: RouteResult): boolean => routeKey(route) !== routeKey(initialRoute);
+  /** alias 路由默认隐藏上游真实模型名，把响应里出现的真实模型名改回 alias 名。 */
+  const buildModelRewriteForRoute = (route: RouteResult): { from: string; to: string } | undefined => {
+    if (!route.virtualModel || !route.resolvedModel) return undefined;
+    if (route.returnRealModel === true) return undefined;
+    if (route.virtualModel === route.resolvedModel) return undefined;
+    return { from: route.resolvedModel, to: route.virtualModel };
+  };
 
   const buildFallbackRoutes = (): RouteResult[] => {
     if (explicitRoute || failoverPolicy.maxFallbackAttempts <= 0) {
@@ -978,6 +985,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
       truncatePayloadForLog,
       requestBody: attempt.forwardedPayload ?? undefined,
       bodyIdleTimeoutMs: timeoutSettings.responseIdleTimeoutMs,
+      rewriteModel: buildModelRewriteForRoute(route),
     });
     addPerfPhase(requestPerfPhases, 'finalize_response_ms', elapsedPerfMs(finalizeStart));
     const analyticsStart = nowPerfMs();

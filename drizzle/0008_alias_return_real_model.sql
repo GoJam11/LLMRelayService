@@ -1,0 +1,1 @@
+ALTER TABLE "model_aliases" ADD COLUMN "return_real_model" integer DEFAULT 0 NOT NULL;

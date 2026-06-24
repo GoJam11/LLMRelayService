@@ -51,6 +51,11 @@ interface FinalizeProxyResponseOptions {
   truncatePayloadForLog: (rawPayload: string) => { payload: string; originalBytes: number; loggedBytes: number; truncated: boolean };
   requestBody?: string;
   bodyIdleTimeoutMs?: number;
+  /**
+   * 当上游响应中的 model 字段需要改写回客户端可见的 alias 名时，提供 from→to 映射。
+   * 用于 alias 路由场景：默认隐藏上游真实模型名。
+   */
+  rewriteModel?: { from: string; to: string };
 }
 
 export async function waitForPendingResponseLogs(): Promise<void> {
@@ -94,6 +99,58 @@ function createBodyIdleTimeoutError(timeoutMs: number): DOMException {
     `Upstream response body idle timeout after ${Math.round(timeoutMs / 1000)}s`,
     'TimeoutError',
   );
+}
+
+/**
+ * 返回一个 TransformStream，把响应文本中所有出现的 `"model"`/`"original_model"` 字段
+ * 中值为 `mapping.from` 的字符串替换为 `mapping.to`，用于 alias 路由场景下默认隐藏
+ * 上游真实模型名。
+ *
+ * 实现要点：
+ * - 按字节解码累积；只对纯 ASCII 字段名 `"model"` 做匹配，因此可以安全地按字符串扫描。
+ * - 为避免 chunk 边界把 `"model":"<from>"` 切成两半，输出时保留尾部 N 字节作为
+ *   下一轮的"窗口前缀"，N 取决于最长可能匹配的字节长度。
+ * - 该转换只针对 JSON 风格的 `"model":"..."` / `"model": "..."` / `"<...>_model":"..."`
+ *   片段；不会破坏 SSE 控制行（`data:`、`event:`）。
+ */
+function createModelFieldRewriteBody(
+  sourceBody: ReadableStream<Uint8Array>,
+  mapping: { from: string; to: string },
+): ReadableStream<Uint8Array> {
+  if (!mapping.from || mapping.from === mapping.to) return sourceBody;
+
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const fromEscaped = mapping.from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // 匹配 "model":"<from>"（或带 "_model"/"display_model" 等后缀），允许空白
+  const pattern = new RegExp(`("(?:[A-Za-z0-9_]*model)"\\s*:\\s*")(${fromEscaped})(")`, 'g');
+  const safeTailBytes = Math.max(64, encoder.encode(mapping.from).length + 32);
+
+  let buffer = '';
+
+  function flushSafe(controller: TransformStreamDefaultController<Uint8Array>): void {
+    if (!buffer) return;
+    // 留出尾巴避免 chunk 边界跨过待匹配文本
+    if (buffer.length <= safeTailBytes) return;
+    const flushEnd = buffer.length - safeTailBytes;
+    const flushPart = buffer.slice(0, flushEnd).replace(pattern, (_match, prefix, _val, suffix) => `${prefix}${mapping.to}${suffix}`);
+    controller.enqueue(encoder.encode(flushPart));
+    buffer = buffer.slice(flushEnd);
+  }
+
+  return sourceBody.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      buffer += decoder.decode(chunk, { stream: true });
+      flushSafe(controller);
+    },
+    flush(controller) {
+      buffer += decoder.decode();
+      if (!buffer) return;
+      const rewritten = buffer.replace(pattern, (_match, prefix, _val, suffix) => `${prefix}${mapping.to}${suffix}`);
+      controller.enqueue(encoder.encode(rewritten));
+      buffer = '';
+    },
+  }));
 }
 
 function createTimeoutGuardedBody(
@@ -643,7 +700,7 @@ function logEmptyResponseAsync(
 }
 
 export function finalizeProxyResponse(options: FinalizeProxyResponseOptions): Response {
-  const { response, requestId, path, shouldLog, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog, requestBody, bodyIdleTimeoutMs } = options;
+  const { response, requestId, path, shouldLog, createdAt, createdAtPerf, upstreamType, truncatePayloadForLog, requestBody, bodyIdleTimeoutMs, rewriteModel } = options;
   const provider = getProviderAdapter(upstreamType);
   const transformedResponse = provider.transformResponse(response);
   const headers = new Headers(transformedResponse.headers);
@@ -663,8 +720,12 @@ export function finalizeProxyResponse(options: FinalizeProxyResponseOptions): Re
     });
   }
 
+  const rewrittenBody = rewriteModel && rewriteModel.from && rewriteModel.from !== rewriteModel.to
+    ? createModelFieldRewriteBody(transformedResponse.body, rewriteModel)
+    : transformedResponse.body;
+
   const guardedBody = createTimeoutGuardedBody(
-    transformedResponse.body,
+    rewrittenBody,
     bodyIdleTimeoutMs,
     requestId,
     path,

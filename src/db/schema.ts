@@ -110,6 +110,7 @@ export const modelAliases = pgTable('model_aliases', {
   description: text('description'),
   visible: integer('visible').notNull().default(1),
   enabled: integer('enabled').notNull().default(1),
+  returnRealModel: integer('return_real_model').notNull().default(0),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
 }, (table) => ({

@@ -53,6 +53,12 @@ export interface RouteResult {
   resolvedModel?: string;
   /** Public virtual model name that selected this explicit target. */
   virtualModel?: string;
+  /**
+   * 当本路由由 alias 解析得到时，是否在向客户端的响应里保留真实模型名。
+   * 默认 false：网关会把上游响应中的 model 字段改回 alias 名（即 virtualModel）。
+   * true：上游返回什么真实模型名就原样透传。
+   */
+  returnRealModel?: boolean;
 }
 
 export interface ProviderAuthInfo {
@@ -201,7 +207,7 @@ let providerConfigsLoaded = false;
 let providerConfigsPromise: Promise<void> | null = null;
 
 // Virtual route cache: public model name → one or more explicit backend targets.
-interface AliasTarget { provider: string; model: string; targets?: VirtualRouteTarget[]; visible?: boolean; }
+interface AliasTarget { provider: string; model: string; targets?: VirtualRouteTarget[]; visible?: boolean; returnRealModel?: boolean; }
 let aliasConfigs: Record<string, AliasTarget> = {};
 let aliasConfigsLoaded = false;
 // UUID → channelName map for alias routing
@@ -232,6 +238,7 @@ async function reloadProviderConfigs(): Promise<void> {
         model: entry.model,
         targets: entry.targets,
         visible: entry.visible,
+        returnRealModel: entry.returnRealModel,
       };
     }
   }
@@ -764,9 +771,9 @@ function resolveAliasFallbackRoutes(pathname: string, search: string, alias: str
   const aliasTarget = aliasConfigs[alias];
   if (!aliasTarget) return [];
   return dedupeRouteResults((aliasTarget.targets ?? [aliasTarget])
-    .map((target) => {
+    .map((target): RouteResult | null => {
       const route = resolveExplicitTargetRoute(pathname, search, target, expectedType);
-      return route ? { ...route, virtualModel: alias } : null;
+      return route ? { ...route, virtualModel: alias, returnRealModel: aliasTarget.returnRealModel === true } : null;
     })
     .filter((route): route is RouteResult => route !== null));
 }
@@ -821,9 +828,9 @@ export function resolveRoutesByModel(pathname: string, search: string, model: st
   if (aliasTarget) {
     // provider 字段可能是 uuid 或 channelName（兼容旧数据）
     return dedupeRouteResults((aliasTarget.targets ?? [aliasTarget])
-      .map((target) => {
+      .map((target): RouteResult | null => {
         const route = resolveExplicitTargetRoute(pathname, search, target, expectedType);
-        return route ? { ...route, virtualModel: model } : null;
+        return route ? { ...route, virtualModel: model, returnRealModel: aliasTarget.returnRealModel === true } : null;
       })
       .filter((route): route is RouteResult => route !== null));
   }

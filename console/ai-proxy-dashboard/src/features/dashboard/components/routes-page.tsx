@@ -82,6 +82,7 @@ const EMPTY_FORM = {
   targets: [] as RouteTargetDraft[],
   description: "",
   visible: true,
+  returnRealModel: false,
 }
 
 type RouteTargetDraft = {
@@ -469,6 +470,13 @@ function AliasForm({
         <FieldDescription>{t("routes.visibleToClientsHint")}</FieldDescription>
       </Field>
       <Field>
+        <label className="flex items-center gap-2 text-sm text-foreground">
+          <Checkbox checked={draft.returnRealModel} onCheckedChange={(value) => onChange({ returnRealModel: value === true })} />
+          {t("routes.returnRealModel")}
+        </label>
+        <FieldDescription>{t("routes.returnRealModelHint")}</FieldDescription>
+      </Field>
+      <Field>
         <FieldLabel>{t("routes.notesLabel")}</FieldLabel>
         <Input
           placeholder={t("routes.notesPlaceholder")}
@@ -653,6 +661,7 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
       targets: (alias.targets?.length ? alias.targets : [{ provider: alias.provider, model: alias.model }]).map((target) => createTargetDraft(target.provider, target.model)),
       description: alias.description ?? "",
       visible: alias.visible,
+      returnRealModel: alias.returnRealModel === true,
     })
     setSubmitError("")
     setDialogOpen(true)
@@ -664,6 +673,7 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
       targets: draft.targets.map((target) => ({ provider: target.provider.trim(), model: target.model.trim() })),
       description: draft.description.trim() || null,
       visible: draft.visible,
+      returnRealModel: draft.returnRealModel,
     }
     if (!trimmed.alias || trimmed.targets.length === 0 || trimmed.targets.some((target) => !target.provider || !target.model)) {
       setSubmitError(t("routes.requiredFieldsError"))
@@ -1235,7 +1245,16 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
               <TableBody>
                 {aliases.map((alias) => (
                   <TableRow key={alias.id} className={!alias.enabled ? "opacity-50" : ""}>
-                    <TableCell className="font-mono text-xs font-medium">{alias.alias}</TableCell>
+                    <TableCell className="font-mono text-xs font-medium">
+                      <div className="flex flex-col gap-1">
+                        <span>{alias.alias}</span>
+                        {alias.returnRealModel ? (
+                          <Badge variant="outline" className="w-fit text-[10px] font-normal">
+                            {t("routes.returnRealModelBadge")}
+                          </Badge>
+                        ) : null}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <RouteMapRouteList
                         routes={getAliasTargets(alias).map((target) => getAliasRoute(alias, providers, "alias", target))}

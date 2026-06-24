@@ -11,6 +11,7 @@ export interface ModelAliasEntry {
   description: string | null;
   visible: boolean;
   enabled: boolean;
+  returnRealModel: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -28,6 +29,7 @@ export interface ModelAliasMutationInput {
   description?: string | null;
   visible?: boolean;
   enabled?: boolean;
+  returnRealModel?: boolean;
 }
 
 const db = createDbClient();
@@ -75,6 +77,7 @@ function rowToEntry(row: typeof modelAliases.$inferSelect): ModelAliasEntry {
     description: row.description,
     visible: row.visible !== 0,
     enabled: row.enabled !== 0,
+    returnRealModel: row.returnRealModel !== 0,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -124,6 +127,7 @@ export async function createModelAlias(input: ModelAliasMutationInput): Promise<
       description: input.description ?? null,
       visible: input.visible !== false ? 1 : 0,
       enabled: input.enabled !== false ? 1 : 0,
+      returnRealModel: input.returnRealModel === true ? 1 : 0,
       createdAt: now,
       updatedAt: now,
     })
@@ -169,6 +173,7 @@ export async function updateModelAlias(id: number, input: ModelAliasMutationInpu
       description: input.description !== undefined ? (input.description ?? null) : existing.description,
       visible: input.visible !== undefined ? (input.visible ? 1 : 0) : (existing.visible ? 1 : 0),
       enabled: input.enabled !== undefined ? (input.enabled ? 1 : 0) : (existing.enabled ? 1 : 0),
+      returnRealModel: input.returnRealModel !== undefined ? (input.returnRealModel ? 1 : 0) : (existing.returnRealModel ? 1 : 0),
       updatedAt: Date.now(),
     })
     .where(eq(modelAliases.id, id))
