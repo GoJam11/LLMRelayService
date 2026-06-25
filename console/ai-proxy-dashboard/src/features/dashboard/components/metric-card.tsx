@@ -10,12 +10,12 @@ import {
 import { cn } from "@/lib/utils"
 
 const iconColorMap = {
-  blue: "bg-gradient-to-br from-blue-500 to-cyan-400 text-white",
+  blue: "bg-gradient-to-br from-[#0f9aa6] to-[#4fbcc4] text-white",
   green: "bg-gradient-to-br from-emerald-400 to-teal-500 text-white",
   amber: "bg-gradient-to-br from-amber-300 to-orange-500 text-white",
-  purple: "bg-gradient-to-br from-violet-400 to-blue-500 text-white",
-  cyan: "bg-gradient-to-br from-cyan-300 to-blue-500 text-white",
-  default: "bg-gradient-to-br from-slate-100 to-blue-100 text-primary",
+  purple: "bg-gradient-to-br from-[#14b3bf] to-[#0c7c86] text-white",
+  cyan: "bg-gradient-to-br from-[#4fbcc4] to-[#0f9aa6] text-white",
+  default: "bg-gradient-to-br from-slate-100 to-[#e6f5f5] text-primary",
 } as const
 
 export type MetricCardColor = keyof typeof iconColorMap

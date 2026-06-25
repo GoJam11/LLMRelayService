@@ -60,6 +60,7 @@ export default {
     keys: "密钥",
     logs: "日志",
     settings: "配置",
+    live: "实时",
     themeLabel: "显示模式",
     themeLight: "浅色",
     themeDark: "夜间",

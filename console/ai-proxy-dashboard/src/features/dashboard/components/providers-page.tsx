@@ -868,7 +868,7 @@ export function ProvidersPage({
                           <TableRow key={provider.channelName} className={!provider.enabled ? "opacity-50" : ""}>
                             <TableCell>
                               <div className="flex items-center gap-3">
-                                <div className="c4d-icon-tile flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/16 to-cyan-300/26 text-primary">
+                                <div className="c4d-icon-tile flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#0f9aa6]/16 to-[#4fbcc4]/26 text-primary">
                                   <Server className="h-4 w-4" />
                                 </div>
                                 <div className="min-w-0">

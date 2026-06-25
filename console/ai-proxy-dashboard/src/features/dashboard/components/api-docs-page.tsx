@@ -117,7 +117,7 @@ const BASE_URL = typeof window !== "undefined" ? `${window.location.protocol}//$
 
 function MethodBadge({ method }: { method: string }) {
   const colors: Record<string, string> = {
-    GET: "bg-blue-500/10 text-blue-500 hover:bg-blue-500/10",
+    GET: "bg-[#0f9aa6]/10 text-[#0f9aa6] hover:bg-[#0f9aa6]/10",
     POST: "bg-green-500/10 text-green-500 hover:bg-green-500/10",
     PATCH: "bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/10",
     DELETE: "bg-red-500/10 text-red-500 hover:bg-red-500/10",

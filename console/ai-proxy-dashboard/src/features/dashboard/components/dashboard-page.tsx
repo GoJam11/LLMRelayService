@@ -448,7 +448,7 @@ export function DashboardPage({
                   const methodColor =
                     method === "GET"
                       ? "bg-green-100 text-green-700 dark:bg-green-950/50 dark:text-green-400"
-                      : "bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-400"
+                      : "bg-[#e6f5f5] text-[#0c7c86] dark:bg-[#0c7c86]/30 dark:text-[#4fbcc4]"
                   return (
                     <div
                       key={req.request_id}

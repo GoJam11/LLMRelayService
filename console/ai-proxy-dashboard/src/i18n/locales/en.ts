@@ -60,6 +60,7 @@ export default {
     keys: "Keys",
     logs: "Logs",
     settings: "Settings",
+    live: "Live",
     themeLabel: "Theme",
     themeLight: "Light",
     themeDark: "Dark",
