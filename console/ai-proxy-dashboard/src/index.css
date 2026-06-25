@@ -157,6 +157,30 @@
 }
 
 @layer components {
+  /* 风格五 · login — clean teal session screens */
+  .lrs-clear {
+    background:
+      radial-gradient(circle at 18% 12%, oklch(0.93 0.05 196 / 0.55), transparent 26rem),
+      radial-gradient(circle at 84% 88%, oklch(0.95 0.035 196 / 0.45), transparent 24rem),
+      linear-gradient(140deg, oklch(0.99 0.005 200), oklch(0.965 0.018 196));
+  }
+
+  @keyframes lrs-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.35;
+      transform: scale(0.78);
+    }
+  }
+
+  .lrs-pulse {
+    animation: lrs-pulse 1.8s infinite;
+  }
+
   .app-canvas {
     background:
       linear-gradient(145deg, oklch(1 0 0 / 0.48), oklch(0.92 0.04 249 / 0.25)),
