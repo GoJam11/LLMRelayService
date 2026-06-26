@@ -17,7 +17,6 @@ import {
 import { useTranslation } from "react-i18next"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/ui/page-header"
 import {
   Card,
   CardContent,
@@ -622,6 +621,36 @@ export function ProvidersPage({
     return <ProvidersPageSkeleton />
   }
 
+  const handleExportConfig = () => {
+    setConfigDialogMode("export")
+    setConfigError("")
+    const exportData = {
+      version: 1,
+      exportedAt: Date.now(),
+      providers: providers.map((p) => ({
+        channelName: p.channelName,
+        type: p.type,
+        targetBaseUrl: p.targetBaseUrl,
+        systemPrompt: p.systemPrompt,
+        priority: p.priority,
+        enabled: p.enabled,
+        models: p.models,
+        auth: p.auth,
+        responsesMode: p.responsesMode,
+        extraFields: p.extraFields,
+      })),
+    }
+    setConfigJson(JSON.stringify(exportData, null, 2))
+    setConfigDialogOpen(true)
+  }
+
+  const handleImportConfig = () => {
+    setConfigDialogMode("import")
+    setConfigJson("")
+    setConfigError("")
+    setConfigDialogOpen(true)
+  }
+
   const renderEditPane = () => {
     if (!dialogOpen) {
       return (
@@ -889,78 +918,7 @@ export function ProvidersPage({
 
   return (
     <>
-      <div className="flex flex-col gap-6">
-        <PageHeader
-          icon={Server}
-          title={t("providers.title")}
-          description={t("providers.description")}
-          actions={
-            <>
-              <Button type="button" size="sm" onClick={openCreateDialog}>
-                <Plus data-icon="inline-start" />
-                {t("providers.addChannel")}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={testAllProviders}
-                disabled={testingAll || providers.length === 0}
-              >
-                <RefreshCw
-                  data-icon="inline-start"
-                  className={testingAll ? "animate-spin" : ""}
-                />
-                {testingAll ? t("common.testing") : t("providers.testAll")}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setConfigDialogMode("export")
-                  setConfigError("")
-                  const exportData = {
-                    version: 1,
-                    exportedAt: Date.now(),
-                    providers: providers.map((p) => ({
-                      channelName: p.channelName,
-                      type: p.type,
-                      targetBaseUrl: p.targetBaseUrl,
-                      systemPrompt: p.systemPrompt,
-                      priority: p.priority,
-                      enabled: p.enabled,
-                      models: p.models,
-                      auth: p.auth,
-                      responsesMode: p.responsesMode,
-                      extraFields: p.extraFields,
-                    })),
-                  }
-                  setConfigJson(JSON.stringify(exportData, null, 2))
-                  setConfigDialogOpen(true)
-                }}
-              >
-                <Download data-icon="inline-start" />
-                {t("providers.exportConfigButton")}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  setConfigDialogMode("import")
-                  setConfigJson("")
-                  setConfigError("")
-                  setConfigDialogOpen(true)
-                }}
-              >
-                <Upload data-icon="inline-start" />
-                {t("providers.importConfigButton")}
-              </Button>
-            </>
-          }
-        />
-
+      <div className="flex h-full flex-col">
         {providers.length === 0 ? (
           <Empty className="border">
             <EmptyHeader>
@@ -980,17 +938,35 @@ export function ProvidersPage({
             </EmptyContent>
           </Empty>
         ) : (
-          <div className="grid min-h-[calc(100vh-12rem)] grid-cols-1 overflow-hidden rounded-xl border border-border lg:grid-cols-[1fr_1.05fr]">
+          <div className="grid min-h-[calc(100vh-9rem)] flex-1 grid-cols-1 overflow-hidden rounded-xl border border-border lg:grid-cols-[1fr_1.05fr]">
             {/* Channel list */}
             <div className="flex min-h-0 flex-col border-b border-border lg:border-b-0 lg:border-r">
-              <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-3.5">
+              <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-3">
                 <span className="text-[13px] text-muted-foreground">
                   共 <b className="font-mono font-semibold text-foreground">{displayedProviders.length}</b> 个渠道 · {providerStats.enabledCount} {t("common.enabled")}
                 </span>
-                <Button type="button" size="sm" onClick={openCreateDialog}>
-                  <Plus data-icon="inline-start" />
-                  {t("providers.addChannel")}
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="outline"
+                    title={t("providers.testAll")}
+                    onClick={testAllProviders}
+                    disabled={testingAll || providers.length === 0}
+                  >
+                    <RefreshCw className={testingAll ? "animate-spin" : ""} />
+                  </Button>
+                  <Button type="button" size="icon-sm" variant="outline" title={t("providers.exportConfigButton")} onClick={handleExportConfig}>
+                    <Download />
+                  </Button>
+                  <Button type="button" size="icon-sm" variant="outline" title={t("providers.importConfigButton")} onClick={handleImportConfig}>
+                    <Upload />
+                  </Button>
+                  <Button type="button" size="sm" onClick={openCreateDialog}>
+                    <Plus data-icon="inline-start" />
+                    {t("providers.addChannel")}
+                  </Button>
+                </div>
               </div>
               <div className="flex items-center gap-2 border-b border-border px-5 py-2.5">
                 <div className="relative min-w-0 flex-1">
