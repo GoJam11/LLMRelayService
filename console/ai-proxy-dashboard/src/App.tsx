@@ -152,9 +152,9 @@ export function App() {
         logoutPending={logoutPending}
         onLogout={handleLogout}
       />
-      <main className="flex-1 overflow-y-auto">
+      <main className={`flex-1 ${activePage === "logs" ? "overflow-hidden" : "overflow-y-auto"}`}>
         <div
-          className={`mx-auto flex min-h-[calc(100vh-4.25rem)] max-w-[1540px] flex-col ${
+          className={`mx-auto flex ${activePage === "logs" ? "h-full" : "min-h-[calc(100vh-4.25rem)]"} max-w-[1540px] flex-col ${
             activePage === "monitor" ? "" : "px-5 py-5 lg:px-8 lg:py-7"
           }`}
         >

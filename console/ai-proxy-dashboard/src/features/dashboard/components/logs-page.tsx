@@ -1,21 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ListFilter, Radio, RotateCcw, ScrollText } from "lucide-react"
+import {
+  Radio,
+  RotateCcw,
+  Search,
+} from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
 import {
-  Card,
-  CardContent,
-  CardHeader,
-} from "@/components/ui/card"
-import { PageHeader } from "@/components/ui/page-header"
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Combobox } from "@/components/ui/combobox"
-import {
-  Field,
-  FieldContent,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Pagination } from "@/components/ui/pagination"
 import { RequestLogTable } from "@/features/dashboard/components/request-log-table"
@@ -24,6 +24,8 @@ import { useDashboardData } from "@/features/dashboard/hooks/use-dashboard-data"
 import { fetchRequestDetail } from "@/features/dashboard/api"
 import type { RequestSortKey, SortDirection } from "@/features/dashboard/api"
 import type { ConsoleRequestDetail } from "@/features/dashboard/types"
+
+export type LogsTimeRange = "1h" | "6h" | "24h" | "7d" | "all"
 
 export function LogsPage({
   onUnauthorized,
@@ -47,9 +49,10 @@ export function LogsPage({
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("")
   const [routeFilter, setRouteFilter] = useState("")
   const [modelFilter, setModelFilter] = useState("")
-  const [sourceTypeFilter, setSourceTypeFilter] = useState("all")
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [cacheFilter, setCacheFilter] = useState("all")
+  const [sourceTypeFilter, setSourceTypeFilter] = useState("")
+  const [statusFilter, setStatusFilter] = useState("")
+  const [cacheFilter, setCacheFilter] = useState("")
+  const [timeRange, setTimeRange] = useState<LogsTimeRange>("1h")
   const [liveMode, setLiveMode] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<ConsoleRequestDetail | null>(null)
@@ -82,7 +85,7 @@ export function LogsPage({
     })()
   }, [selectedId, onUnauthorized])
 
-  // 搜索框防抖 300ms，避免每次按键都触发 API
+  // 防抖搜索 300ms
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedSearchQuery(searchQuery)
@@ -90,18 +93,15 @@ export function LogsPage({
     return () => window.clearTimeout(timer)
   }, [searchQuery])
 
-  // 构建后端过滤参数（搜索使用防抖后的值）
   const filters = useMemo(() => ({
     search: debouncedSearchQuery || undefined,
     route: routeFilter || undefined,
     model: modelFilter || undefined,
-    api_key_name: sourceTypeFilter !== "all" ? sourceTypeFilter : undefined,
-    status: statusFilter !== "all" ? statusFilter : undefined,
-    cache: cacheFilter !== "all" ? cacheFilter : undefined,
+    api_key_name: sourceTypeFilter || undefined,
+    status: statusFilter || undefined,
+    cache: cacheFilter || undefined,
   }), [debouncedSearchQuery, routeFilter, modelFilter, sourceTypeFilter, statusFilter, cacheFilter])
 
-  // 筛选变化时重置到第 1 页并重新请求
-  // refreshDashboard 是稳定引用，不会引起重复触发
   const isFirstRenderRef = useRef(true)
   useEffect(() => {
     if (isFirstRenderRef.current) {
@@ -121,7 +121,6 @@ export function LogsPage({
   liveModeRef.current = liveMode
   useEffect(() => {
     if (!liveMode) return
-    // entering live mode — immediately fetch latest 100
     void refreshDashboard({ limit: 100, offset: 0, filters: filtersRef.current })
     const id = window.setInterval(() => {
       if (liveModeRef.current) {
@@ -144,14 +143,9 @@ export function LogsPage({
     void refreshDashboard({ sortBy: newSortBy, sortOrder: newSortOrder, filters })
   }
 
-  // 下拉选项从后端获取
   const routeOptions = useMemo(() => {
     return filterOptions.routes.map((value) => ({ value, label: value }))
   }, [filterOptions.routes])
-
-  const modelOptions = useMemo(() => {
-    return filterOptions.models.map((value) => ({ value, label: value }))
-  }, [filterOptions.models])
 
   const sourceTypeOptions = useMemo(() => {
     return filterOptions.clients.map((client) => ({
@@ -160,200 +154,181 @@ export function LogsPage({
     }))
   }, [filterOptions.clients])
 
-  const clearFilters = () => {
-    setSearchQuery("")
-    setRouteFilter("")
-    setModelFilter("")
-    setSourceTypeFilter("all")
-    setStatusFilter("all")
-    setCacheFilter("all")
-  }
+  const hasActiveFilters = searchQuery || routeFilter || modelFilter || sourceTypeFilter || statusFilter || cacheFilter
 
-  const hasActiveFilters = searchQuery || routeFilter || modelFilter || sourceTypeFilter !== "all" || statusFilter !== "all" || cacheFilter !== "all"
+  const timeRangeOptions: { value: LogsTimeRange; label: string }[] = [
+    { value: "1h", label: t("logs.timeRange1h") },
+    { value: "6h", label: t("logs.timeRange6h") },
+    { value: "24h", label: t("logs.timeRange24h") },
+    { value: "7d", label: t("logs.timeRange7d") },
+    { value: "all", label: t("logs.timeRangeAll") },
+  ]
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex h-full flex-col gap-0">
       {/* Header */}
-      <PageHeader
-        icon={ScrollText}
-        title={t("logs.title")}
-        description={t("logs.description")}
-        actions={
-          <>
-            <Button
-              type="button"
-              size="sm"
-              variant={liveMode ? "default" : "outline"}
-              onClick={() => setLiveMode((v) => !v)}
-              className={liveMode ? "animate-pulse" : ""}
-            >
-              <Radio data-icon="inline-start" className="h-4 w-4" />
-              Live
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={refreshing || liveMode}
-              onClick={() => {
-                void refreshDashboard({ filters: filtersRef.current })
-              }}
-            >
-              <RotateCcw data-icon="inline-start" className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-              {t("common.refreshData")}
-            </Button>
-          </>
-        }
-      />
-
-      {/* Filter Card */}
-      <Card>
-        <CardHeader className="pb-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-base font-semibold">
-              <ListFilter data-icon="inline-start" className="h-4 w-4" />
-              {t("logs.filterPanelLabel")}
-            </div>
-            {(hasActiveFilters) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearFilters}
-              >
-                {t("common.clearAllFilters")}
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          <FieldGroup className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            <Field>
-              <FieldLabel htmlFor="request-search">{t("logs.filterPanelLabel")}</FieldLabel>
-              <FieldContent>
-                <Input
-                  id="request-search"
-                  placeholder={t("logs.searchPlaceholder")}
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                />
-              
-              </FieldContent>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="route-filter">{t("logs.routeFilter")}</FieldLabel>
-              <FieldContent>
-                <Combobox
-                  options={routeOptions}
-                  value={routeFilter}
-                  onChange={setRouteFilter}
-                  placeholder={t("logs.allRoutes")}
-                  searchPlaceholder={t("logs.searchRoute")}
-                />
-              </FieldContent>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="model-filter">{t("logs.modelFilter")}</FieldLabel>
-              <FieldContent>
-                <Combobox
-                  options={modelOptions}
-                  value={modelFilter}
-                  onChange={setModelFilter}
-                  placeholder={t("logs.allModels")}
-                  searchPlaceholder={t("logs.searchModel")}
-                />
-              </FieldContent>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="source-type-filter">{t("logs.sourceFilter")}</FieldLabel>
-              <FieldContent>
-                <Combobox
-                  options={[{ value: "all", label: t("logs.allTypes") }, ...sourceTypeOptions]}
-                  value={sourceTypeFilter}
-                  onChange={setSourceTypeFilter}
-                  placeholder={t("logs.allTypes")}
-                  searchPlaceholder={t("logs.searchType")}
-                />
-              </FieldContent>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="status-filter">{t("logs.statusFilter")}</FieldLabel>
-              <FieldContent>
-                <Combobox
-                  options={[
-                    { value: "all", label: t("logs.allStatus") },
-                    { value: "success", label: t("logs.statusSuccess") },
-                    { value: "error", label: t("logs.statusError") },
-                  ]}
-                  value={statusFilter}
-                  onChange={setStatusFilter}
-                  placeholder={t("logs.allStatus")}
-                  searchPlaceholder={t("logs.searchStatus")}
-                />
-              </FieldContent>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="cache-filter">{t("logs.cacheFilter")}</FieldLabel>
-              <FieldContent>
-                <Combobox
-                  options={[
-                    { value: "all", label: t("logs.allCache") },
-                    { value: "hit", label: t("logs.cacheHit") },
-                    { value: "create", label: t("logs.cacheCreate") },
-                    { value: "miss", label: t("logs.cacheMiss") },
-                    { value: "bypass", label: t("logs.cacheBypass") },
-                    { value: "error", label: t("logs.cacheError") },
-                  ]}
-                  value={cacheFilter}
-                  onChange={setCacheFilter}
-                  placeholder={t("logs.allCache")}
-                  searchPlaceholder={t("logs.searchCache")}
-                />
-              </FieldContent>
-            </Field>
-          </FieldGroup>
-        </CardContent>
-      </Card>
-
-      {/* Master-detail: log table + inline detail */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_1fr]">
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <RequestLogTable
-              loading={loading}
-              refreshing={refreshing}
-              requests={requests}
-              selectedId={selectedId}
-              sortBy={sortBy}
-              sortOrder={sortOrder}
-              onSort={handleSortChange}
-              onSelect={(requestId) => setSelectedId(requestId)}
-              onClearFilters={clearFilters}
-              onApplyRouteFilter={setRouteFilter}
-              onApplyModelFilter={setModelFilter}
-              onApplySourceTypeFilter={setSourceTypeFilter}
+      <div className="flex items-center justify-between px-6 py-3 border-b border-border">
+        <div className="flex items-baseline gap-3">
+          <span className="text-[17px] font-extrabold tracking-[0.04em] text-foreground">
+            {t("logs.title")}
+          </span>
+          <span className="text-[13px] text-muted-foreground">
+            {t("logs.subtitle")}
+          </span>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <Button
+            type="button"
+            size="sm"
+            variant={liveMode ? "default" : "outline"}
+            onClick={() => setLiveMode((v) => !v)}
+            className={liveMode ? "animate-pulse" : ""}
+          >
+            <Radio data-icon="inline-start" className="h-4 w-4" />
+            {t("nav.live")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={refreshing || liveMode}
+            onClick={() => {
+              void refreshDashboard({ filters: filtersRef.current })
+            }}
+          >
+            <RotateCcw
+              data-icon="inline-start"
+              className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
             />
-          </div>
+            {t("common.refreshData")}
+          </Button>
+        </div>
+      </div>
+
+      {/* Filter Bar — inline, no Card */}
+      <div className="flex items-center gap-2.5 px-6 py-3 border-b border-border bg-card">
+        {/* Search */}
+        <div className="relative flex-1" style={{ maxWidth: 280 }}>
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
+          <Input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder={t("logs.searchPlaceholder")}
+            className="h-9 pl-9 pr-3 text-xs"
+          />
+        </div>
+
+        {/* Status */}
+        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v === "all" ? "" : v) }}>
+          <SelectTrigger className="h-9 w-auto min-w-[88px] text-xs">
+            <SelectValue placeholder={t("logs.allStatus")} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="all">{t("logs.allStatus")}</SelectItem>
+              <SelectItem value="success">{t("logs.statusSuccess")}</SelectItem>
+              <SelectItem value="error">{t("logs.statusError")}</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+
+        {/* Route */}
+        <Combobox
+          options={routeOptions}
+          value={routeFilter}
+          onChange={(v) => setRouteFilter(v ?? "")}
+          placeholder={t("logs.routePlaceholder")}
+          searchPlaceholder={t("logs.searchRoute")}
+          className="h-9 w-[124px] bg-card text-xs font-normal"
+        />
+
+        {/* Source (API Key) */}
+        <Combobox
+          options={sourceTypeOptions}
+          value={sourceTypeFilter}
+          onChange={(v) => setSourceTypeFilter(v ?? "")}
+          placeholder={t("logs.sourcePlaceholder")}
+          searchPlaceholder={t("logs.searchSource")}
+          className="h-9 w-[132px] bg-card text-xs font-normal"
+        />
+
+        {/* Time Range */}
+        <Select value={timeRange} onValueChange={(v) => setTimeRange(v as LogsTimeRange)}>
+          <SelectTrigger className="h-9 w-auto min-w-[96px] text-xs font-semibold border-primary/30 bg-accent text-accent-foreground">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {timeRangeOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+
+        {/* Result count */}
+        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+          {t("logs.resultCount", { count: total })}
+        </span>
+
+        {/* Clear */}
+        {hasActiveFilters ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-9 px-2.5 text-xs text-muted-foreground"
+            onClick={() => {
+              setSearchQuery("")
+              setRouteFilter("")
+              setModelFilter("")
+              setSourceTypeFilter("")
+              setStatusFilter("")
+              setCacheFilter("")
+            }}
+          >
+            {t("common.clearFilters")}
+          </Button>
+        ) : null}
+      </div>
+
+      {/* Master-detail layout — 1.45fr 1fr, matching design spec */}
+      <div className="grid min-h-0 flex-1 grid-cols-[1.45fr_1fr]">
+        {/* Left: compact log table */}
+        <div className="flex h-full min-h-0 flex-col border-r border-border overflow-hidden">
+          <RequestLogTable
+            variant="compact"
+            loading={loading}
+            refreshing={refreshing}
+            requests={requests}
+            selectedId={selectedId}
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            onSort={handleSortChange}
+            onSelect={(requestId) => setSelectedId(requestId)}
+            onApplyRouteFilter={setRouteFilter}
+            onApplyModelFilter={setModelFilter}
+            onApplySourceTypeFilter={setSourceTypeFilter}
+          />
 
           {!liveMode && (
-            <div className="border-t border-border/60">
-              <div className="px-4 py-4">
-                <Pagination
-                  total={total}
-                  limit={limit}
-                  offset={offset}
-                  onPageChange={handlePageChange}
-                  onLimitChange={handleLimitChange}
-                />
-              </div>
+            <div className="shrink-0 border-t border-border px-4 py-3">
+              <Pagination
+                total={total}
+                limit={limit}
+                offset={offset}
+                onPageChange={handlePageChange}
+                onLimitChange={handleLimitChange}
+              />
             </div>
           )}
-        </Card>
+        </div>
 
-        <DetailView detail={detail} error={detailError} />
+        {/* Right: detail view */}
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <DetailView detail={detail} error={detailError} />
+        </div>
       </div>
     </div>
   )

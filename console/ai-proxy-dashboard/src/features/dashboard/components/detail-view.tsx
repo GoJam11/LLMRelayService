@@ -1,7 +1,6 @@
 import { useTranslation } from "react-i18next"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import {
   Card,
   CardContent,
@@ -23,18 +22,44 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { DetailMetricTable } from "@/features/dashboard/components/detail-metric-table"
 import { PayloadPanel } from "@/features/dashboard/components/payload-panel"
 import type { ConsoleRequestDetail } from "@/features/dashboard/types"
 import {
   extractReadableSseText,
-  formatBytes,
+  formatCount,
   formatDuration,
   formatTime,
-  getCostMetricRows,
-  getUsageMetricRows,
   shortText,
 } from "@/features/dashboard/utils"
+
+function statusStyle(code: number | null): { bg: string; fg: string } {
+  if (code == null) return { bg: "var(--muted)", fg: "var(--lrs-faint)" }
+  if (code >= 500) return { bg: "var(--lrs-danger-bg)", fg: "var(--lrs-danger)" }
+  if (code >= 400) return { bg: "var(--lrs-warn-bg)", fg: "var(--lrs-warn)" }
+  return { bg: "var(--lrs-success-bg)", fg: "var(--lrs-success)" }
+}
+
+function MetricCell({
+  label,
+  value,
+  highlight,
+}: {
+  label: string
+  value: string
+  highlight?: boolean
+}) {
+  return (
+    <div className="bg-card px-3 py-2.5">
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <div
+        className="mt-0.5 font-mono text-sm font-semibold"
+        style={highlight ? { color: "var(--primary)" } : undefined}
+      >
+        {value}
+      </div>
+    </div>
+  )
+}
 
 function ReadonlyTextCard({
   title,
@@ -86,15 +111,12 @@ export function DetailView({
 }) {
   const { t } = useTranslation()
 
+  // Empty state
   if (!detail) {
     return (
-      <Card>
-        <CardHeader className="border-b border-border/60">
-          <CardTitle>{t("detail.detailTitle")}</CardTitle>
-          <CardDescription>{t("detail.detailDesc")}</CardDescription>
-        </CardHeader>
-        <CardContent className="pt-4">
-          <Empty className="border-border/70">
+      <div className="flex h-full flex-col">
+        <div className="flex flex-1 items-center justify-center p-8">
+          <Empty className="border-0">
             <EmptyHeader>
               <EmptyTitle>{t("detail.emptyTitle")}</EmptyTitle>
               <EmptyDescription>
@@ -102,51 +124,17 @@ export function DetailView({
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     )
   }
 
   const record = detail.record
-  const analysis = detail.analysis
   const usage = record.response_usage ?? {}
   const timing = record.response_timing ?? {}
-  const requestRows = [
-    { label: t("detail.requestId"), value: record.request_id },
-    { label: t("detail.time"), value: formatTime(record.created_at) },
-    { label: t("detail.path"), value: record.path },
-    { label: t("detail.routePrefix"), value: record.failover_from ? `${record.original_route_prefix || record.failover_from} → ${record.route_prefix}` : record.route_prefix },
-    {
-      label: t("detail.keySource"),
-      value: detail.client_label || "generic",
-    },
-    { label: t("detail.requestModel"), value: record.request_model },
-    { label: t("detail.responseModel"), value: usage.model || "--" },
-    { label: t("detail.targetUrl"), value: record.target_url },
-    { label: t("detail.upstreamType"), value: record.upstream_type },
-    {
-      label: t("detail.httpStatus"),
-      value: `${record.response_status ?? "--"} ${record.response_status_text || ""}`.trim(),
-    },
-    ...(record.failover_reason ? [{ label: t("detail.failoverReason"), value: record.failover_reason }] : []),
-    ...(record.retry_attempt > 0 ? [{ label: t("detail.retryAttempt"), value: String(record.retry_attempt) }] : []),
-  ]
-  const timingRows = [
-    { label: t("detail.firstChunk"), value: formatDuration(timing.first_chunk_latency_ms) },
-    { label: t("detail.firstToken"), value: formatDuration(timing.first_token_latency_ms) },
-    { label: t("detail.duration"), value: formatDuration(timing.duration_ms) },
-    {
-      label: t("detail.generationDuration"),
-      value: formatDuration(timing.generation_duration_ms),
-    },
-    { label: t("detail.responseBodySize"), value: formatBytes(timing.response_body_bytes) },
-    {
-      label: t("detail.transferMode"),
-      value: timing.has_streaming_content ? t("detail.streaming") : t("detail.nonStreaming"),
-    },
-  ]
-  const usageRows = getUsageMetricRows(usage, timing, record.upstream_type)
-  const costRows = getCostMetricRows(usage, record.request_model, record.upstream_type)
+  const st = statusStyle(record.response_status)
+
+  // Request meta rows for request tab
   const originalHeadersText = JSON.stringify(record.original_headers ?? {}, null, 2)
   const forwardHeadersText = JSON.stringify(record.forward_headers ?? {}, null, 2)
   const responseHeadersText = JSON.stringify(record.response_headers ?? {}, null, 2)
@@ -154,143 +142,225 @@ export function DetailView({
     ? extractReadableSseText(record.response_payload)
     : ""
 
+  const inputTokens = usage.uncached_input_tokens ?? usage.input_tokens ?? usage.total_input_tokens ?? 0
+  const outputTokens = usage.output_tokens ?? usage.total_output_tokens ?? 0
+  const cacheReadTokens = record.upstream_type === "openai"
+    ? Number(usage.cached_input_tokens ?? 0)
+    : Number(usage.cache_read_input_tokens ?? 0)
+  const cacheCreationTokens = record.upstream_type === "openai"
+    ? 0
+    : Number(usage.cache_creation_input_tokens ?? usage.total_cache_creation_tokens ?? 0)
+
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="shrink-0 gap-4 border-b border-border/60">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">{record.route_prefix}</Badge>
-            <Badge variant="outline">{record.upstream_type}</Badge>
-            <Badge variant="outline">
-              {analysis.summary}
-            </Badge>
-          </div>
-          <div className="space-y-1">
-            <CardTitle className="text-xl tracking-tight break-all">
-              {record.path}
-            </CardTitle>
-            <CardDescription>
-              {formatTime(record.created_at)} · {record.request_model} · user_id {shortText(record.forwarded_summary?.metadata_user_id, 28)}
-            </CardDescription>
-          </div>
+    <div className="flex h-full flex-col bg-[#fdffff]">
+      {/* Top: status + model + channel + request_id */}
+      <div className="shrink-0 border-b border-border px-6 py-4">
+        <div className="flex items-center gap-3">
+          <span
+            className="rounded-md px-2.5 py-1 font-mono text-xs font-bold"
+            style={{ background: st.bg, color: st.fg }}
+          >
+            {record.response_status ?? "--"}
+          </span>
+          <span className="text-[15px] font-bold text-foreground">
+            {record.request_model}
+          </span>
+          <span className="text-xs text-muted-foreground">· {record.route_prefix}</span>
+          <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">
+            {shortText(record.request_id, 24)}
+          </span>
         </div>
         {error ? (
-          <Alert variant="destructive">
+          <Alert variant="destructive" className="mt-3">
             <AlertTitle>{t("detail.refreshFailed")}</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : null}
-      </CardHeader>
-      <ScrollArea className="min-h-0 flex-1">
-        <CardContent className="min-w-0 pt-4">
-        <Tabs defaultValue="summary" className="min-w-0 gap-4">
-          <TabsList variant="line" className="w-full justify-start overflow-x-auto">
-            <TabsTrigger value="summary">{t("detail.tabSummary")}</TabsTrigger>
-            <TabsTrigger value="request">{t("detail.tabRequest")}</TabsTrigger>
-            <TabsTrigger value="response">{t("detail.tabResponse")}</TabsTrigger>
-          </TabsList>
 
-          <TabsContent value="summary" className="space-y-4">
-            <div className="grid gap-4">
-              <Card size="sm">
-                <CardHeader className="border-b border-border/60">
-                  <CardTitle>{t("detail.overviewTitle")}</CardTitle>
-                  <CardDescription>{t("detail.overviewDesc")}</CardDescription>
-                </CardHeader>
-                <CardContent className="pt-3">
-                  <DetailMetricTable rows={requestRows} />
-                </CardContent>
-              </Card>
+        {/* 4×2 metric grid — 首包/首Token/总耗时/生成 + 输入/输出/cache_read/cache_creation */}
+        <div
+          className="mt-4 grid overflow-hidden rounded-lg border border-border bg-border"
+          style={{ gridTemplateColumns: "repeat(4, 1fr)", gap: 1 }}
+        >
+          <MetricCell
+            label={t("detail.firstChunk")}
+            value={formatDuration(timing.first_chunk_latency_ms)}
+          />
+          <MetricCell
+            label={t("detail.firstToken")}
+            value={formatDuration(timing.first_token_latency_ms)}
+            highlight
+          />
+          <MetricCell
+            label={t("detail.duration")}
+            value={formatDuration(timing.duration_ms)}
+          />
+          <MetricCell
+            label={t("detail.generationDuration")}
+            value={formatDuration(timing.generation_duration_ms)}
+          />
+          <MetricCell
+            label={t("detail.inputTokens")}
+            value={formatCount(inputTokens)}
+          />
+          <MetricCell
+            label={t("detail.outputTokens")}
+            value={formatCount(outputTokens)}
+          />
+          <MetricCell
+            label="cache_read"
+            value={formatCount(cacheReadTokens)}
+          />
+          <MetricCell
+            label="cache_creation"
+            value={formatCount(cacheCreationTokens)}
+          />
+        </div>
+      </div>
 
-              <Card size="sm">
-                <CardHeader className="border-b border-border/60">
-                  <CardTitle>{t("detail.timingTitle")}</CardTitle>
-                  <CardDescription>{t("detail.timingDesc")}</CardDescription>
-                </CardHeader>
-                <CardContent className="pt-3">
-                  <DetailMetricTable rows={timingRows} />
-                </CardContent>
-              </Card>
-            </div>
+      {/* Tabs: 原始请求 / 转发请求 / 响应 — Design: LRS Clear 风格五 */}
+      <Tabs defaultValue="request" className="flex min-h-0 flex-1 flex-col">
+        <TabsList
+          variant="line"
+          className="shrink-0 !h-auto w-full justify-start gap-0 border-b border-border bg-transparent px-6 py-0"
+        >
+          <TabsTrigger
+            value="request"
+            className="mr-6 h-auto flex-none px-0.5 py-[11px] text-[13px] font-medium text-muted-foreground after:bottom-0 data-[state=active]:font-bold data-[state=active]:text-foreground"
+            style={{ '--tabs-line-color': 'var(--primary)', '--tabs-line-bottom': '0px' } as React.CSSProperties}
+          >
+            {t("detail.tabRequest")}
+          </TabsTrigger>
+          <TabsTrigger
+            value="forward"
+            className="mr-6 h-auto flex-none px-0.5 py-[11px] text-[13px] font-medium text-muted-foreground after:bottom-0 data-[state=active]:font-bold data-[state=active]:text-foreground"
+            style={{ '--tabs-line-color': 'var(--primary)', '--tabs-line-bottom': '0px' } as React.CSSProperties}
+          >
+            {t("detail.tabForward")}
+          </TabsTrigger>
+          <TabsTrigger
+            value="response"
+            className="mr-6 h-auto flex-none px-0.5 py-[11px] text-[13px] font-medium text-muted-foreground after:bottom-0 data-[state=active]:font-bold data-[state=active]:text-foreground"
+            style={{ '--tabs-line-color': 'var(--primary)', '--tabs-line-bottom': '0px' } as React.CSSProperties}
+          >
+            {t("detail.tabResponse")}
+          </TabsTrigger>
+        </TabsList>
 
-            <Card size="sm">
-              <CardHeader className="border-b border-border/60">
-                <CardTitle>{t("detail.tokenTitle")}</CardTitle>
-                <CardDescription>{t("detail.tokenDesc")}</CardDescription>
-              </CardHeader>
-              <CardContent className="pt-3">
-                <DetailMetricTable rows={usageRows} />
-              </CardContent>
-            </Card>
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="p-4">
+            {/* Request Tab */}
+            <TabsContent value="request" className="mt-0">
+              <div className="space-y-3">
+                <PayloadPanel
+                  title={t("detail.originalPayload")}
+                  payload={record.original_payload}
+                  truncated={record.original_payload_truncated}
+                />
+                <ReadonlyTextCard
+                  title={t("detail.originalHeaders")}
+                  description={t("detail.originalHeadersDesc")}
+                  value={originalHeadersText}
+                  emptyTitle={t("detail.noOriginalHeaders")}
+                  emptyDescription={t("detail.noOriginalHeadersDesc")}
+                />
+                {/* Meta info */}
+                <Card size="sm">
+                  <CardHeader className="border-b border-border/60">
+                    <CardTitle>{t("detail.overviewTitle")}</CardTitle>
+                    <CardDescription>{t("detail.overviewDesc")}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-3">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                      <div className="text-muted-foreground">{t("detail.requestId")}</div>
+                      <div className="font-mono text-foreground">{record.request_id}</div>
+                      <div className="text-muted-foreground">{t("detail.time")}</div>
+                      <div className="font-mono text-foreground">{formatTime(record.created_at)}</div>
+                      <div className="text-muted-foreground">{t("detail.path")}</div>
+                      <div className="break-all font-mono text-foreground">{record.path}</div>
+                      <div className="text-muted-foreground">{t("detail.keySource")}</div>
+                      <div className="text-foreground">{detail.client_label || "generic"}</div>
+                      <div className="text-muted-foreground">{t("detail.targetUrl")}</div>
+                      <div className="break-all font-mono text-foreground">{record.target_url}</div>
+                      <div className="text-muted-foreground">{t("detail.upstreamType")}</div>
+                      <div className="text-foreground">{record.upstream_type}</div>
+                      {record.failover_from ? (
+                        <>
+                          <div className="text-muted-foreground">{t("detail.failoverReason")}</div>
+                          <div className="text-foreground">{record.failover_reason || record.failover_from}</div>
+                        </>
+                      ) : null}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
 
-            <Card size="sm">
-              <CardHeader className="border-b border-border/60">
-                <CardTitle>{t("detail.costTitle")}</CardTitle>
-                <CardDescription>{t("detail.costDesc")}</CardDescription>
-              </CardHeader>
-              <CardContent className="pt-3">
-                <DetailMetricTable rows={costRows} />
-              </CardContent>
-            </Card>
-          </TabsContent>
+            {/* Forward Tab */}
+            <TabsContent value="forward" className="mt-0">
+              <div className="space-y-3">
+                <PayloadPanel
+                  title={t("detail.forwardedPayload")}
+                  payload={record.forwarded_payload}
+                  truncated={record.forwarded_payload_truncated}
+                />
+                <ReadonlyTextCard
+                  title={t("detail.forwardedHeaders")}
+                  description={t("detail.forwardedHeadersDesc")}
+                  value={forwardHeadersText}
+                  emptyTitle={t("detail.noForwardedHeaders")}
+                  emptyDescription={t("detail.noForwardedHeadersDesc")}
+                />
+              </div>
+            </TabsContent>
 
-          <TabsContent value="request" className="space-y-4">
-            <div className="grid gap-4 xl:grid-cols-2">
-              <PayloadPanel
-                title={t("detail.originalPayload")}
-                payload={record.original_payload}
-                truncated={record.original_payload_truncated}
-              />
-              <PayloadPanel
-                title={t("detail.forwardedPayload")}
-                payload={record.forwarded_payload}
-                truncated={record.forwarded_payload_truncated}
-              />
-            </div>
-            <div className="grid gap-4 xl:grid-cols-2">
-              <ReadonlyTextCard
-                title={t("detail.originalHeaders")}
-                description={t("detail.originalHeadersDesc")}
-                value={originalHeadersText}
-                emptyTitle={t("detail.noOriginalHeaders")}
-                emptyDescription={t("detail.noOriginalHeadersDesc")}
-              />
-              <ReadonlyTextCard
-                title={t("detail.forwardedHeaders")}
-                description={t("detail.forwardedHeadersDesc")}
-                value={forwardHeadersText}
-                emptyTitle={t("detail.noForwardedHeaders")}
-                emptyDescription={t("detail.noForwardedHeadersDesc")}
-              />
-            </div>
-          </TabsContent>
+            {/* Response Tab */}
+            <TabsContent value="response" className="mt-0">
+              <div className="space-y-3">
+                {timing.has_streaming_content ? (
+                  <ReadonlyTextCard
+                    title={t("detail.sseConcat")}
+                    description={t("detail.sseConcatDesc")}
+                    value={readableSseText}
+                    emptyTitle={t("detail.noSseConcat")}
+                    emptyDescription={t("detail.noSseConcatDesc")}
+                  />
+                ) : null}
+                <PayloadPanel
+                  title={t("detail.responseBody")}
+                  payload={record.response_payload}
+                  truncated={record.response_payload_truncated}
+                />
+                <ReadonlyTextCard
+                  title={t("detail.responseHeaders")}
+                  description={t("detail.responseHeadersDesc")}
+                  value={responseHeadersText}
+                  emptyTitle={t("detail.noResponseHeaders")}
+                  emptyDescription={t("detail.noResponseHeadersDesc")}
+                />
+              </div>
+            </TabsContent>
+          </div>
+        </ScrollArea>
+      </Tabs>
 
-          <TabsContent value="response" className="space-y-4">
-            {timing.has_streaming_content ? (
-              <ReadonlyTextCard
-                title={t("detail.sseConcat")}
-                description={t("detail.sseConcatDesc")}
-                value={readableSseText}
-                emptyTitle={t("detail.noSseConcat")}
-                emptyDescription={t("detail.noSseConcatDesc")}
-              />
-            ) : null}
-            <PayloadPanel
-              title={t("detail.responseBody")}
-              payload={record.response_payload}
-              truncated={record.response_payload_truncated}
-            />
-            <ReadonlyTextCard
-              title={t("detail.responseHeaders")}
-              description={t("detail.responseHeadersDesc")}
-              value={responseHeadersText}
-              emptyTitle={t("detail.noResponseHeaders")}
-              emptyDescription={t("detail.noResponseHeadersDesc")}
-            />
-          </TabsContent>
-        </Tabs>
-      </CardContent>
-      </ScrollArea>
-    </Card>
+      {/* Bottom action bar */}
+      <div className="flex shrink-0 items-center gap-4 border-t border-border px-6 py-3">
+        <span className="text-[11.5px] text-muted-foreground">
+          {t("detail.bottomHint")}
+        </span>
+        <div className="ml-auto flex items-center gap-4">
+          <button
+            type="button"
+            className="text-[11.5px] font-semibold text-primary hover:underline"
+            onClick={() => {
+              void navigator.clipboard?.writeText(JSON.stringify(record, null, 2))
+            }}
+          >
+            {t("detail.copy")}
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
