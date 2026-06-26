@@ -24,14 +24,6 @@ import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/
 import { Input } from "@/components/ui/input"
 import { Combobox } from "@/components/ui/combobox"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { createKey, deleteKey, fetchKeys, fetchModels, getKey, renameKey, setKeyAllowedModels, setKeyCostQuota } from "@/features/dashboard/api"
 import type { GatewayModel, ManagedApiKey, ManagedApiKeyDetail } from "@/features/dashboard/types"
 import { formatCost } from "@/features/dashboard/utils"
@@ -368,85 +360,124 @@ export function KeysPage({
           ))}
         </div>
       ) : hasKeys ? (
-        <div className="rounded-lg border border-border/70">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("keys.nameCol")}</TableHead>
-                <TableHead>{t("keys.prefixCol")}</TableHead>
-                <TableHead>{t("keys.allowedModelsCol")}</TableHead>
-                <TableHead>{t("keys.costQuotaCol")}</TableHead>
-                <TableHead>{t("keys.createdCol")}</TableHead>
-                <TableHead>{t("keys.lastUsedCol")}</TableHead>
-                <TableHead className="text-right">{t("keys.actionsCol")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {keys.map((key) => (
-                <TableRow key={key.id}>
-                  <TableCell className="font-medium text-foreground">{key.name}</TableCell>
-                  <TableCell><Badge variant="outline" className="font-mono">{key.prefix}</Badge></TableCell>
-                  <TableCell>
-                    {(key.allowed_models ?? []).length === 0 ? (
-                      <span className="text-muted-foreground text-xs">{t("keys.allowedModelsNone")}</span>
+        <div className="overflow-x-auto">
+          <div className="grid min-w-[860px] grid-cols-[1.5fr_1fr_1.15fr_0.9fr_84px_140px] items-center gap-4 border-b border-border px-2 py-3 text-[10.5px] font-semibold text-muted-foreground">
+            <span>{t("keys.nameCol")} / {t("keys.allowedModelsCol")}</span>
+            <span>Key</span>
+            <span>{t("keys.costQuotaCol")}</span>
+            <span>{t("keys.lastUsedCol")}</span>
+            <span>{t("keys.statusCol")}</span>
+            <span className="text-right">{t("keys.actionsCol")}</span>
+          </div>
+          {keys.map((key) => {
+            const wl = key.allowed_models ?? []
+            const hasQuota = key.cost_quota != null
+            const pct = hasQuota
+              ? Math.min(100, Math.round((Number(key.cost_used) / Number(key.cost_quota || 1)) * 100))
+              : 0
+            const status = key.quota_exhausted
+              ? { txt: t("keys.statusExhausted"), fg: "var(--lrs-danger)", bg: "var(--lrs-danger-bg)" }
+              : hasQuota && pct >= 90
+                ? { txt: t("keys.statusNearLimit"), fg: "var(--lrs-warn)", bg: "var(--lrs-warn-bg)" }
+                : { txt: t("keys.statusEnabled"), fg: "var(--lrs-success)", bg: "var(--lrs-success-bg)" }
+            const barColor = key.quota_exhausted
+              ? "var(--lrs-danger)"
+              : pct >= 90
+                ? "var(--lrs-warn)"
+                : "var(--primary)"
+            return (
+              <div
+                key={key.id}
+                className="grid min-w-[860px] grid-cols-[1.5fr_1fr_1.15fr_0.9fr_84px_140px] items-center gap-4 border-b border-border/60 px-2 py-4 text-[12.5px]"
+              >
+                <div className="min-w-0">
+                  <div className="font-semibold text-foreground">{key.name}</div>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {wl.length === 0 ? (
+                      <span className="rounded-md border border-border bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                        {t("keys.allModels")}
+                      </span>
                     ) : (
-                      <Badge variant="secondary" className="font-mono text-xs">
-                        {t("keys.allowedModelsCount", { count: key.allowed_models.length })}
-                      </Badge>
+                      <>
+                        {wl.slice(0, 4).map((m) => (
+                          <span
+                            key={m}
+                            className="rounded-md border border-border bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground"
+                          >
+                            {m}
+                          </span>
+                        ))}
+                        {wl.length > 4 ? (
+                          <span className="text-[10px] text-muted-foreground">+{wl.length - 4}</span>
+                        ) : null}
+                      </>
                     )}
-                  </TableCell>
-                  <TableCell>
-                    {key.cost_quota == null ? (
-                      <span className="text-muted-foreground text-xs">{t("keys.quotaUnlimited")}</span>
-                    ) : (
-                      <div className="flex flex-col gap-1">
-                        <Badge variant={key.quota_exhausted ? "destructive" : "secondary"} className="font-mono text-xs">
-                          {key.quota_exhausted
-                            ? t("keys.quotaExhausted")
-                            : t("keys.quotaRemaining", { remaining: formatCost(key.cost_remaining) })}
-                        </Badge>
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {formatCost(key.cost_used)} / {formatCost(key.cost_quota)}
-                        </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 font-mono text-[11.5px] text-muted-foreground">
+                  <span className="truncate">{key.prefix}••••</span>
+                  <button
+                    type="button"
+                    className="shrink-0 text-primary"
+                    title={t("common.copy")}
+                    onClick={async () => {
+                      const detail = await getKey(key.id)
+                      const copied = await copyText(detail.key)
+                      showFeedback(copied ? t("keys.keyCopied") : t("keys.copyFailed"))
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div>
+                  {hasQuota ? (
+                    <>
+                      <div className="mb-1 flex justify-between font-mono text-[11px]">
+                        <span className="text-foreground">{formatCost(key.cost_used)}</span>
+                        <span className="text-muted-foreground">/ {formatCost(key.cost_quota)}</span>
                       </div>
-                    )}
-                  </TableCell>
-                  <TableCell>{formatDateTime(key.created_at)}</TableCell>
-                  <TableCell>{formatDateTime(key.last_used_at)}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
-                      <Button type="button" size="xs" variant="ghost" onClick={async () => {
-                        const detail = await getKey(key.id)
-                        const copied = await copyText(detail.key)
-                        showFeedback(copied ? t("keys.keyCopied") : t("keys.copyFailed"))
-                      }}>
-                        <Copy data-icon="inline-start" />{t("common.copy")}
-                      </Button>
-                      <Button type="button" size="xs" variant="ghost" onClick={() => onViewUsage(key.name)}>
-                        <BarChart3 data-icon="inline-start" />{t("keys.viewUsage")}
-                      </Button>
-                      <Button type="button" size="xs" variant="ghost" onClick={() => {
-                        setRenameTarget(key)
-                        setRenameDraft(key.name)
-                        setRenameOpen(true)
-                      }}>
-                        <Pencil data-icon="inline-start" />{t("keys.rename")}
-                      </Button>
-                      <Button type="button" size="xs" variant="ghost" onClick={() => openModelsDialog(key)}>
-                        <Filter data-icon="inline-start" />{t("keys.manageModels")}
-                      </Button>
-                      <Button type="button" size="xs" variant="ghost" onClick={() => openQuotaDialog(key)}>
-                        <Gauge data-icon="inline-start" />{t("keys.manageQuota")}
-                      </Button>
-                      <Button type="button" size="xs" variant="ghost" disabled={deletingId === key.id} onClick={() => void handleDelete(key)}>
-                        <Trash2 data-icon="inline-start" />{deletingId === key.id ? t("common.deleting") : t("common.delete")}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full"
+                          style={{ width: `${pct}%`, background: barColor }}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">{t("keys.quotaUnlimited")}</span>
+                  )}
+                </div>
+                <div className="font-mono text-[11px] text-muted-foreground">
+                  {formatDateTime(key.last_used_at)}
+                </div>
+                <div>
+                  <span
+                    className="rounded-md px-2 py-1 text-[11px] font-semibold"
+                    style={{ color: status.fg, background: status.bg }}
+                  >
+                    {status.txt}
+                  </span>
+                </div>
+                <div className="flex justify-end gap-0.5">
+                  <Button type="button" size="icon-sm" variant="ghost" title={t("keys.viewUsage")} onClick={() => onViewUsage(key.name)}>
+                    <BarChart3 />
+                  </Button>
+                  <Button type="button" size="icon-sm" variant="ghost" title={t("keys.rename")} onClick={() => { setRenameTarget(key); setRenameDraft(key.name); setRenameOpen(true) }}>
+                    <Pencil />
+                  </Button>
+                  <Button type="button" size="icon-sm" variant="ghost" title={t("keys.manageModels")} onClick={() => openModelsDialog(key)}>
+                    <Filter />
+                  </Button>
+                  <Button type="button" size="icon-sm" variant="ghost" title={t("keys.manageQuota")} onClick={() => openQuotaDialog(key)}>
+                    <Gauge />
+                  </Button>
+                  <Button type="button" size="icon-sm" variant="ghost" title={t("common.delete")} disabled={deletingId === key.id} onClick={() => void handleDelete(key)}>
+                    <Trash2 />
+                  </Button>
+                </div>
+              </div>
+            )
+          })}
         </div>
       ) : (
         <Empty>

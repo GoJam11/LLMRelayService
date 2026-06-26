@@ -9,6 +9,7 @@ import { CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { HelpDialogButton } from "@/components/help-dialog-button"
 import { PageHeader } from "@/components/ui/page-header"
+import { ModelsPage } from "@/features/dashboard/components/models-page"
 import {
   Dialog,
   DialogContent,
@@ -76,6 +77,7 @@ import {
 } from "@/features/dashboard/api"
 import type { GatewayFailoverPolicyPayload, ModelAlias, ModelFallbackMode, ProviderInfo } from "@/features/dashboard/types"
 import type { TestProviderResult } from "@/features/dashboard/api"
+import type { RouteTab } from "@/features/dashboard/hooks/use-hash-route"
 
 const EMPTY_FORM = {
   alias: "",
@@ -587,7 +589,15 @@ function RouteMapRouteList({ routes, emptyLabel }: { routes: RouteMapRoute[]; em
   )
 }
 
-export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
+export function RoutesPage({
+  activeTab = "map",
+  onTabChange,
+  onUnauthorized,
+}: {
+  activeTab?: RouteTab
+  onTabChange?: (tab: RouteTab) => void
+  onUnauthorized: () => void
+}) {
   const { t, i18n } = useTranslation()
   const [aliases, setAliases] = useState<ModelAlias[] | null>(null)
   const [providers, setProviders] = useState<ProviderInfo[]>([])
@@ -859,12 +869,17 @@ export function RoutesPage({ onUnauthorized }: { onUnauthorized: () => void }) {
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-      <Tabs defaultValue="map" className="gap-4">
+      <Tabs value={activeTab} onValueChange={(value) => onTabChange?.(value as RouteTab)} className="gap-4">
         <TabsList variant="line" className="w-full justify-start overflow-x-auto">
           <TabsTrigger value="map">{t("routes.tabRouteMap")}</TabsTrigger>
           <TabsTrigger value="aliases">{t("routes.tabAliases")}</TabsTrigger>
+          <TabsTrigger value="models">{t("routes.tabModels")}</TabsTrigger>
           <TabsTrigger value="failover">{t("routes.tabFailover")}</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="models" className="mt-0">
+          <ModelsPage onUnauthorized={onUnauthorized} embedded />
+        </TabsContent>
 
         <TabsContent value="failover" className="mt-0">
       <Card>

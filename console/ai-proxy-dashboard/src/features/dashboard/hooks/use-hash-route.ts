@@ -1,16 +1,21 @@
 import { useSyncExternalStore } from "react"
 
+export type RouteTab = "map" | "aliases" | "models" | "failover"
+
 export type PageRoute =
   | { page: "monitor" }
   | { page: "usage"; client?: string }
   | { page: "providers" }
-  | { page: "models" }
-  | { page: "routes" }
+  | { page: "routes"; tab?: RouteTab }
   | { page: "keys" }
   | { page: "logs" }
   | { page: "settings" }
   | { page: "api" }
   | { page: "detail"; requestId: string }
+
+function isRouteTab(value: string | null): value is RouteTab {
+  return value === "map" || value === "aliases" || value === "models" || value === "failover"
+}
 
 function parseHash(): PageRoute {
   const hash = window.location.hash.replace(/^#\/?/, "")
@@ -20,8 +25,11 @@ function parseHash(): PageRoute {
   if (pageName === "usage") return { page: "usage", client: params.get("client") || undefined }
   if (pageName === "logs") return { page: "logs" }
   if (pageName === "providers") return { page: "providers" }
-  if (pageName === "models") return { page: "models" }
-  if (pageName === "routes") return { page: "routes" }
+  if (pageName === "models") return { page: "routes", tab: "models" }
+  if (pageName === "routes") {
+    const tab = params.get("tab")
+    return isRouteTab(tab) ? { page: "routes", tab } : { page: "routes" }
+  }
   if (pageName === "keys") return { page: "keys" }
   if (pageName === "settings") return { page: "settings" }
   if (pageName === "api") return { page: "api" }
@@ -62,6 +70,8 @@ export function useHashRoute(): [PageRoute, (route: PageRoute) => void] {
       window.location.hash = `#/detail/${encodeURIComponent(target.requestId)}`
     } else if (target.page === "usage" && target.client) {
       window.location.hash = `#/usage?client=${encodeURIComponent(target.client)}`
+    } else if (target.page === "routes" && target.tab) {
+      window.location.hash = `#/routes?tab=${encodeURIComponent(target.tab)}`
     } else {
       window.location.hash = `#/${target.page}`
     }

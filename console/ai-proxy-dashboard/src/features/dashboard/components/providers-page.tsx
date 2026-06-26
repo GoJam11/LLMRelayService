@@ -774,11 +774,11 @@ export function ProvidersPage({
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
                   placeholder="搜索渠道、URL、模型..."
-                  className="bg-white/70 pl-9"
+                  className="bg-card pl-9"
                 />
               </div>
               <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="bg-white/70">
+                <SelectTrigger className="bg-card">
                   <SelectValue placeholder="Type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -790,7 +790,7 @@ export function ProvidersPage({
                 </SelectContent>
               </Select>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="bg-white/70">
+                <SelectTrigger className="bg-card">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -868,7 +868,7 @@ export function ProvidersPage({
                           <TableRow key={provider.channelName} className={!provider.enabled ? "opacity-50" : ""}>
                             <TableCell>
                               <div className="flex items-center gap-3">
-                                <div className="c4d-icon-tile flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#0f9aa6]/16 to-[#4fbcc4]/26 text-primary">
+                                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-accent-foreground">
                                   <Server className="h-4 w-4" />
                                 </div>
                                 <div className="min-w-0">

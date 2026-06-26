@@ -6,7 +6,6 @@ import { DetailPage } from "@/features/dashboard/components/detail-page"
 import { ApiDocsPage } from "@/features/dashboard/components/api-docs-page"
 import { KeysPage } from "@/features/dashboard/components/keys-page"
 import { LogsPage } from "@/features/dashboard/components/logs-page"
-import { ModelsPage } from "@/features/dashboard/components/models-page"
 import { NavBar } from "@/features/dashboard/components/nav-bar"
 import { ProvidersPage } from "@/features/dashboard/components/providers-page"
 import { RoutesPage } from "@/features/dashboard/components/routes-page"
@@ -107,15 +106,11 @@ export function App() {
             onUnauthorized={handleUnauthorized}
           />
         )
-      case "models":
-        return (
-          <ModelsPage
-            onUnauthorized={handleUnauthorized}
-          />
-        )
       case "routes":
         return (
           <RoutesPage
+            activeTab={route.page === "routes" ? route.tab : undefined}
+            onTabChange={(tab) => navigate({ page: "routes", tab })}
             onUnauthorized={handleUnauthorized}
           />
         )
@@ -154,15 +149,19 @@ export function App() {
   }
 
   return (
-    <div className="app-canvas flex h-screen flex-col overflow-hidden p-2 text-foreground lg:p-3">
+    <div className="flex h-screen flex-col overflow-hidden bg-card text-foreground">
       <NavBar
         activePage={activePage}
         onNavigate={(page) => navigate({ page })}
         logoutPending={logoutPending}
         onLogout={handleLogout}
       />
-      <main className="app-main-surface mt-2 flex-1 overflow-y-auto rounded-[1.5rem] ring-1 ring-white/60 lg:mt-3 lg:rounded-[2rem]">
-        <div className="mx-auto flex max-w-[1540px] flex-col gap-5 p-4 lg:gap-6 lg:p-6 xl:p-7">
+      <main className="flex-1 overflow-y-auto">
+        <div
+          className={`mx-auto flex min-h-[calc(100vh-4.25rem)] max-w-[1540px] flex-col ${
+            activePage === "monitor" ? "" : "px-5 py-5 lg:px-8 lg:py-7"
+          }`}
+        >
           {renderPage()}
         </div>
       </main>

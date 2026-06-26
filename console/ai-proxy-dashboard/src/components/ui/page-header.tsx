@@ -12,13 +12,13 @@ export function PageHeader({ icon: Icon, title, description, actions }: PageHead
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="c4d-icon-tile flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0f9aa6]/16 via-[#4fbcc4]/14 to-white text-primary ring-1 ring-white/70">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-accent text-accent-foreground">
           <Icon className="h-5 w-5" />
         </div>
         <div className="min-w-0">
-          <h2 className="text-2xl font-bold tracking-tight text-foreground">{title}</h2>
+          <h2 className="text-[22px] font-extrabold tracking-tight text-foreground">{title}</h2>
           {description && (
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+            <p className="mt-0.5 text-[13px] text-muted-foreground">{description}</p>
           )}
         </div>
       </div>

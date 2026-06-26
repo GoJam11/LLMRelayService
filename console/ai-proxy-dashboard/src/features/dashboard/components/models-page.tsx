@@ -230,7 +230,13 @@ function LoadingSkeleton() {
   )
 }
 
-export function ModelsPage({ onUnauthorized }: { onUnauthorized: () => void }) {
+export function ModelsPage({
+  onUnauthorized,
+  embedded = false,
+}: {
+  onUnauthorized: () => void
+  embedded?: boolean
+}) {
   const { t } = useTranslation()
   const [openaiModels, setOpenaiModels] = useState<GatewayModel[] | null>(null)
   const [anthropicModels, setAntropicModels] = useState<GatewayModel[] | null>(null)
@@ -349,15 +355,30 @@ export function ModelsPage({ onUnauthorized }: { onUnauthorized: () => void }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        icon={BookOpen}
-        title={t("models.title")}
-        description={
-          openaiModels !== null && anthropicModels !== null
-            ? t("models.totalCount", { count: totalCount })
-            : undefined
-        }
-        actions={
+      {!embedded ? (
+        <PageHeader
+          icon={BookOpen}
+          title={t("models.title")}
+          description={
+            openaiModels !== null && anthropicModels !== null
+              ? t("models.totalCount", { count: totalCount })
+              : undefined
+          }
+          actions={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={loading}
+              onClick={() => void loadModels()}
+            >
+              <RefreshCw className={loading ? "animate-spin" : ""} />
+              {t("common.refresh")}
+            </Button>
+          }
+        />
+      ) : (
+        <div className="flex justify-end">
           <Button
             type="button"
             variant="outline"
@@ -368,8 +389,8 @@ export function ModelsPage({ onUnauthorized }: { onUnauthorized: () => void }) {
             <RefreshCw className={loading ? "animate-spin" : ""} />
             {t("common.refresh")}
           </Button>
-        }
-      />
+        </div>
+      )}
 
       {error && (
         <Alert variant="destructive">
