@@ -251,7 +251,7 @@ function SegmentedToggle({
             type="button"
             onClick={() => onChange(opt.value)}
             className={cn(
-              "flex-1 px-3 py-2.5 text-center transition-colors",
+              "flex h-10 flex-1 items-center justify-center px-2 text-center leading-tight transition-colors",
               i > 0 && !active && "border-l border-input",
               active
                 ? "bg-primary font-semibold text-primary-foreground"
@@ -710,7 +710,7 @@ export function ProvidersPage({
           ) : null}
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="pane-channel-name">Channel Name</FieldLabel>
+              <FieldLabel htmlFor="pane-channel-name">{t("providers.channelNameLabel")}</FieldLabel>
               <Input
                 id="pane-channel-name"
                 value={formState.channelName}
@@ -721,18 +721,18 @@ export function ProvidersPage({
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field>
-                <FieldLabel>Type</FieldLabel>
+                <FieldLabel>{t("providers.typeLabel")}</FieldLabel>
                 <SegmentedToggle
                   value={formState.type}
                   onChange={(value) => setFormState((current) => ({ ...current, type: value as ProviderFormState["type"] }))}
                   options={[
-                    { value: "anthropic", label: "anthropic" },
-                    { value: "openai", label: "openai" },
+                    { value: "anthropic", label: "Anthropic" },
+                    { value: "openai", label: "OpenAI" },
                   ]}
                 />
               </Field>
               <Field>
-                <FieldLabel htmlFor="pane-priority">Priority</FieldLabel>
+                <FieldLabel htmlFor="pane-priority">{t("providers.priorityLabel")}</FieldLabel>
                 <Input
                   id="pane-priority"
                   inputMode="numeric"
@@ -743,7 +743,7 @@ export function ProvidersPage({
             </div>
 
             <Field>
-              <FieldLabel htmlFor="pane-target-url">Target Base URL</FieldLabel>
+              <FieldLabel htmlFor="pane-target-url">{t("providers.targetUrlLabel")}</FieldLabel>
               <Input
                 id="pane-target-url"
                 value={formState.targetBaseUrl}
@@ -762,33 +762,33 @@ export function ProvidersPage({
                     value={formState.responsesMode}
                     onChange={(value) => setFormState((current) => ({ ...current, responsesMode: value as OpenAiResponsesMode }))}
                     options={[
-                      { value: "native", label: "native" },
-                      { value: "chat_compat", label: "chat_compat" },
-                      { value: "disabled", label: "disabled" },
+                      { value: "native", label: t("providers.responsesModeNative") },
+                      { value: "chat_compat", label: t("providers.responsesModeChatCompat") },
+                      { value: "disabled", label: t("providers.responsesModeDisabled") },
                     ]}
                   />
                 </Field>
               ) : null}
               <Field>
-                <FieldLabel>Routing Visibility</FieldLabel>
+                <FieldLabel>{t("providers.routingVisibilityLabel")}</FieldLabel>
                 <SegmentedToggle
                   value={formState.routingVisibility}
                   onChange={(value) => setFormState((current) => ({ ...current, routingVisibility: value as RoutingVisibility }))}
                   options={[
-                    { value: "direct", label: "direct" },
-                    { value: "explicit_only", label: "explicit_only" },
+                    { value: "direct", label: t("providers.routingVisibilityDirect") },
+                    { value: "explicit_only", label: t("providers.routingVisibilityExplicitOnly") },
                   ]}
                 />
               </Field>
             </div>
 
             <Field>
-              <FieldLabel htmlFor="pane-auth-header">Auth Method</FieldLabel>
+              <FieldLabel htmlFor="pane-auth-header">{t("providers.authMethodLabel")}</FieldLabel>
               <Select
                 value={formState.authHeader}
                 onValueChange={(value) => setFormState((current) => ({ ...current, authHeader: value as ProviderFormState["authHeader"], apiKeyDirty: true, clearAuth: false }))}
               >
-                <SelectTrigger id="pane-auth-header" className="w-full"><SelectValue placeholder="Select auth method" /></SelectTrigger>
+                <SelectTrigger id="pane-auth-header" className="w-full"><SelectValue placeholder={t("providers.selectAuthMethod")} /></SelectTrigger>
                 <SelectContent><SelectGroup>
                   <SelectItem value="auto">{t("providers.authMethodAuto")}</SelectItem>
                   <SelectItem value="x-api-key">x-api-key</SelectItem>
@@ -798,7 +798,7 @@ export function ProvidersPage({
             </Field>
 
             <Field>
-              <FieldLabel htmlFor="pane-auth-value">Credential</FieldLabel>
+              <FieldLabel htmlFor="pane-auth-value">{t("providers.credentialLabel")}</FieldLabel>
               <div className="relative">
                 <Input
                   id="pane-auth-value"
@@ -821,7 +821,7 @@ export function ProvidersPage({
             </Field>
 
             <Field>
-              <FieldLabel htmlFor="pane-system-prompt">System Prompt</FieldLabel>
+              <FieldLabel htmlFor="pane-system-prompt">{t("providers.systemPromptLabel")}</FieldLabel>
               <Textarea
                 id="pane-system-prompt"
                 rows={3}
@@ -832,7 +832,7 @@ export function ProvidersPage({
             </Field>
 
             <Field>
-              <FieldLabel htmlFor="pane-extra-fields">Extra Fields</FieldLabel>
+              <FieldLabel htmlFor="pane-extra-fields">{t("providers.extraFieldsLabel")}</FieldLabel>
               <Textarea
                 id="pane-extra-fields"
                 rows={2}
@@ -848,7 +848,7 @@ export function ProvidersPage({
           {/* Models */}
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold">Models</span>
+              <span className="text-sm font-semibold">{t("providers.modelsLabel")}</span>
               <div className="flex gap-1">
                 <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={clearAllModels} disabled={formState.models.every((r) => r.model.trim() === "")}>
                   <Trash2 data-icon="inline-start" />
@@ -856,11 +856,11 @@ export function ProvidersPage({
                 </Button>
                 <Button type="button" variant="ghost" size="sm" onClick={() => void openSyncDialog()} disabled={!formState.targetBaseUrl.trim()}>
                   <Download data-icon="inline-start" />
-                  Sync
+                  {t("providers.syncButton")}
                 </Button>
                 <Button type="button" variant="ghost" size="sm" onClick={addModelRow}>
                   <Plus data-icon="inline-start" />
-                  Add
+                  {t("providers.addButton")}
                 </Button>
               </div>
             </div>
@@ -869,7 +869,7 @@ export function ProvidersPage({
                 <thead>
                   <tr className="border-b border-border bg-muted/40">
                     <th className="px-3 py-2 text-left font-medium text-muted-foreground">#</th>
-                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">Model ID</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("providers.modelIdHeader")}</th>
                     <th className="w-8 px-2 py-2" />
                   </tr>
                 </thead>
@@ -886,7 +886,7 @@ export function ProvidersPage({
                         />
                       </td>
                       <td className="px-2 py-1">
-                        <button type="button" className="text-muted-foreground transition-colors hover:text-destructive" onClick={() => removeModelRow(row.id)} aria-label="Remove">
+                        <button type="button" className="text-muted-foreground transition-colors hover:text-destructive" onClick={() => removeModelRow(row.id)} aria-label={t("providers.removeModel")}>
                           <X className="size-3.5" />
                         </button>
                       </td>
@@ -903,7 +903,7 @@ export function ProvidersPage({
           <div className="flex items-center gap-2 border-t border-border pt-4">
             {dialogMode === "edit" ? (
               <Button type="button" variant="ghost" size="sm" onClick={() => setFormState((current) => ({ ...current, apiKey: "", apiKeyDirty: true, clearAuth: true }))}>
-                Clear Auth
+                {t("providers.clearAuth")}
               </Button>
             ) : null}
             <Button type="button" variant="outline" size="sm" onClick={() => setDialogOpen(false)}>{t("common.cancel")}</Button>
@@ -933,7 +933,7 @@ export function ProvidersPage({
             <EmptyContent>
               <Button type="button" size="sm" onClick={openCreateDialog}>
                 <Plus data-icon="inline-start" />
-                Create Channel
+                {t("providers.createChannel")}
               </Button>
             </EmptyContent>
           </Empty>
@@ -1071,7 +1071,7 @@ export function ProvidersPage({
         <DialogContent className="sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>
-              {dialogMode === "create" ? "Create Channel" : `Edit ${activeProvider?.channelName ?? "Channel"}`}
+              {dialogMode === "create" ? t("providers.createDialogTitle") : t("providers.editDialogTitle", { name: activeProvider?.channelName ?? "" })}
             </DialogTitle>
             <DialogDescription>
               {dialogMode === "create"
@@ -1093,7 +1093,7 @@ export function ProvidersPage({
               <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
                 <FieldGroup>
                   <Field>
-                    <FieldLabel htmlFor="provider-channel-name">Channel Name</FieldLabel>
+                    <FieldLabel htmlFor="provider-channel-name">{t("providers.channelNameLabel")}</FieldLabel>
                     <Input
                       id="provider-channel-name"
                       value={formState.channelName}
@@ -1107,7 +1107,7 @@ export function ProvidersPage({
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="provider-type">Type</FieldLabel>
+                    <FieldLabel htmlFor="provider-type">{t("providers.typeLabel")}</FieldLabel>
                     <Select
                       value={formState.type}
                       onValueChange={(value) =>
@@ -1118,7 +1118,7 @@ export function ProvidersPage({
                       }
                     >
                       <SelectTrigger id="provider-type" className="w-full">
-                        <SelectValue placeholder="Select type" />
+                        <SelectValue placeholder={t("providers.typeLabel")} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
@@ -1133,7 +1133,7 @@ export function ProvidersPage({
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="provider-target-url">Target Base URL</FieldLabel>
+                    <FieldLabel htmlFor="provider-target-url">{t("providers.targetUrlLabel")}</FieldLabel>
                     <Input
                       id="provider-target-url"
                       value={formState.targetBaseUrl}
@@ -1180,7 +1180,7 @@ export function ProvidersPage({
                   ) : null}
 
                   <Field>
-                    <FieldLabel htmlFor="provider-priority">Priority</FieldLabel>
+                    <FieldLabel htmlFor="provider-priority">{t("providers.priorityLabel")}</FieldLabel>
                     <Input
                       id="provider-priority"
                       inputMode="numeric"
@@ -1195,7 +1195,7 @@ export function ProvidersPage({
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="provider-routing-visibility">Routing Visibility</FieldLabel>
+                    <FieldLabel htmlFor="provider-routing-visibility">{t("providers.routingVisibilityLabel")}</FieldLabel>
                     <Select
                       value={formState.routingVisibility}
                       onValueChange={(value) =>
@@ -1206,24 +1206,24 @@ export function ProvidersPage({
                       }
                     >
                       <SelectTrigger id="provider-routing-visibility" className="w-full">
-                        <SelectValue placeholder="Routing visibility" />
+                        <SelectValue placeholder={t("providers.routingVisibilityLabel")} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
-                          <SelectItem value="direct">Direct</SelectItem>
-                          <SelectItem value="explicit_only">Explicit only</SelectItem>
+                          <SelectItem value="direct">{t("providers.routingVisibilityDirect")}</SelectItem>
+                          <SelectItem value="explicit_only">{t("providers.routingVisibilityExplicitOnly")}</SelectItem>
                         </SelectGroup>
                       </SelectContent>
                     </Select>
                     <FieldDescription>
-                      Direct providers can be matched by client model names. Explicit-only providers are only used by virtual routes and custom fallback targets.
+                      {t("providers.routingVisibilityHint")}
                     </FieldDescription>
                   </Field>
 
-                  <FieldSeparator>Routing</FieldSeparator>
+                  <FieldSeparator>{t("providers.fieldSeparatorRouting")}</FieldSeparator>
 
                   <Field>
-                    <FieldLabel htmlFor="provider-system-prompt">System Prompt</FieldLabel>
+                    <FieldLabel htmlFor="provider-system-prompt">{t("providers.systemPromptLabel")}</FieldLabel>
                     <Textarea
                       id="provider-system-prompt"
                       rows={4}
@@ -1237,10 +1237,10 @@ export function ProvidersPage({
                     </FieldDescription>
                   </Field>
 
-                  <FieldSeparator>Auth</FieldSeparator>
+                  <FieldSeparator>{t("providers.fieldSeparatorAuth")}</FieldSeparator>
 
                   <Field>
-                    <FieldLabel htmlFor="provider-auth-header">Auth Method</FieldLabel>
+                    <FieldLabel htmlFor="provider-auth-header">{t("providers.authMethodLabel")}</FieldLabel>
                     <Select
                       value={formState.authHeader}
                       onValueChange={(value) =>
@@ -1253,7 +1253,7 @@ export function ProvidersPage({
                       }
                     >
                       <SelectTrigger id="provider-auth-header" className="w-full">
-                        <SelectValue placeholder="Select auth method" />
+                        <SelectValue placeholder={t("providers.selectAuthMethod")} />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
@@ -1269,7 +1269,7 @@ export function ProvidersPage({
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="provider-auth-value">Credential</FieldLabel>
+                    <FieldLabel htmlFor="provider-auth-value">{t("providers.credentialLabel")}</FieldLabel>
                     <div className="relative">
                       <Input
                         id="provider-auth-value"
@@ -1299,10 +1299,10 @@ export function ProvidersPage({
                     
                   </Field>
 
-                  <FieldSeparator>Advanced</FieldSeparator>
+                  <FieldSeparator>{t("providers.fieldSeparatorAdvanced")}</FieldSeparator>
 
                   <Field>
-                    <FieldLabel htmlFor="provider-extra-fields">Extra Fields</FieldLabel>
+                    <FieldLabel htmlFor="provider-extra-fields">{t("providers.extraFieldsLabel")}</FieldLabel>
                     <Textarea
                       id="provider-extra-fields"
                       rows={3}
@@ -1350,11 +1350,11 @@ export function ProvidersPage({
                       disabled={!formState.targetBaseUrl.trim()}
                     >
                       <Download data-icon="inline-start" />
-                      Sync
+                      {t("providers.syncButton")}
                     </Button>
                     <Button type="button" variant="ghost" size="sm" onClick={addModelRow}>
                       <Plus data-icon="inline-start" />
-                      Add
+                      {t("providers.addButton")}
                     </Button>
                   </div>
                 </div>
@@ -1364,7 +1364,7 @@ export function ProvidersPage({
                     <thead>
                       <tr className="border-b border-border/60 bg-muted/40">
                         <th className="px-3 py-2 text-left font-medium text-muted-foreground">#</th>
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">Model ID</th>
+                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("providers.modelIdHeader")}</th>
                         <th className="w-8 px-2 py-2" />
                       </tr>
                     </thead>
@@ -1385,7 +1385,7 @@ export function ProvidersPage({
                               type="button"
                               className="text-muted-foreground hover:text-destructive transition-colors"
                               onClick={() => removeModelRow(row.id)}
-                              aria-label="Remove"
+                              aria-label={t("providers.removeModel")}
                             >
                               <X className="size-3.5" />
                             </button>
@@ -1417,14 +1417,14 @@ export function ProvidersPage({
                     }))
                   }
                 >
-                  Clear Auth
+                  {t("providers.clearAuth")}
                 </Button>
               ) : null}
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                Cancel
+                {t("providers.cancel")}
               </Button>
               <Button type="submit" disabled={submitPending}>
-                {submitPending ? "Saving..." : dialogMode === "create" ? "Create Channel" : "Save Changes"}
+                {submitPending ? t("providers.saving") : dialogMode === "create" ? t("providers.createChannel") : t("providers.saveChanges")}
               </Button>
             </DialogFooter>
           </form>
