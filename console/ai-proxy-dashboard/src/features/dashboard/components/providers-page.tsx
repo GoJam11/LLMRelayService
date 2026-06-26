@@ -233,6 +233,40 @@ function buildProviderPayload(
   return payload
 }
 
+function SegmentedToggle({
+  value,
+  onChange,
+  options,
+}: {
+  value: string
+  onChange: (value: string) => void
+  options: { value: string; label: string }[]
+}) {
+  return (
+    <div className="flex overflow-hidden rounded-[10px] border border-input text-xs">
+      {options.map((opt, i) => {
+        const active = opt.value === value
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              "flex-1 px-3 py-2.5 text-center transition-colors",
+              i > 0 && !active && "border-l border-input",
+              active
+                ? "bg-primary font-semibold text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function ProvidersPage({
   onUnauthorized,
 }: {
@@ -658,17 +692,15 @@ export function ProvidersPage({
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field>
-                <FieldLabel htmlFor="pane-type">Type</FieldLabel>
-                <Select
+                <FieldLabel>Type</FieldLabel>
+                <SegmentedToggle
                   value={formState.type}
-                  onValueChange={(value) => setFormState((current) => ({ ...current, type: value as ProviderFormState["type"] }))}
-                >
-                  <SelectTrigger id="pane-type" className="w-full"><SelectValue placeholder="Select type" /></SelectTrigger>
-                  <SelectContent><SelectGroup>
-                    <SelectItem value="anthropic">Anthropic</SelectItem>
-                    <SelectItem value="openai">OpenAI</SelectItem>
-                  </SelectGroup></SelectContent>
-                </Select>
+                  onChange={(value) => setFormState((current) => ({ ...current, type: value as ProviderFormState["type"] }))}
+                  options={[
+                    { value: "anthropic", label: "anthropic" },
+                    { value: "openai", label: "openai" },
+                  ]}
+                />
               </Field>
               <Field>
                 <FieldLabel htmlFor="pane-priority">Priority</FieldLabel>
@@ -696,32 +728,28 @@ export function ProvidersPage({
             <div className="grid gap-4 sm:grid-cols-2">
               {formState.type === "openai" ? (
                 <Field>
-                  <FieldLabel htmlFor="pane-responses-mode">{t("providers.responsesModeLabel")}</FieldLabel>
-                  <Select
+                  <FieldLabel>{t("providers.responsesModeLabel")}</FieldLabel>
+                  <SegmentedToggle
                     value={formState.responsesMode}
-                    onValueChange={(value) => setFormState((current) => ({ ...current, responsesMode: value as OpenAiResponsesMode }))}
-                  >
-                    <SelectTrigger id="pane-responses-mode" className="w-full"><SelectValue placeholder={t("providers.responsesModeLabel")} /></SelectTrigger>
-                    <SelectContent><SelectGroup>
-                      <SelectItem value="native">{t("providers.responsesModeNative")}</SelectItem>
-                      <SelectItem value="chat_compat">{t("providers.responsesModeChatCompat")}</SelectItem>
-                      <SelectItem value="disabled">{t("providers.responsesModeDisabled")}</SelectItem>
-                    </SelectGroup></SelectContent>
-                  </Select>
+                    onChange={(value) => setFormState((current) => ({ ...current, responsesMode: value as OpenAiResponsesMode }))}
+                    options={[
+                      { value: "native", label: "native" },
+                      { value: "chat_compat", label: "chat_compat" },
+                      { value: "disabled", label: "disabled" },
+                    ]}
+                  />
                 </Field>
               ) : null}
               <Field>
-                <FieldLabel htmlFor="pane-routing-visibility">Routing Visibility</FieldLabel>
-                <Select
+                <FieldLabel>Routing Visibility</FieldLabel>
+                <SegmentedToggle
                   value={formState.routingVisibility}
-                  onValueChange={(value) => setFormState((current) => ({ ...current, routingVisibility: value as RoutingVisibility }))}
-                >
-                  <SelectTrigger id="pane-routing-visibility" className="w-full"><SelectValue placeholder="Routing visibility" /></SelectTrigger>
-                  <SelectContent><SelectGroup>
-                    <SelectItem value="direct">Direct</SelectItem>
-                    <SelectItem value="explicit_only">Explicit only</SelectItem>
-                  </SelectGroup></SelectContent>
-                </Select>
+                  onChange={(value) => setFormState((current) => ({ ...current, routingVisibility: value as RoutingVisibility }))}
+                  options={[
+                    { value: "direct", label: "direct" },
+                    { value: "explicit_only", label: "explicit_only" },
+                  ]}
+                />
               </Field>
             </div>
 
