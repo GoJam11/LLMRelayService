@@ -19,15 +19,16 @@ import {
 import { Input } from "@/components/ui/input"
 import { Pagination } from "@/components/ui/pagination"
 import { RequestLogTable } from "@/features/dashboard/components/request-log-table"
+import { DetailView } from "@/features/dashboard/components/detail-view"
 import { useDashboardData } from "@/features/dashboard/hooks/use-dashboard-data"
+import { fetchRequestDetail } from "@/features/dashboard/api"
 import type { RequestSortKey, SortDirection } from "@/features/dashboard/api"
+import type { ConsoleRequestDetail } from "@/features/dashboard/types"
 
 export function LogsPage({
   onUnauthorized,
-  onSelectDetail,
 }: {
   onUnauthorized: () => void
-  onSelectDetail: (requestId: string) => void
 }) {
   const {
     loading,
@@ -50,7 +51,36 @@ export function LogsPage({
   const [statusFilter, setStatusFilter] = useState("all")
   const [cacheFilter, setCacheFilter] = useState("all")
   const [liveMode, setLiveMode] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [detail, setDetail] = useState<ConsoleRequestDetail | null>(null)
+  const [detailError, setDetailError] = useState("")
+  const detailLoadRef = useRef(0)
   const { t } = useTranslation()
+
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null)
+      setDetailError("")
+      return
+    }
+    const loadId = ++detailLoadRef.current
+    setDetailError("")
+    void (async () => {
+      try {
+        const data = await fetchRequestDetail(selectedId)
+        if (loadId !== detailLoadRef.current) return
+        setDetail(data)
+      } catch (err) {
+        if (loadId !== detailLoadRef.current) return
+        const message = err instanceof Error ? err.message : String(err)
+        if (message === "unauthorized") {
+          onUnauthorized()
+          return
+        }
+        setDetailError(message)
+      }
+    })()
+  }, [selectedId, onUnauthorized])
 
   // 搜索框防抖 300ms，避免每次按键都触发 API
   useEffect(() => {
@@ -288,37 +318,43 @@ export function LogsPage({
         </CardContent>
       </Card>
 
-      {/* Table + Pagination Card */}
-      <Card>
-        <RequestLogTable
-          loading={loading}
-          refreshing={refreshing}
-          requests={requests}
-          selectedId={null}
-          sortBy={sortBy}
-          sortOrder={sortOrder}
-          onSort={handleSortChange}
-          onSelect={(requestId) => onSelectDetail(requestId)}
-          onClearFilters={clearFilters}
-          onApplyRouteFilter={setRouteFilter}
-          onApplyModelFilter={setModelFilter}
-          onApplySourceTypeFilter={setSourceTypeFilter}
-        />
-
-        {!liveMode && (
-          <div className="border-t border-border/60">
-            <div className="px-4 py-4">
-              <Pagination
-                total={total}
-                limit={limit}
-                offset={offset}
-                onPageChange={handlePageChange}
-                onLimitChange={handleLimitChange}
-              />
-            </div>
+      {/* Master-detail: log table + inline detail */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_1fr]">
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <RequestLogTable
+              loading={loading}
+              refreshing={refreshing}
+              requests={requests}
+              selectedId={selectedId}
+              sortBy={sortBy}
+              sortOrder={sortOrder}
+              onSort={handleSortChange}
+              onSelect={(requestId) => setSelectedId(requestId)}
+              onClearFilters={clearFilters}
+              onApplyRouteFilter={setRouteFilter}
+              onApplyModelFilter={setModelFilter}
+              onApplySourceTypeFilter={setSourceTypeFilter}
+            />
           </div>
-        )}
-      </Card>
+
+          {!liveMode && (
+            <div className="border-t border-border/60">
+              <div className="px-4 py-4">
+                <Pagination
+                  total={total}
+                  limit={limit}
+                  offset={offset}
+                  onPageChange={handlePageChange}
+                  onLimitChange={handleLimitChange}
+                />
+              </div>
+            </div>
+          )}
+        </Card>
+
+        <DetailView detail={detail} error={detailError} />
+      </div>
     </div>
   )
 }

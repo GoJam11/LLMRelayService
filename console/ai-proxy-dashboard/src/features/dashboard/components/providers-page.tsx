@@ -1,33 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { cn } from "@/lib/utils"
 import {
   Copy,
   Download,
   Eye,
   EyeOff,
-  Globe,
   Import,
   Search,
   Plus,
   RefreshCw,
   Server,
-  SlidersHorizontal,
-  SquarePen,
   Trash2,
   Upload,
-  Wifi,
   X,
 } from "lucide-react"
 import { useTranslation } from "react-i18next"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/ui/page-header"
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card"
 import {
   Dialog,
@@ -57,14 +51,6 @@ import { JsonViewer } from "@/components/ui/json-viewer"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import {
   Select,
   SelectContent,
   SelectGroup,
@@ -75,12 +61,6 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 import {
   createProvider,
   deleteProvider,
@@ -106,36 +86,6 @@ export type TestStatusMap = Map<string, TestProviderResult>
 const typeLabels: Record<string, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
-}
-
-const typeVariants: Record<string, "default" | "secondary" | "outline"> = {
-  anthropic: "default",
-  openai: "secondary",
-}
-
-const responseModeVariants: Record<OpenAiResponsesMode, "default" | "secondary" | "outline"> = {
-  native: "secondary",
-  chat_compat: "outline",
-  disabled: "outline",
-}
-
-const routingVisibilityLabels: Record<RoutingVisibility, string> = {
-  direct: "Direct",
-  explicit_only: "Explicit only",
-}
-
-const healthColors: Record<string, string> = {
-  healthy: "bg-green-500",
-  degraded: "bg-yellow-500",
-  down: "bg-red-500",
-  "no-data": "bg-muted-foreground/40",
-}
-
-const healthLabels: Record<string, string> = {
-  healthy: "健康",
-  degraded: "降级",
-  down: "异常",
-  "no-data": "暂无数据",
 }
 
 type DialogMode = "create" | "edit"
@@ -178,16 +128,6 @@ function createModelRow(model?: ProviderModelInfo): ModelRowState {
   return {
     id: generateId(),
     model: modelName,
-  }
-}
-
-function formatProviderModel(model: ProviderInfo["models"][number]) {
-  const modelId = String(model.model || "--")
-  const context = typeof model.context === "number" ? `${Math.round(model.context / 1000)}k` : null
-
-  return {
-    key: context ? `${modelId}:${model.context}` : modelId,
-    label: context ? `${modelId} (${context})` : modelId,
   }
 }
 
@@ -648,6 +588,277 @@ export function ProvidersPage({
     return <ProvidersPageSkeleton />
   }
 
+  const renderEditPane = () => {
+    if (!dialogOpen) {
+      return (
+        <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
+          <Server className="h-7 w-7 opacity-40" />
+          <p className="text-sm">{t("providers.selectHint")}</p>
+        </div>
+      )
+    }
+    return (
+      <form className="flex flex-col" onSubmit={handleSubmit}>
+        <div className="flex items-center gap-2.5 border-b border-border px-6 py-4">
+          <span className="text-[15px] font-extrabold">
+            {dialogMode === "create" ? t("providers.addChannel") : t("providers.editChannel")}
+          </span>
+          {dialogMode === "edit" ? (
+            <span className="font-mono text-[11px] text-muted-foreground">{activeProvider?.channelName}</span>
+          ) : null}
+          {dialogMode === "edit" && activeProvider ? (
+            <div className="ml-auto flex items-center gap-3.5">
+              <button
+                type="button"
+                className="text-[11.5px] font-semibold text-primary disabled:opacity-50"
+                disabled={testingChannels.has(activeProvider.channelName)}
+                onClick={() => openTestDialog(activeProvider)}
+              >
+                {testingChannels.has(activeProvider.channelName) ? t("common.testing") : t("common.test")}
+              </button>
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-[11.5px] font-semibold text-muted-foreground disabled:opacity-50"
+                disabled={togglingChannels.has(activeProvider.channelName)}
+                onClick={() => toggleSingleProvider(activeProvider.channelName, !activeProvider.enabled)}
+              >
+                <span
+                  className="h-2 w-2 rounded-full"
+                  style={{ background: activeProvider.enabled ? "var(--lrs-success)" : "var(--lrs-faint)" }}
+                />
+                {activeProvider.enabled ? t("common.enabled") : t("common.disabled")}
+              </button>
+              <button
+                type="button"
+                className="text-[11.5px] font-semibold text-destructive"
+                onClick={() => openDeleteDialog(activeProvider)}
+              >
+                {t("common.delete")}
+              </button>
+            </div>
+          ) : null}
+        </div>
+        <div className="flex flex-col gap-5 px-6 py-5">
+          {formError ? (
+            <Alert variant="destructive">
+              <AlertTitle>{t("common.saveFailed")}</AlertTitle>
+              <AlertDescription>{formError}</AlertDescription>
+            </Alert>
+          ) : null}
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="pane-channel-name">Channel Name</FieldLabel>
+              <Input
+                id="pane-channel-name"
+                value={formState.channelName}
+                onChange={(event) => setFormState((current) => ({ ...current, channelName: event.target.value }))}
+              />
+              <FieldDescription>{t("providers.channelNameHint", { name: formState.channelName || "channel-name" })}</FieldDescription>
+            </Field>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="pane-type">Type</FieldLabel>
+                <Select
+                  value={formState.type}
+                  onValueChange={(value) => setFormState((current) => ({ ...current, type: value as ProviderFormState["type"] }))}
+                >
+                  <SelectTrigger id="pane-type" className="w-full"><SelectValue placeholder="Select type" /></SelectTrigger>
+                  <SelectContent><SelectGroup>
+                    <SelectItem value="anthropic">Anthropic</SelectItem>
+                    <SelectItem value="openai">OpenAI</SelectItem>
+                  </SelectGroup></SelectContent>
+                </Select>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="pane-priority">Priority</FieldLabel>
+                <Input
+                  id="pane-priority"
+                  inputMode="numeric"
+                  value={formState.priority}
+                  onChange={(event) => setFormState((current) => ({ ...current, priority: event.target.value }))}
+                />
+              </Field>
+            </div>
+
+            <Field>
+              <FieldLabel htmlFor="pane-target-url">Target Base URL</FieldLabel>
+              <Input
+                id="pane-target-url"
+                value={formState.targetBaseUrl}
+                onChange={(event) => setFormState((current) => ({ ...current, targetBaseUrl: event.target.value }))}
+              />
+              <FieldDescription>
+                {formState.type === "openai" ? t("providers.targetUrlOpenaiHint") : t("providers.targetUrlAnthropicHint")}
+              </FieldDescription>
+            </Field>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {formState.type === "openai" ? (
+                <Field>
+                  <FieldLabel htmlFor="pane-responses-mode">{t("providers.responsesModeLabel")}</FieldLabel>
+                  <Select
+                    value={formState.responsesMode}
+                    onValueChange={(value) => setFormState((current) => ({ ...current, responsesMode: value as OpenAiResponsesMode }))}
+                  >
+                    <SelectTrigger id="pane-responses-mode" className="w-full"><SelectValue placeholder={t("providers.responsesModeLabel")} /></SelectTrigger>
+                    <SelectContent><SelectGroup>
+                      <SelectItem value="native">{t("providers.responsesModeNative")}</SelectItem>
+                      <SelectItem value="chat_compat">{t("providers.responsesModeChatCompat")}</SelectItem>
+                      <SelectItem value="disabled">{t("providers.responsesModeDisabled")}</SelectItem>
+                    </SelectGroup></SelectContent>
+                  </Select>
+                </Field>
+              ) : null}
+              <Field>
+                <FieldLabel htmlFor="pane-routing-visibility">Routing Visibility</FieldLabel>
+                <Select
+                  value={formState.routingVisibility}
+                  onValueChange={(value) => setFormState((current) => ({ ...current, routingVisibility: value as RoutingVisibility }))}
+                >
+                  <SelectTrigger id="pane-routing-visibility" className="w-full"><SelectValue placeholder="Routing visibility" /></SelectTrigger>
+                  <SelectContent><SelectGroup>
+                    <SelectItem value="direct">Direct</SelectItem>
+                    <SelectItem value="explicit_only">Explicit only</SelectItem>
+                  </SelectGroup></SelectContent>
+                </Select>
+              </Field>
+            </div>
+
+            <Field>
+              <FieldLabel htmlFor="pane-auth-header">Auth Method</FieldLabel>
+              <Select
+                value={formState.authHeader}
+                onValueChange={(value) => setFormState((current) => ({ ...current, authHeader: value as ProviderFormState["authHeader"], apiKeyDirty: true, clearAuth: false }))}
+              >
+                <SelectTrigger id="pane-auth-header" className="w-full"><SelectValue placeholder="Select auth method" /></SelectTrigger>
+                <SelectContent><SelectGroup>
+                  <SelectItem value="auto">{t("providers.authMethodAuto")}</SelectItem>
+                  <SelectItem value="x-api-key">x-api-key</SelectItem>
+                  <SelectItem value="authorization">Authorization: Bearer</SelectItem>
+                </SelectGroup></SelectContent>
+              </Select>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="pane-auth-value">Credential</FieldLabel>
+              <div className="relative">
+                <Input
+                  id="pane-auth-value"
+                  type={showApiKey ? "text" : "password"}
+                  value={formState.apiKey}
+                  onChange={(event) => setFormState((current) => ({ ...current, apiKey: event.target.value, apiKeyDirty: true, clearAuth: false }))}
+                  placeholder={dialogMode === "edit" ? t("providers.noApiKey") : ""}
+                  className="pr-8"
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => setShowApiKey((v) => !v)}
+                  aria-label={showApiKey ? t("providers.hideApiKey") : t("providers.showApiKey")}
+                >
+                  {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="pane-system-prompt">System Prompt</FieldLabel>
+              <Textarea
+                id="pane-system-prompt"
+                rows={3}
+                value={formState.systemPrompt}
+                onChange={(event) => setFormState((current) => ({ ...current, systemPrompt: event.target.value }))}
+              />
+              <FieldDescription>{t("providers.systemPromptHint")}</FieldDescription>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="pane-extra-fields">Extra Fields</FieldLabel>
+              <Textarea
+                id="pane-extra-fields"
+                rows={2}
+                value={formState.extraFieldsJson}
+                onChange={(event) => setFormState((current) => ({ ...current, extraFieldsJson: event.target.value }))}
+                placeholder='{"vendor": "internal"}'
+                className="text-xs"
+              />
+              <FieldDescription>{t("providers.extraFieldsHint")}</FieldDescription>
+            </Field>
+          </FieldGroup>
+
+          {/* Models */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold">Models</span>
+              <div className="flex gap-1">
+                <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={clearAllModels} disabled={formState.models.every((r) => r.model.trim() === "")}>
+                  <Trash2 data-icon="inline-start" />
+                  {t("providers.clearAllModels")}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => void openSyncDialog()} disabled={!formState.targetBaseUrl.trim()}>
+                  <Download data-icon="inline-start" />
+                  Sync
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={addModelRow}>
+                  <Plus data-icon="inline-start" />
+                  Add
+                </Button>
+              </div>
+            </div>
+            <div className="overflow-hidden rounded-lg border border-border">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-muted/40">
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">#</th>
+                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">Model ID</th>
+                    <th className="w-8 px-2 py-2" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {formState.models.map((row, index) => (
+                    <tr key={row.id} className="border-b border-border/60 last:border-0 hover:bg-muted/20">
+                      <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{index + 1}</td>
+                      <td className="px-3 py-1">
+                        <input
+                          className="w-full bg-transparent font-mono text-xs outline-none placeholder:text-muted-foreground/50 focus:ring-0"
+                          value={row.model}
+                          placeholder="model-id"
+                          onChange={(event) => updateModelRow(row.id, { model: event.target.value })}
+                        />
+                      </td>
+                      <td className="px-2 py-1">
+                        <button type="button" className="text-muted-foreground transition-colors hover:text-destructive" onClick={() => removeModelRow(row.id)} aria-label="Remove">
+                          <X className="size-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {formState.models.length === 0 && (
+                    <tr><td colSpan={3} className="px-3 py-4 text-center text-xs text-muted-foreground">{t("providers.noModels")}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 border-t border-border pt-4">
+            {dialogMode === "edit" ? (
+              <Button type="button" variant="ghost" size="sm" onClick={() => setFormState((current) => ({ ...current, apiKey: "", apiKeyDirty: true, clearAuth: true }))}>
+                Clear Auth
+              </Button>
+            ) : null}
+            <Button type="button" variant="outline" size="sm" onClick={() => setDialogOpen(false)}>{t("common.cancel")}</Button>
+            <Button type="submit" size="sm" className="ml-auto" disabled={submitPending}>
+              {submitPending ? t("common.saving") : t("common.save")}
+            </Button>
+          </div>
+        </div>
+      </form>
+    )
+  }
+
   return (
     <>
       <div className="flex flex-col gap-6">
@@ -722,89 +933,6 @@ export function ProvidersPage({
           }
         />
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <Card size="sm">
-            <CardHeader className="pb-2">
-              <CardDescription>全部渠道</CardDescription>
-              <CardTitle className="text-3xl font-bold">{providerStats.total}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">
-              OpenAI {providerStats.openAiCount} · Anthropic {providerStats.anthropicCount}
-            </CardContent>
-          </Card>
-          <Card size="sm">
-            <CardHeader className="pb-2">
-              <CardDescription>已启用</CardDescription>
-              <CardTitle className="text-3xl font-bold">{providerStats.enabledCount}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">
-              {providerStats.total - providerStats.enabledCount} {t("common.disabled")} · {providerStats.explicitOnlyCount} backend-only
-            </CardContent>
-          </Card>
-          <Card size="sm">
-            <CardHeader className="pb-2">
-              <CardDescription>OpenAI</CardDescription>
-              <CardTitle className="text-3xl font-bold">{providerStats.openAiCount}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">
-              Responses 原生与兼容模式
-            </CardContent>
-          </Card>
-          <Card size="sm">
-            <CardHeader className="pb-2">
-              <CardDescription>Anthropic</CardDescription>
-              <CardTitle className="text-3xl font-bold">{providerStats.anthropicCount}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">
-              Messages 协议渠道
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardContent className="pt-6">
-            <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
-              <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
-              渠道筛选
-            </div>
-            <div className="grid gap-3 lg:grid-cols-[minmax(18rem,1fr)_12rem_12rem]">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="搜索渠道、URL、模型..."
-                  className="bg-card pl-9"
-                />
-              </div>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="bg-card">
-                  <SelectValue placeholder="Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="all">全部类型</SelectItem>
-                    <SelectItem value="openai">OpenAI</SelectItem>
-                    <SelectItem value="anthropic">Anthropic</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="bg-card">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="all">全部状态</SelectItem>
-                    <SelectItem value="enabled">{t("common.enabled")}</SelectItem>
-                    <SelectItem value="disabled">{t("common.disabled")}</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-
         {providers.length === 0 ? (
           <Empty className="border">
             <EmptyHeader>
@@ -824,155 +952,118 @@ export function ProvidersPage({
             </EmptyContent>
           </Empty>
         ) : (
-          <Card className="c4d-table-shell">
-            <CardHeader className="border-b border-border/60">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <CardTitle>渠道列表</CardTitle>
-                  <CardDescription>
-                    显示 {displayedProviders.length} / {providers.length}
-                  </CardDescription>
+          <div className="grid min-h-[calc(100vh-12rem)] grid-cols-1 overflow-hidden rounded-xl border border-border lg:grid-cols-[1fr_1.05fr]">
+            {/* Channel list */}
+            <div className="flex min-h-0 flex-col border-b border-border lg:border-b-0 lg:border-r">
+              <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-3.5">
+                <span className="text-[13px] text-muted-foreground">
+                  共 <b className="font-mono font-semibold text-foreground">{displayedProviders.length}</b> 个渠道 · {providerStats.enabledCount} {t("common.enabled")}
+                </span>
+                <Button type="button" size="sm" onClick={openCreateDialog}>
+                  <Plus data-icon="inline-start" />
+                  {t("providers.addChannel")}
+                </Button>
+              </div>
+              <div className="flex items-center gap-2 border-b border-border px-5 py-2.5">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="搜索渠道、URL、模型..."
+                    className="h-8 bg-card pl-8 text-xs"
+                  />
                 </div>
-                <Badge variant="secondary">{providerStats.enabledCount} {t("common.enabled")}</Badge>
+                <Select value={typeFilter} onValueChange={setTypeFilter}>
+                  <SelectTrigger className="h-8 w-[5.5rem] bg-card text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectGroup>
+                    <SelectItem value="all">全部类型</SelectItem>
+                    <SelectItem value="openai">OpenAI</SelectItem>
+                    <SelectItem value="anthropic">Anthropic</SelectItem>
+                  </SelectGroup></SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="h-8 w-[5.5rem] bg-card text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectGroup>
+                    <SelectItem value="all">全部状态</SelectItem>
+                    <SelectItem value="enabled">{t("common.enabled")}</SelectItem>
+                    <SelectItem value="disabled">{t("common.disabled")}</SelectItem>
+                  </SelectGroup></SelectContent>
+                </Select>
               </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="hidden lg:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>渠道</TableHead>
-                      <TableHead>类型</TableHead>
-                      <TableHead>暴露</TableHead>
-                      <TableHead>模型</TableHead>
-                      <TableHead>状态</TableHead>
-                      <TableHead>优先级</TableHead>
-                      <TableHead>目标地址</TableHead>
-                      <TableHead className="text-right">操作</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {displayedProviders.length === 0 ? (
-                      <TableRow>
-                          <TableCell colSpan={8} className="h-28 text-center text-muted-foreground">
-                          {t("common.noData")}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      displayedProviders.map((provider) => {
-                        const healthStatus = provider.healthStatus ?? "no-data"
-                        const isTesting = testingChannels.has(provider.channelName)
-                        const isToggling = togglingChannels.has(provider.channelName)
-
-                        return (
-                          <TableRow key={provider.channelName} className={!provider.enabled ? "opacity-50" : ""}>
-                            <TableCell>
-                              <div className="flex items-center gap-3">
-                                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-accent-foreground">
-                                  <Server className="h-4 w-4" />
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="truncate font-mono text-xs font-semibold">{provider.channelName}</div>
-                                  <div className="text-xs text-muted-foreground">{healthLabels[healthStatus]}</div>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={typeVariants[provider.type] ?? "outline"}>
-                                {typeLabels[provider.type] ?? provider.type}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={provider.routingVisibility === "explicit_only" ? "outline" : "secondary"}>
-                                {routingVisibilityLabels[provider.routingVisibility]}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="font-mono text-xs text-muted-foreground">
-                              {provider.models.length ? provider.models.slice(0, 2).map((model) => model.model).join(", ") : "—"}
-                              {provider.models.length > 2 ? ` +${provider.models.length - 2}` : ""}
-                            </TableCell>
-                            <TableCell>
-                              <Button
-                                type="button"
-                                variant={provider.enabled ? "secondary" : "outline"}
-                                size="xs"
-                                onClick={() => toggleSingleProvider(provider.channelName, !provider.enabled)}
-                                disabled={isToggling}
-                              >
-                                {provider.enabled ? <Eye data-icon="inline-start" /> : <EyeOff data-icon="inline-start" />}
-                                {isToggling ? "..." : provider.enabled ? t("common.enabled") : t("common.disabled")}
-                              </Button>
-                            </TableCell>
-                            <TableCell className="text-xs text-muted-foreground tabular-nums">
-                              {provider.priority}
-                            </TableCell>
-                            <TableCell className="max-w-72 truncate text-xs text-muted-foreground">
-                              {provider.targetBaseUrl}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end gap-1">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="xs"
-                                  onClick={() => openTestDialog(provider)}
-                                  disabled={isTesting}
-                                >
-                                  <Wifi data-icon="inline-start" />
-                                  {isTesting ? t("common.testing") : t("common.test")}
-                                </Button>
-                                <Button type="button" variant="outline" size="xs" onClick={() => openEditDialog(provider)}>
-                                  <SquarePen data-icon="inline-start" />
-                                  {t("common.edit")}
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="xs"
-                                  className="text-destructive hover:text-destructive"
-                                  onClick={() => openDeleteDialog(provider)}
-                                >
-                                  <Trash2 data-icon="inline-start" />
-                                  {t("common.delete")}
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="grid gap-4 p-4 lg:hidden">
+              <div className="flex flex-1 flex-col overflow-auto">
                 {displayedProviders.length === 0 ? (
-                  <Empty>
-                    <EmptyHeader>
-                      <EmptyTitle>{t("common.noData")}</EmptyTitle>
-                    </EmptyHeader>
-                  </Empty>
+                  <div className="flex h-full min-h-[200px] items-center justify-center text-xs text-muted-foreground">
+                    {t("common.noData")}
+                  </div>
                 ) : (
-                  displayedProviders.map((provider) => (
-                    <ProviderCard
-                      key={provider.channelName}
-                      provider={provider}
-                      testResult={testResults.get(provider.channelName)}
-                      isTesting={testingChannels.has(provider.channelName)}
-                      isToggling={togglingChannels.has(provider.channelName)}
-                      onOpenTestDialog={() => openTestDialog(provider)}
-                      onEdit={() => openEditDialog(provider)}
-                      onDelete={() => openDeleteDialog(provider)}
-                      onToggle={(enabled) => toggleSingleProvider(provider.channelName, enabled)}
-                    />
-                  ))
+                  displayedProviders.map((provider) => {
+                    const selected =
+                      dialogOpen && dialogMode === "edit" && activeProvider?.channelName === provider.channelName
+                    const testResult = testResults.get(provider.channelName)
+                    return (
+                      <button
+                        type="button"
+                        key={provider.channelName}
+                        onClick={() => void openEditDialog(provider)}
+                        className={cn(
+                          "block w-full border-b border-l-[3px] border-border/60 px-5 py-4 text-left transition-colors",
+                          selected ? "border-l-primary bg-accent/50" : "border-l-transparent hover:bg-accent/30",
+                          !provider.enabled && "opacity-60",
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span
+                            className="h-2 w-2 shrink-0 rounded-full"
+                            style={{ background: provider.enabled ? "var(--lrs-success)" : "var(--lrs-faint)" }}
+                          />
+                          <span className="text-[14px] font-bold">{provider.channelName}</span>
+                          <span className="rounded-md bg-accent px-2 py-0.5 text-[10.5px] font-semibold text-accent-foreground">
+                            {typeLabels[provider.type] ?? provider.type}
+                          </span>
+                          {provider.routingVisibility === "explicit_only" ? (
+                            <span className="rounded-md bg-muted px-2 py-0.5 text-[10.5px] font-semibold text-muted-foreground">
+                              backend-only
+                            </span>
+                          ) : null}
+                          {testResult ? (
+                            <span
+                              className="h-1.5 w-1.5 rounded-full"
+                              title={testResult.message}
+                              style={{ background: testResult.status === "ok" ? "var(--lrs-success)" : "var(--lrs-danger)" }}
+                            />
+                          ) : null}
+                          <span className="ml-auto font-mono text-[11px] text-muted-foreground">priority {provider.priority}</span>
+                        </div>
+                        <div className="mt-1.5 font-mono text-[11px] text-muted-foreground">{provider.targetBaseUrl}</div>
+                        {provider.models.length ? (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {provider.models.slice(0, 4).map((m) => (
+                              <span
+                                key={m.model}
+                                className="rounded-md border border-border bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground"
+                              >
+                                {m.model}
+                              </span>
+                            ))}
+                            {provider.models.length > 4 ? (
+                              <span className="text-[10px] text-muted-foreground">+{provider.models.length - 4}</span>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </button>
+                    )
+                  })
                 )}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+            {/* Edit pane */}
+            <div className="flex min-h-0 flex-col overflow-auto">{renderEditPane()}</div>
+          </div>
         )}
       </div>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={false} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-5xl">
           <DialogHeader>
             <DialogTitle>
@@ -1638,190 +1729,6 @@ export function ProvidersPage({
         </DialogContent>
       </Dialog>
     </>
-  )
-}
-
-function ProviderCard({
-  provider,
-  testResult,
-  isTesting,
-  isToggling,
-  onOpenTestDialog,
-  onEdit,
-  onDelete,
-  onToggle,
-}: {
-  provider: ProviderInfo
-  testResult?: TestProviderResult
-  isTesting?: boolean
-  isToggling?: boolean
-  onOpenTestDialog?: () => void
-  onEdit?: () => void
-  onDelete?: () => void
-  onToggle?: (enabled: boolean) => void
-}) {
-  const healthStatus = provider.healthStatus ?? "no-data"
-  const [modelsExpanded, setModelsExpanded] = useState(false)
-  const { t } = useTranslation()
-  const MODEL_COLLAPSE_THRESHOLD = 5
-
-  return (
-    <Card className={!provider.enabled ? "opacity-50" : ""}>
-      <CardHeader className="flex flex-col gap-3">
-        <div className="flex w-full items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <CardTitle className="flex items-center gap-2">
-              <Server className="h-4 w-4 text-muted-foreground" />
-              <span className="truncate font-mono text-sm">{provider.channelName}</span>
-            </CardTitle>
-            <CardDescription className="flex items-center gap-1.5">
-              <Globe className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">{provider.targetBaseUrl}</span>
-            </CardDescription>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${healthColors[healthStatus]}`}
-              aria-label={healthLabels[healthStatus]}
-            />
-            {onToggle ? (
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant={provider.enabled ? "secondary" : "outline"}
-                      size="xs"
-                      onClick={() => onToggle(!provider.enabled)}
-                      disabled={isToggling}
-                    >
-                      {provider.enabled ? (
-                        <Eye data-icon="inline-start" />
-                      ) : (
-                        <EyeOff data-icon="inline-start" />
-                      )}
-                      {isToggling ? "..." : provider.enabled ? t("common.enabled") : t("common.disabled")}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {provider.enabled ? t("providers.disableChannel") : t("providers.enableChannel")}
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            ) : null}
-            <div className="flex gap-1">
-              {onOpenTestDialog ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={onOpenTestDialog}
-                  disabled={isTesting}
-                >
-                  <Wifi data-icon="inline-start" />
-                  {isTesting ? t("common.testing") : t("common.test")}
-                </Button>
-              ) : null}
-              {onEdit ? (
-                <Button type="button" variant="outline" size="xs" onClick={onEdit}>
-                  <SquarePen data-icon="inline-start" />
-                  {t("common.edit")}
-                </Button>
-              ) : null}
-              {onDelete ? (
-                <Button type="button" variant="ghost" size="xs" onClick={onDelete}>
-                  <Trash2 data-icon="inline-start" />
-                  {t("common.delete")}
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        {testResult ? (
-          <Alert variant={testResult.status === "ok" ? "default" : "destructive"}>
-            <AlertDescription className="flex items-center justify-between text-xs">
-              <span>{testResult.message}</span>
-              {testResult.latencyMs !== undefined && (
-                <span className="text-muted-foreground">
-                  {testResult.latencyMs}ms
-                </span>
-              )}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={typeVariants[provider.type] ?? "outline"}>
-            {typeLabels[provider.type] ?? provider.type}
-          </Badge>
-          {provider.type === "openai" ? (
-            <Badge variant={responseModeVariants[provider.responsesMode ?? "native"]}>
-              {t(`providers.responsesModeBadge.${provider.responsesMode ?? "native"}`)}
-            </Badge>
-          ) : null}
-          <Badge variant={provider.routingVisibility === "explicit_only" ? "outline" : "secondary"}>
-            {routingVisibilityLabels[provider.routingVisibility]}
-          </Badge>
-          <Badge variant="outline">priority {provider.priority}</Badge>
-        </div>
-      </CardHeader>
-
-      <CardContent className="flex flex-col gap-3">        {provider.models.length > 0 ? (
-          <>
-            <Separator />
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground">
-                Models {provider.models.length > MODEL_COLLAPSE_THRESHOLD ? `(${provider.models.length})` : ""}
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {(modelsExpanded
-                  ? provider.models
-                  : provider.models.slice(0, MODEL_COLLAPSE_THRESHOLD)
-                ).map((model) => {
-                  const formattedModel = formatProviderModel(model)
-
-                  return (
-                    <Badge key={formattedModel.key} variant="ghost" className="font-mono text-xs">
-                      {formattedModel.label}
-                    </Badge>
-                  )
-                })}
-                {provider.models.length > MODEL_COLLAPSE_THRESHOLD && !modelsExpanded && (
-                  <button
-                    type="button"
-                    onClick={() => setModelsExpanded(true)}
-                    className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
-                  >
-                    +{provider.models.length - MODEL_COLLAPSE_THRESHOLD} more
-                  </button>
-                )}
-                {modelsExpanded && provider.models.length > MODEL_COLLAPSE_THRESHOLD && (
-                  <button
-                    type="button"
-                    onClick={() => setModelsExpanded(false)}
-                    className="inline-flex items-center gap-1 rounded-md border border-dashed border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
-                  >
-                    Show less
-                  </button>
-                )}
-              </div>
-            </div>
-          </>
-        ) : null}
-
-        {provider.systemPrompt ? (
-          <>
-            <Separator />
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-muted-foreground">System Prompt</span>
-              <p className="line-clamp-4 text-xs text-muted-foreground">{provider.systemPrompt}</p>
-            </div>
-          </>
-        ) : null}
-      </CardContent>
-    </Card>
   )
 }
 

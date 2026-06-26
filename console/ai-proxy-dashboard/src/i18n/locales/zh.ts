@@ -426,6 +426,8 @@ export default {
     title: "渠道管理",
     description: "所有渠道均从数据库读取，支持在线新增、修改和连通性测试。",
     addChannel: "新建渠道",
+    editChannel: "编辑渠道",
+    selectHint: "选择左侧渠道进行编辑，或新增渠道",
     testAll: "测试全部",
     loadFailed: "加载失败",
     emptyTitle: "暂无渠道",

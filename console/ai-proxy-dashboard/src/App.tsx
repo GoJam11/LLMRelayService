@@ -139,12 +139,8 @@ export function App() {
         return <ApiDocsPage />
       case "logs":
       default:
-        return (
-          <LogsPage
-            onUnauthorized={handleUnauthorized}
-            onSelectDetail={(requestId) => navigate({ page: "detail", requestId })}
-          />
-        )
+        return <LogsPage onUnauthorized={handleUnauthorized} />
+
     }
   }
 

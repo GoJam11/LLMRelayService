@@ -426,6 +426,8 @@ export default {
     title: "Channels",
     description: "All channels are stored in the database. Add, edit, and test connectivity online.",
     addChannel: "Add Channel",
+    editChannel: "Edit Channel",
+    selectHint: "Select a channel on the left to edit, or add a new one",
     testAll: "Test All",
     loadFailed: "Failed to load",
     emptyTitle: "No Channels",
