@@ -2,22 +2,41 @@
 
 > 自托管 LLM 中继网关 + 可观测性控制台
 
+**简体中文** | [English](README.en.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Bun](https://img.shields.io/badge/runtime-Bun-black)](https://bun.sh)
 [![TypeScript](https://img.shields.io/badge/language-TypeScript-blue)](https://www.typescriptlang.org)
 [![Docker Image](https://img.shields.io/badge/ghcr.io-gojam11%2Fllmrelayservice-blue?logo=docker)](https://github.com/GoJam11/LLMRelayService/pkgs/container/llmrelayservice)
 
-LRS 是一个基于 **Bun + Hono** 的轻量 LLM 中继服务。它将多个 AI 服务商统一在单一入口下，配合内置的 Web 控制台，让你精确观测每一笔请求的延迟、Token 用量与缓存命中情况。
+LRS 是一个基于 **Bun + Hono** 的轻量 LLM 中继服务，把多个 AI 服务商统一在单一入口下，并通过内置 Web 控制台精确观测每一笔请求的延迟、Token 用量与缓存命中。
 
-LRS 秉持**轻量设计**原则：默认不引入格式转换，客户端发什么就转发什么（仅替换认证头）。这意味着不会出现格式转换引入的字段丢失、流式协议错位等问题，上游支持的所有功能对客户端都是透明可用的。
-
-对于需要格式兼容的场景，LRS 也提供了可选的**协议转换层**：当渠道配置 `responsesMode: chat_compat` 时，网关会将客户端发来的 OpenAI Responses API（`/v1/responses`）请求自动转换为 Chat Completions 格式转发给上游，并将响应转换回 Responses 格式返回。这样，即使上游不支持 Responses API，也可以接入 **Codex CLI / Codex App** 等只支持 Responses 协议的客户端。
-
-另一个核心特性是**完整记录每笔请求的原始内容与响应**，包括转发给上游的真实请求体。出现问题时，可以直接在控制台翻日志，对照原始请求和实际转发内容，精准定位是客户端构造有误、还是上游返回异常。
-
-> **适用场景**：LRS 面向个人开发者或小团队内部使用，无注册、邀请等商业化机制，只有单一管理员账户。它提供按 API key 分发的简单费用额度控制；如果你需要完整多租户商业化能力，可以考虑 NewAPI / One-API 等方案。如果你只是想为自己的工具链搭一个干净、可观测的 LLM 中继，LRS 是更轻量的选择。
+- **🪶 轻量透传** — 默认不做格式转换，客户端发什么就转发什么（仅替换认证头），不引入字段丢失、流式协议错位等兼容性问题。
+- **🔍 全文请求记录** — 完整保存每笔请求的原始请求体、真实转发请求体与响应，出问题直接翻日志对照定位。
+- **🔀 双协议 + Responses 兼容** — 同时兼容 Anthropic 与 OpenAI 格式上游；可选的 `chat_compat` 模式自动在 Responses API ↔ Chat Completions 间互转，让 Codex CLI / App 接入不支持 Responses 的上游。
+- **📊 可观测控制台** — 内置仪表盘展示首 token 延迟、缓存命中率、Token 用量趋势，并支持按 API Key 维度统计与额度控制。
 
 ![LRS 控制台](docs/screenshots/lrs.png)
+
+> **适用场景**：LRS 面向个人开发者或小团队内部使用，无注册、邀请等商业化机制，只有单一管理员账户，提供按 API Key 分发的简单费用额度控制。如果你需要完整多租户商业化能力，可考虑 NewAPI / One-API；如果你只想为自己的工具链搭一个干净、可观测的 LLM 中继，LRS 是更轻量的选择。
+
+---
+
+## 目录
+
+- [为什么用 LRS？](#为什么用-lrs)
+- [功能](#功能)
+- [快速开始](#快速开始)
+- [发送第一个请求](#发送第一个请求)
+- [部署](#部署)
+- [Web 控制台](#web-控制台)
+- [环境变量](#环境变量)
+- [路由规则](#路由规则)
+- [Responses API 兼容层](#responses-api-兼容层接入-codex)
+- [系统提示注入](#系统提示注入)
+- [项目结构](#项目结构)
+- [贡献](#贡献)
+- [License](#license)
 
 ---
 
@@ -32,7 +51,7 @@ LRS 秉持**轻量设计**原则：默认不引入格式转换，客户端发什
 | 想给特定渠道预置系统提示 | 在 Provider 配置中填写 `systemPrompt`，自动注入 |
 | 多个应用共用同一个网关，希望分别统计用量 | 为每个应用生成独立 Key，按 Key 维度过滤用量与日志 |
 | 用过其他代理，遇到格式转换导致的兼容性问题 | LRS 默认不引入格式转换，上游有什么能力客户端就能用什么 |
-| 想用 Codex CLI / Codex App 接入不支持 Responses API 的上游 | 渠道设置 `responsesMode: chat_compat`，网关自动完成 Responses ↔ Chat Completions 互转 |
+| 想用 Codex CLI / App 接入不支持 Responses API 的上游 | 渠道设置 `responsesMode: chat_compat`，网关自动完成互转 |
 
 ---
 
@@ -41,32 +60,16 @@ LRS 秉持**轻量设计**原则：默认不引入格式转换，客户端发什
 - **轻量设计，默认不引入格式转换** — 请求原样转发，不引入格式兼容问题
 - **全文请求记录** — 保存原始请求体与转发请求体，方便 Debug 和问题排查
 - **双协议支持** — 同时兼容 Anthropic 和 OpenAI 格式的上游服务
-- **Responses API 兼容层** — 渠道可配置 `responsesMode: chat_compat`，将 `/v1/responses` 请求自动转换为 Chat Completions 转发，用于接入 Codex CLI / Codex App 等 Responses API 客户端
+- **Responses API 兼容层** — 渠道可配置 `responsesMode: chat_compat`，将 `/v1/responses` 请求自动转换为 Chat Completions 转发，用于接入 Codex CLI / App 等 Responses API 客户端
 - **显式前缀路由** — `/providers/{channel}/...` 精确匹配指定渠道
 - **模型自动路由** — `/v1/chat/completions` 等标准路径按请求体中的 `model` 自动选路
 - **优先级控制** — 同模型多渠道时，按 `priority` 值从高到低选择
-- **多 Key 管理** — 为不同应用（如 OpenClaw、Hermes 等）生成独立 Key，分别追踪用量、统计和费用额度
+- **多 Key 管理** — 为不同应用生成独立 Key，分别追踪用量、统计和费用额度
 - **凭证代填** — 网关持有上游 key，客户端只用网关 key 访问
 - **系统提示注入** — Anthropic 渠道可配置预置系统提示，与请求中的 `system` 合并
 - **模型别名** — 对外暴露自定义模型名，内部映射到真实上游模型
 - **CORS 支持** — 内置跨域处理
 - **Web 控制台** — 内置可观测性仪表盘
-
----
-
-## Web 控制台
-
-访问根路径 `/` 即可打开控制台，功能包括：
-
-- **Providers 管理** — 在 UI 中增删改渠道配置，无需重启服务
-- **请求日志** — 历史请求列表，可查看原始请求体、转发请求体与响应
-- **延迟指标** — 首包时间、首 token 时间、总耗时、生成耗时
-- **Token 统计** — input / output / cache token 历史趋势
-- **缓存分析** — 对比相邻请求的 `cache_creation_input_tokens` / `cache_read_input_tokens` 差异
-- **API Key 管理** — 创建和管理网关访问 key，可设置模型白名单和累计费用额度
-- **Monitor** — 实时流量概览
-
-> 设置 `GATEWAY_API_KEY` 环境变量同时作为网关认证密钥和控制台登录密码。
 
 ---
 
@@ -98,7 +101,7 @@ bun run db:migrate
 bun run dev
 ```
 
-访问 `http://localhost:3000` 打开控制台，在 Providers 页面添加第一个渠道。
+服务默认监听 `3300` 端口。访问 `http://localhost:3300` 打开控制台，在 Providers 页面添加第一个渠道。
 
 ### 其他命令
 
@@ -110,18 +113,42 @@ bun start            # 生产模式启动
 bun test             # 运行测试
 ```
 
-### 生产部署
+---
+
+## 发送第一个请求
+
+在控制台添加好一个渠道后，可以用 `curl` 验证网关是否打通。认证头根据渠道类型选择（详见[路由规则](#路由规则)）：
 
 ```bash
-# 构建前端并启动服务
-bun install && bun run build && bun start
+# Anthropic 格式渠道
+curl http://localhost:3300/v1/messages \
+  -H "x-api-key: $GATEWAY_API_KEY" \
+  -H "content-type: application/json" \
+  -d '{
+    "model": "claude-sonnet-4-6",
+    "max_tokens": 64,
+    "messages": [{ "role": "user", "content": "ping" }]
+  }'
+
+# OpenAI 格式渠道
+curl http://localhost:3300/v1/chat/completions \
+  -H "Authorization: Bearer $GATEWAY_API_KEY" \
+  -H "content-type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{ "role": "user", "content": "ping" }]
+  }'
 ```
 
-Railway / Render 等平台部署时构建命令同上。
+请求发出后，可在控制台的请求日志中看到这笔记录及其原始/转发内容。
 
-### Docker Compose 部署（推荐）
+---
+
+## 部署
 
 GHCR 预构建镜像：`ghcr.io/gojam11/llmrelayservice:main`，每次主分支推送自动更新，无需本地构建。
+
+### Docker Compose（推荐）
 
 ```bash
 # 1. 复制并配置环境变量
@@ -132,9 +159,9 @@ cp .env.example .env
 GATEWAY_API_KEY=your-key docker compose up -d
 ```
 
-访问 `http://localhost:3001` 打开控制台（docker-compose.yml 默认将 3000 端口映射到宿主机 3001）。
+访问 `http://localhost:3001` 打开控制台（`docker-compose.yml` 默认将容器内 3000 端口映射到宿主机 3001）。
 
-**后续更新**：
+后续更新：
 
 ```bash
 docker compose pull && docker compose up -d
@@ -142,22 +169,48 @@ docker compose pull && docker compose up -d
 
 > **提示**：如已有外部 PostgreSQL，只需删除 `docker-compose.yml` 中的 `postgres` 服务，并将 `DATABASE_URL` 改为对应连接字符串。
 
----
+### 单容器 Docker
 
-### 单容器 Docker 部署
-
-如果你已经有自己的 PostgreSQL，可以直接运行单个容器：
+如果你已经有自己的 PostgreSQL，可以直接运行单个容器（容器默认监听 `3300`）：
 
 ```bash
 docker run -d \
   --name lrs \
-  -p 3000:3000 \
+  -p 3300:3300 \
   -e GATEWAY_API_KEY=your-key \
   -e DATABASE_URL=postgresql://user:password@host:5432/lrs \
   ghcr.io/gojam11/llmrelayservice:main
 ```
 
-访问 `http://localhost:3000` 打开控制台。
+访问 `http://localhost:3300` 打开控制台。
+
+### 从源码构建
+
+```bash
+bun install && bun run build && bun start
+```
+
+Railway / Render 等平台部署时构建命令同上。
+
+---
+
+## Web 控制台
+
+访问根路径 `/` 即可打开控制台，功能包括：
+
+- **Providers 管理** — 在 UI 中增删改渠道配置，无需重启服务
+- **请求日志** — 历史请求列表，可查看原始请求体、转发请求体与响应
+- **延迟指标** — 首包时间、首 token 时间、总耗时、生成耗时
+- **Token 统计** — input / output / cache token 历史趋势
+- **缓存分析** — 对比相邻请求的 `cache_creation_input_tokens` / `cache_read_input_tokens` 差异
+- **API Key 管理** — 创建和管理网关访问 key，可设置模型白名单和累计费用额度
+- **Monitor** — 实时流量概览
+
+| Providers | 请求日志 | 用量统计 |
+|:---:|:---:|:---:|
+| ![Providers](docs/screenshots/providers.png) | ![请求日志](docs/screenshots/logs.png) | ![用量统计](docs/screenshots/usage.png) |
+
+> 设置 `GATEWAY_API_KEY` 环境变量同时作为网关认证密钥和控制台登录密码。
 
 ---
 
@@ -181,76 +234,17 @@ docker run -d \
 
 ## 路由规则
 
-LRS 的路由模型以 **Provider / 渠道** 为基础，而不是把不同渠道上的同名模型合并成一个全局模型池。一个请求最终总是落到某个明确的渠道，再由该渠道转发给它自己的上游模型。
+LRS 的路由以 **Provider / 渠道** 为基础，而不是把不同渠道上的同名模型合并成一个全局模型池。一个请求最终总是落到某个明确的渠道，再由该渠道转发给它自己的上游模型。三种寻址方式：
 
-核心概念：
+- **显式前缀路由** — `POST /providers/{channel}/v1/messages`，精确匹配指定渠道，剩余路径原样转发。
+- **模型自动路由** — `POST /v1/messages`，按请求体中的 `model` 在各渠道间匹配候选，按 `priority` 由高到低选择。
+- **模型别名 / fallback** — alias 是对外暴露的虚拟模型，拥有独立的白名单与回退规则；用 `渠道名:模型名`（如 `backup:gpt-4o-mini`）可精确指向某渠道上的某模型。
 
-- **渠道模型**：Provider 的 `models` 列表只表示“这个渠道声明支持哪些模型”。即使多个渠道都配置了 `gpt-4o`，它们在 LRS 内部仍然是不同的路由目标；自动路由只是在多个候选渠道之间按优先级选择。
-- **模型别名 / alias**：alias 是对外暴露的虚拟模型名，而不仅是简单转发规则。客户端请求 alias 时，LRS 按 alias 名本身做 API key 模型白名单、模型级回退规则匹配和日志记录；只有真正转发上游时，才把请求体里的 `model` 改写成 alias 绑定的真实模型。
-- **显式渠道目标**：需要精确指向某个渠道上的某个模型时，使用 `渠道名:模型名` 表达，例如 `backup:gpt-4o-mini`。这能避免把其他渠道上的同名模型误当作同一个 fallback 目标。
-
-因此，`fast` 这个 alias 可以拥有独立于 `gpt-4o` 的完整模型级配置；即使 `fast` 当前转发到 `gpt-4o`，它也不会继承 `gpt-4o` 的回退规则。
-
-### 显式前缀路由
-
-```
-{METHOD} /providers/{channelName}/{path...}
-```
-
-在路径前加 `/providers/` 前缀，直接匹配 `channelName` 对应的渠道，剩余路径原样转发给上游。例如：
-
-```
-POST /providers/my-channel/v1/messages
-POST /providers/my-channel/v1/chat/completions
-```
-
-### 模型自动路由
-
-```
-{METHOD} /v1/{path...}
-```
-
-读取请求体中的 `model` 字段，在各渠道的 `models` 列表中匹配候选渠道，按 `priority` 由高到低选择。例如：
-
-```
-POST /v1/messages
-POST /v1/chat/completions
-```
-
-如果 `model` 是 Routes 页面配置的 alias，则只解析到 alias 绑定的渠道和真实模型，不会继续把 alias 指向的真实模型扩展到其他同名渠道。这样 alias 可以作为稳定的对外虚拟模型，单独配置 API key 白名单和回退策略。
-
-### 模型回退目标
-
-Routes 页的自定义模型回退按“请求中的原始 `model` 值”匹配规则。alias 会作为独立虚拟模型匹配自己的规则，不会走它所转发真实模型的规则。
-
-Fallback 目标支持两种写法：
-
-| 写法 | 含义 |
-|------|------|
-| `mini` | 路由 alias，按 alias 绑定的渠道和真实模型转发 |
-| `backup:gpt-4o-mini` | 指定 `backup` 渠道上的 `gpt-4o-mini` 模型 |
-
-示例：
-
-```text
-请求 model: fast
-Fallback 目标: mini, backup:gpt-4o-mini
-```
-
-这里 `fast`、`mini` 都是虚拟模型名；它们各自可以绑定到真实上游模型，也可以分别拥有独立的模型级回退配置。
-
-### 认证
-
-| 渠道类型 | 客户端传入方式 |
-|---------|--------------|
-| `anthropic` | `x-api-key: <GATEWAY_API_KEY>` |
-| `openai` | `Authorization: Bearer <GATEWAY_API_KEY>` |
-
-网关验证通过后，会用渠道配置的上游凭证替换客户端传入的认证头。
+> 完整的路由模型、alias 语义、fallback 写法与认证说明见 **[docs/routing.md](docs/routing.md)**。
 
 ---
 
-## Responses API 兼容层（接入 Codex App）
+## Responses API 兼容层（接入 Codex）
 
 Codex CLI / Codex App 等客户端使用 OpenAI Responses API（`POST /v1/responses`）而非 Chat Completions。对于上游本身支持 Responses API 的渠道，LRS 默认直接透传（`responsesMode: native`）；对于**不支持** Responses API 的上游（如自托管模型、第三方兼容服务），可以在渠道配置中设置 `responsesMode: chat_compat`，让 LRS 自动完成格式转换：
 
@@ -307,13 +301,15 @@ drizzle/                # 数据库迁移文件
 
 ---
 
+## 贡献
+
+欢迎通过 Issue 反馈问题或提出建议，也欢迎提交 Pull Request。提交 PR 前请确保 `bun test` 通过。讨论也可前往社区帖：[linux.do](https://linux.do/t/topic/2056392)。
+
+---
+
 ## License
 
 [MIT](LICENSE)
-
-## Link
-
-[Forum](https://linux.do/t/topic/2056392)
 
 ## Star History
 
