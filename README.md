@@ -16,7 +16,7 @@ LRS 是一个基于 **Bun + Hono** 的轻量 LLM 中继服务，把多个 AI 服
 - **🔀 双协议 + Responses 兼容** — 同时兼容 Anthropic 与 OpenAI 格式上游；可选的 `chat_compat` 模式自动在 Responses API ↔ Chat Completions 间互转，让 Codex CLI / App 接入不支持 Responses 的上游。
 - **📊 可观测控制台** — 内置仪表盘展示首 token 延迟、缓存命中率、Token 用量趋势，并支持按 API Key 维度统计与额度控制。
 
-![LRS 控制台](docs/screenshots/lrs.png)
+![LRS 控制台](docs/screenshots/lrs-monitor.png)
 
 > **适用场景**：LRS 面向个人开发者或小团队内部使用，无注册、邀请等商业化机制，只有单一管理员账户，提供按 API Key 分发的简单费用额度控制。如果你需要完整多租户商业化能力，可考虑 NewAPI / One-API；如果你只想为自己的工具链搭一个干净、可观测的 LLM 中继，LRS 是更轻量的选择。
 
@@ -206,9 +206,9 @@ Railway / Render 等平台部署时构建命令同上。
 - **API Key 管理** — 创建和管理网关访问 key，可设置模型白名单和累计费用额度
 - **Monitor** — 实时流量概览
 
-| Providers | 请求日志 | 用量统计 |
+| 路由规则 | 模型 | 请求日志 |
 |:---:|:---:|:---:|
-| ![Providers](docs/screenshots/providers.png) | ![请求日志](docs/screenshots/logs.png) | ![用量统计](docs/screenshots/usage.png) |
+| ![路由规则](docs/screenshots/lrs-routing.png) | ![模型](docs/screenshots/lrs-models.png) | ![请求日志](docs/screenshots/lrs-logs.png) |
 
 > 设置 `GATEWAY_API_KEY` 环境变量同时作为网关认证密钥和控制台登录密码。
 

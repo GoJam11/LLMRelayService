@@ -16,7 +16,7 @@ LRS is a lightweight LLM relay service built on **Bun + Hono**. It unifies multi
 - **🔀 Dual protocol + Responses compatibility** — Supports both Anthropic and OpenAI upstream formats; an optional `chat_compat` mode auto-translates between the Responses API and Chat Completions, letting Codex CLI / App connect to upstreams that don't support Responses.
 - **📊 Observability console** — A built-in dashboard shows first-token latency, cache hit rate, and token usage trends, with per-API-key statistics and quota control.
 
-![LRS console](docs/screenshots/lrs.png)
+![LRS console](docs/screenshots/lrs-monitor.png)
 
 > **Who it's for**: LRS targets individual developers or small internal teams. It has no sign-up/invite or other commercialization mechanisms — just a single admin account, with simple per-API-key cost-quota control. If you need full multi-tenant commercial capabilities, consider NewAPI / One-API. If you just want a clean, observable LLM relay for your own toolchain, LRS is the lighter choice.
 
@@ -206,9 +206,9 @@ Open the root path `/` to access the console. Features include:
 - **API key management** — Create and manage gateway access keys, with model allowlists and cumulative cost quotas
 - **Monitor** — A real-time traffic overview
 
-| Providers | Request logs | Usage stats |
+| Routing rules | Models | Request logs |
 |:---:|:---:|:---:|
-| ![Providers](docs/screenshots/providers.png) | ![Request logs](docs/screenshots/logs.png) | ![Usage stats](docs/screenshots/usage.png) |
+| ![Routing rules](docs/screenshots/lrs-routing.png) | ![Models](docs/screenshots/lrs-models.png) | ![Request logs](docs/screenshots/lrs-logs.png) |
 
 > Setting the `GATEWAY_API_KEY` environment variable serves as both the gateway auth key and the console login password.
 
