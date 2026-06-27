@@ -357,6 +357,12 @@ export type GatewayTimeoutSettings = {
   responseIdleTimeoutMs: number
 }
 
+export type GatewaySettingsRuntimeInfo = {
+  retentionMaxRecords: number
+  corsAllowOrigin: string
+  corsEnabled: boolean
+}
+
 export type GatewayTimeoutSettingsPayload = GatewayTimeoutSettings & {
   ok: boolean
   defaults: GatewayTimeoutSettings
@@ -365,6 +371,7 @@ export type GatewayTimeoutSettingsPayload = GatewayTimeoutSettings & {
     responseIdle: TimeoutLimit
   }
   updatedAt: number | null
+  runtime?: GatewaySettingsRuntimeInfo
 }
 
 export type ModelFallbackMode = "disabled" | "same_model" | "any_model"

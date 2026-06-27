@@ -358,6 +358,12 @@ export interface ConsoleUsageStatsPayload {
 }
 
 const MAX_DEBUG_RECORDS = Math.max(200, Number.parseInt(process.env.DEBUG_DB_MAX_RECORDS || '50000', 10) || 50000);
+
+/** Effective max retained request records (env DEBUG_DB_MAX_RECORDS, default 50000). Read-only at runtime. */
+export function getMaxDebugRecords(): number {
+  return MAX_DEBUG_RECORDS;
+}
+
 const db = createDbClient();
 const consoleStoreReady = Promise.resolve();
 

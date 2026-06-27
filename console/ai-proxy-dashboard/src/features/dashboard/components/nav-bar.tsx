@@ -51,11 +51,8 @@ export function NavBar({
         <button
           type="button"
           onClick={() => onNavigate("monitor")}
-          className="flex items-center gap-2.5"
+          className="flex items-center"
         >
-          <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-primary text-base font-extrabold text-primary-foreground">
-            L
-          </span>
           <span className="text-[17px] font-extrabold tracking-[0.04em] text-foreground">LRS</span>
         </button>
         <span className="hidden text-[13px] text-muted-foreground sm:inline">

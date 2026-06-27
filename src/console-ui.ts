@@ -4,7 +4,7 @@ import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { existsSync, statSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
 import { createProvider, deleteProvider, ensureProviderConfigsLoaded, getChannelModels, getProviderConfig, getProviderInfo, getProviders, refreshRoutingConfigCache, resolveRoute, toggleProvider, updateProvider } from './config';
-import { getConsoleRequest, listConsoleRequests, getProviderHealthStatuses, getConsoleUsageStats, getConsoleFilterOptions, type RequestSortKey, type SortDirection } from './console-store';
+import { getConsoleRequest, listConsoleRequests, getProviderHealthStatuses, getConsoleUsageStats, getConsoleFilterOptions, getMaxDebugRecords, type RequestSortKey, type SortDirection } from './console-store';
 import { createManagedApiKey, deleteManagedApiKey, getManagedApiKey, listManagedApiKeys, renameManagedApiKey, setApiKeyAllowedModels, setApiKeyCostQuota } from './api-keys';
 import { parseApiKeyCostQuotaLimit } from './api-key-quota';
 import { createModelAlias, deleteModelAlias, listModelAliases, toggleModelAlias, updateModelAlias } from './console-model-alias-store';
@@ -407,6 +407,14 @@ export function registerConsoleRoutes(app: Hono<any>): void {
     return c.json({ ok: true, ...options });
   });
 
+  // Read-only runtime info shown on the 配置 page alongside editable timeouts.
+  // Record retention is env-configured (DEBUG_DB_MAX_RECORDS); CORS is built-in (origin '*', always on).
+  const buildSettingsRuntimeInfo = () => ({
+    retentionMaxRecords: getMaxDebugRecords(),
+    corsAllowOrigin: '*',
+    corsEnabled: true,
+  });
+
   app.get('/__console/api/settings/timeouts', async (c) => {
     if (!isPasswordConfigured()) {
       return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
@@ -416,7 +424,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
     }
 
     const settings = await getGatewayTimeoutSettings();
-    return c.json({ ok: true, ...settings });
+    return c.json({ ok: true, ...settings, runtime: buildSettingsRuntimeInfo() });
   });
 
   app.patch('/__console/api/settings/timeouts', async (c) => {
@@ -430,7 +438,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
     const payload = await c.req.json().catch(() => ({}));
     try {
       const settings = await updateGatewayTimeoutSettings(payload as any);
-      return c.json({ ok: true, ...settings });
+      return c.json({ ok: true, ...settings, runtime: buildSettingsRuntimeInfo() });
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }
