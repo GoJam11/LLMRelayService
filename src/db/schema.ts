@@ -42,6 +42,10 @@ export const consoleRequests = pgTable('console_requests', {
   ephemeral5mInputTokens: integer('ephemeral_5m_input_tokens').notNull().default(0),
   ephemeral1hInputTokens: integer('ephemeral_1h_input_tokens').notNull().default(0),
   quotaChargedMicrousd: bigint('quota_charged_microusd', { mode: 'number' }).notNull().default(0),
+  // Per-unit pricing (ModelPricing JSON) effective at response time. Persisted so log /
+  // usage cost is computed from the price that applied when the request ran, not the
+  // current price — later price edits don't rewrite historical cost. Null for legacy rows.
+  costPricingJson: text('cost_pricing_json'),
   failoverFrom: text('failover_from'),
   failoverChainJson: text('failover_chain_json'),
   originalRoutePrefix: text('original_route_prefix'),

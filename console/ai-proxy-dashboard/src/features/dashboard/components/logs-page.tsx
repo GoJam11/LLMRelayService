@@ -166,47 +166,8 @@ export function LogsPage({
 
   return (
     <div className="flex h-full flex-col gap-0">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-3 border-b border-border">
-        <div className="flex items-baseline gap-3">
-          <span className="text-[17px] font-extrabold tracking-[0.04em] text-foreground">
-            {t("logs.title")}
-          </span>
-          <span className="text-[13px] text-muted-foreground">
-            {t("logs.subtitle")}
-          </span>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <Button
-            type="button"
-            size="sm"
-            variant={liveMode ? "default" : "outline"}
-            onClick={() => setLiveMode((v) => !v)}
-            className={liveMode ? "animate-pulse" : ""}
-          >
-            <Radio data-icon="inline-start" className="h-4 w-4" />
-            {t("nav.live")}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={refreshing || liveMode}
-            onClick={() => {
-              void refreshDashboard({ filters: filtersRef.current })
-            }}
-          >
-            <RotateCcw
-              data-icon="inline-start"
-              className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-            />
-            {t("common.refreshData")}
-          </Button>
-        </div>
-      </div>
-
       {/* Filter Bar — inline, no Card */}
-      <div className="flex items-center gap-2.5 px-6 py-3 border-b border-border bg-card">
+      <div className="flex items-center gap-2.5 border-b border-border bg-card px-6 py-3">
         {/* Search */}
         <div className="relative flex-1" style={{ maxWidth: 280 }}>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
@@ -291,6 +252,33 @@ export function LogsPage({
             {t("common.clearFilters")}
           </Button>
         ) : null}
+
+        {/* Live mode + Refresh */}
+        <Button
+          type="button"
+          size="sm"
+          variant={liveMode ? "default" : "outline"}
+          onClick={() => setLiveMode((v) => !v)}
+          className={liveMode ? "animate-pulse" : ""}
+        >
+          <Radio data-icon="inline-start" className="h-4 w-4" />
+          {t("nav.live")}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={refreshing || liveMode}
+          onClick={() => {
+            void refreshDashboard({ filters: filtersRef.current })
+          }}
+        >
+          <RotateCcw
+            data-icon="inline-start"
+            className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+          />
+          {t("common.refreshData")}
+        </Button>
       </div>
 
       {/* Master-detail layout — 1.45fr 1fr, matching design spec */}

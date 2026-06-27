@@ -1,12 +1,13 @@
 import { useSyncExternalStore } from "react"
 
-export type RouteTab = "map" | "aliases" | "models" | "failover"
+export type RouteTab = "map" | "aliases" | "failover"
 
 export type PageRoute =
   | { page: "monitor" }
   | { page: "usage"; client?: string }
   | { page: "providers" }
   | { page: "routes"; tab?: RouteTab }
+  | { page: "models" }
   | { page: "keys" }
   | { page: "logs" }
   | { page: "settings" }
@@ -14,7 +15,7 @@ export type PageRoute =
   | { page: "detail"; requestId: string }
 
 function isRouteTab(value: string | null): value is RouteTab {
-  return value === "map" || value === "aliases" || value === "models" || value === "failover"
+  return value === "map" || value === "aliases" || value === "failover"
 }
 
 function parseHash(): PageRoute {
@@ -25,9 +26,11 @@ function parseHash(): PageRoute {
   if (pageName === "usage") return { page: "usage", client: params.get("client") || undefined }
   if (pageName === "logs") return { page: "logs" }
   if (pageName === "providers") return { page: "providers" }
-  if (pageName === "models") return { page: "routes", tab: "models" }
+  if (pageName === "models") return { page: "models" }
   if (pageName === "routes") {
     const tab = params.get("tab")
+    // backward-compat: old "#/routes?tab=models" redirects to standalone models page
+    if (tab === "models") return { page: "models" }
     return isRouteTab(tab) ? { page: "routes", tab } : { page: "routes" }
   }
   if (pageName === "keys") return { page: "keys" }

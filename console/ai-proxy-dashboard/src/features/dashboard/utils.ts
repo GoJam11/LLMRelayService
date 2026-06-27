@@ -286,9 +286,7 @@ export function getHttpStatusLabel(
   status: number | null | undefined,
 ): string {
   if (status == null) return "请求中"
-  if (status === 408 || status === 504) return `${status} 超时`
-  if (status >= 200 && status < 400) return `${status} 成功`
-  return `${status} 失败`
+  return String(status)
 }
 
 export function getHttpStatusBadgeVariant(

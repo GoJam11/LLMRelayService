@@ -3,13 +3,14 @@ import { useTranslation } from "react-i18next"
 
 import { cn } from "@/lib/utils"
 
-type Page = "monitor" | "usage" | "providers" | "routes" | "keys" | "logs" | "settings" | "api"
+type Page = "monitor" | "usage" | "providers" | "models" | "routes" | "keys" | "logs" | "settings" | "api"
 
 const PAGE_SUBTITLE: Record<Page, string> = {
   monitor: "实时流量概览",
   usage: "用量",
   logs: "请求日志",
   providers: "渠道管理",
+  models: "模型",
   keys: "密钥管理",
   routes: "路由",
   settings: "配置",
@@ -29,12 +30,13 @@ export function NavBar({
 }) {
   const { t } = useTranslation()
 
-  // Primary horizontal nav — design order: 监控 用量 日志 渠道 密钥 路由
+  // Primary horizontal nav — design order: 监控 用量 日志 渠道 模型 密钥 路由
   const navItems: { page: Page; label: string }[] = [
     { page: "monitor", label: t("nav.monitor") },
     { page: "usage", label: t("nav.usage") },
     { page: "logs", label: t("nav.logs") },
     { page: "providers", label: t("nav.providers") },
+    { page: "models", label: t("nav.models") },
     { page: "keys", label: t("nav.keys") },
     { page: "routes", label: t("nav.routes") },
   ]

@@ -10,7 +10,6 @@ import {
   Plus,
   RefreshCw,
   Server,
-  Trash2,
   Upload,
   X,
 } from "lucide-react"
@@ -43,7 +42,6 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldSeparator,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { JsonViewer } from "@/components/ui/json-viewer"
@@ -85,6 +83,98 @@ export type TestStatusMap = Map<string, TestProviderResult>
 const typeLabels: Record<string, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
+}
+
+// ── Preset channels: one-click fill for `type`, `targetBaseUrl`, and a suggested
+// `channelName`. Mirrors the "预置渠道" chip row in LRS Clear 风格五. The first
+// matching preset (by type + baseURL) is shown as selected; falls back to
+// "custom" otherwise.
+type PresetChannel = {
+  id: string
+  label: string
+  type: ProviderFormState["type"]
+  baseUrl: string
+  suggestedName: string
+  iconText: string
+  iconBg: string
+  iconFg: string
+}
+
+const PRESET_CHANNELS: PresetChannel[] = [
+  {
+    id: "openai",
+    label: "OpenAI",
+    type: "openai",
+    baseUrl: "https://api.openai.com",
+    suggestedName: "openai",
+    iconText: "AI",
+    iconBg: "#e6f5f2",
+    iconFg: "#10a37f",
+  },
+  {
+    id: "anthropic",
+    label: "Anthropic",
+    type: "anthropic",
+    baseUrl: "https://api.anthropic.com",
+    suggestedName: "anthropic",
+    iconText: "An",
+    iconBg: "#f6ece4",
+    iconFg: "#d97757",
+  },
+  {
+    id: "volcengine-ark-openai",
+    label: "火山方舟 CodingPlan (OpenAI)",
+    type: "openai",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/coding/v3",
+    suggestedName: "ark-coding",
+    iconText: "舟",
+    iconBg: "#fbe9e1",
+    iconFg: "#c8552c",
+  },
+  {
+    id: "volcengine-ark-anthropic",
+    label: "火山方舟 CodingPlan (Anthropic)",
+    type: "anthropic",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/coding",
+    suggestedName: "ark-coding-anthropic",
+    iconText: "舟",
+    iconBg: "#f6ece4",
+    iconFg: "#d97757",
+  },
+  {
+    id: "deepseek-openai",
+    label: "DeepSeek (OpenAI)",
+    type: "openai",
+    baseUrl: "https://api.deepseek.com",
+    suggestedName: "deepseek",
+    iconText: "DS",
+    iconBg: "#e7edfb",
+    iconFg: "#3358cc",
+  },
+  {
+    id: "deepseek-anthropic",
+    label: "DeepSeek (Anthropic)",
+    type: "anthropic",
+    baseUrl: "https://api.deepseek.com/anthropic",
+    suggestedName: "deepseek-anthropic",
+    iconText: "DS",
+    iconBg: "#f6ece4",
+    iconFg: "#d97757",
+  },
+]
+
+function normalizeBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "").toLowerCase()
+}
+
+function matchPreset(type: string, baseUrl: string): PresetChannel | null {
+  const target = normalizeBaseUrl(baseUrl)
+  if (!target) return null
+  return (
+    PRESET_CHANNELS.find(
+      (preset) => preset.type === type && normalizeBaseUrl(preset.baseUrl) === target,
+    ) ?? null
+  )
 }
 
 type DialogMode = "create" | "edit"
@@ -266,6 +356,77 @@ function SegmentedToggle({
   )
 }
 
+function PresetChannelPicker({
+  type,
+  baseUrl,
+  onPick,
+  onCustom,
+}: {
+  type: ProviderFormState["type"]
+  baseUrl: string
+  onPick: (preset: PresetChannel) => void
+  onCustom: () => void
+}) {
+  const { t } = useTranslation()
+  const matched = matchPreset(type, baseUrl)
+  return (
+    <div>
+      <div className="mb-2 flex items-baseline gap-2">
+        <span className="text-[12px] font-semibold text-foreground/70">{t("providers.presetsLabel")}</span>
+        <span className="text-[11.5px] text-muted-foreground">{t("providers.presetsHint")}</span>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {PRESET_CHANNELS.map((preset) => {
+          const active = matched?.id === preset.id
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => onPick(preset)}
+              className={cn(
+                "flex items-center gap-2 rounded-[10px] border bg-card px-2.5 py-2 text-left transition-colors",
+                active
+                  ? "border-[1.5px] border-primary bg-accent/40"
+                  : "border-border hover:border-foreground/30 hover:bg-accent/20",
+              )}
+            >
+              <span
+                className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-[10px] font-extrabold"
+                style={{ background: preset.iconBg, color: preset.iconFg }}
+              >
+                {preset.iconText}
+              </span>
+              <span className={cn("text-[12.5px] font-semibold", active ? "text-foreground" : "text-muted-foreground")}>
+                {preset.label}
+              </span>
+            </button>
+          )
+        })}
+        <button
+          type="button"
+          onClick={onCustom}
+          className={cn(
+            "flex items-center gap-2 rounded-[10px] border bg-card px-2.5 py-2 text-left transition-colors",
+            !matched
+              ? "border-[1.5px] border-primary bg-accent/40"
+              : "border-border hover:border-foreground/30 hover:bg-accent/20",
+          )}
+        >
+          <span
+            className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md text-[14px]"
+            style={{ background: "#f0f7f7", color: "#8aa0a1" }}
+          >
+            +
+          </span>
+          <span className={cn("text-[12.5px] font-semibold", !matched ? "text-foreground" : "text-muted-foreground")}>
+            {t("providers.presetCustom")}
+          </span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export function ProvidersPage({
   onUnauthorized,
 }: {
@@ -279,15 +440,20 @@ export function ProvidersPage({
   const [statusFilter, setStatusFilter] = useState("all")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogMode, setDialogMode] = useState<DialogMode>("create")
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createEnabled, setCreateEnabled] = useState(true)
   const [activeProvider, setActiveProvider] = useState<ProviderInfo | null>(null)
   const [formState, setFormState] = useState<ProviderFormState>(() => createFormState())
+  // When the current type + baseURL matches a preset, lock the baseURL field so the
+  // backend can reliably distinguish channel type by its fixed endpoint.
+  const presetLocked = matchPreset(formState.type, formState.targetBaseUrl) !== null
   const [formError, setFormError] = useState("")
   const [submitPending, setSubmitPending] = useState(false)
   const [testingAll, setTestingAll] = useState(false)
   const [testResults, setTestResults] = useState<TestStatusMap>(new Map())
-  const [testingChannels, setTestingChannels] = useState<Set<string>>(new Set())
+  const [, setTestingChannels] = useState<Set<string>>(new Set())
   const [testDialogOpen, setTestDialogOpen] = useState(false)
-  const [testDialogProvider, setTestDialogProvider] = useState<ProviderInfo | null>(null)
+  const [testDialogProvider] = useState<ProviderInfo | null>(null)
   const [testDialogModel, setTestDialogModel] = useState<string>("")
   const [testDialogResult, setTestDialogResult] = useState<TestProviderResult | null>(null)
   const [testDialogLoading, setTestDialogLoading] = useState(false)
@@ -363,7 +529,12 @@ export function ProvidersPage({
     async (channelName: string, enabled: boolean) => {
       setTogglingChannels((prev) => new Set(prev).add(channelName))
       try {
-        await toggleProvider(channelName, enabled)
+        const updated = await toggleProvider(channelName, enabled)
+        // Keep the open edit pane in sync — it renders from activeProvider, not
+        // the list, so without this the toggle would visually stay stale.
+        setActiveProvider((current) =>
+          current && current.channelName === channelName ? { ...current, ...updated } : current
+        )
         await loadProviders()
       } catch (err) {
         // Toggle failure — silently reload to restore original state
@@ -423,7 +594,9 @@ export function ProvidersPage({
     setFormState(createFormState())
     setFormError("")
     setShowApiKey(false)
-    setDialogOpen(true)
+    setCreateEnabled(true)
+    setDialogOpen(false)
+    setCreateOpen(true)
   }
 
   async function openEditDialog(provider: ProviderInfo) {
@@ -449,12 +622,6 @@ export function ProvidersPage({
     setDialogOpen(true)
   }
 
-  function openTestDialog(provider: ProviderInfo) {
-    setTestDialogProvider(provider)
-    setTestDialogModel(provider.models?.[0]?.model ?? "")
-    setTestDialogResult(null)
-    setTestDialogOpen(true)
-  }
 
   async function handleTestDialogTest() {
     if (!testDialogProvider) return
@@ -467,28 +634,11 @@ export function ProvidersPage({
     }
   }
 
-  function updateModelRow(id: string, patch: Partial<ModelRowState>) {
-    setFormState((current) => ({
-      ...current,
-      models: current.models.map((row) => (row.id === id ? { ...row, ...patch } : row)),
-    }))
-  }
-
   function addModelRow() {
     setFormState((current) => ({
       ...current,
       models: [...current.models, createModelRow()],
     }))
-  }
-
-  function clearAllModels() {
-    const nonEmptyCount = formState.models.filter((r) => r.model.trim() !== "").length
-    if (nonEmptyCount === 0) {
-      setFormState((current) => ({ ...current, models: [createModelRow()] }))
-      return
-    }
-    if (!window.confirm(t("providers.clearAllModelsConfirm", { count: nonEmptyCount }))) return
-    setFormState((current) => ({ ...current, models: [createModelRow()] }))
   }
 
   async function openSyncDialog() {
@@ -500,13 +650,14 @@ export function ProvidersPage({
     setSyncLoading(true)
     try {
       let data: { models: Array<{ id: string }> }
-      // 如果有表单中的 targetBaseUrl 和 apiKey，优先用表单参数（无需先保存）
-      if (formState.apiKey?.trim()) {
+      // 新建渠道尚未保存到后台，channelName 查不到 Provider，必须用表单实时值预览。
+      // 编辑模式下若填了新密钥也优先用实时值，否则回退到按 channelName 读库内认证信息。
+      if (dialogMode === "create" || formState.apiKey?.trim()) {
         data = await fetchUpstreamModelsPreview({
           targetBaseUrl: formState.targetBaseUrl.trim(),
           type: formState.type as 'openai' | 'anthropic',
           authHeader: formState.authHeader ?? undefined,
-          authValue: formState.apiKey.trim(),
+          authValue: formState.apiKey?.trim() || undefined,
         })
       } else if (formState.channelName.trim()) {
         // 已保存的渠道，用 channelName 从数据库读取认证信息
@@ -567,13 +718,18 @@ export function ProvidersPage({
       const payload = buildProviderPayload(formState, dialogMode)
 
       if (dialogMode === "create") {
-        await createProvider(payload)
+        const created = await createProvider(payload)
+        // Backend defaults new channels to enabled; honor the "enable on create" toggle.
+        if (!createEnabled) {
+          await toggleProvider(created.channelName, false)
+        }
       } else if (activeProvider) {
         await updateProvider(activeProvider.channelName, payload)
       }
 
       await loadProviders()
       setDialogOpen(false)
+      setCreateOpen(false)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -664,41 +820,17 @@ export function ProvidersPage({
       <form className="flex flex-col" onSubmit={handleSubmit}>
         <div className="flex items-center gap-2.5 border-b border-border px-6 py-4">
           <span className="text-[15px] font-extrabold">
-            {dialogMode === "create" ? t("providers.addChannel") : t("providers.editChannel")}
+            {t("providers.editChannel")}
           </span>
-          {dialogMode === "edit" ? (
-            <span className="font-mono text-[11px] text-muted-foreground">{activeProvider?.channelName}</span>
-          ) : null}
-          {dialogMode === "edit" && activeProvider ? (
-            <div className="ml-auto flex items-center gap-3.5">
-              <button
-                type="button"
-                className="text-[11.5px] font-semibold text-primary disabled:opacity-50"
-                disabled={testingChannels.has(activeProvider.channelName)}
-                onClick={() => openTestDialog(activeProvider)}
-              >
-                {testingChannels.has(activeProvider.channelName) ? t("common.testing") : t("common.test")}
-              </button>
-              <button
-                type="button"
-                className="flex items-center gap-1.5 text-[11.5px] font-semibold text-muted-foreground disabled:opacity-50"
-                disabled={togglingChannels.has(activeProvider.channelName)}
-                onClick={() => toggleSingleProvider(activeProvider.channelName, !activeProvider.enabled)}
-              >
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ background: activeProvider.enabled ? "var(--lrs-success)" : "var(--lrs-faint)" }}
-                />
-                {activeProvider.enabled ? t("common.enabled") : t("common.disabled")}
-              </button>
-              <button
-                type="button"
-                className="text-[11.5px] font-semibold text-destructive"
-                onClick={() => openDeleteDialog(activeProvider)}
-              >
-                {t("common.delete")}
-              </button>
-            </div>
+          <span className="font-mono text-[11px] text-muted-foreground">{activeProvider?.channelName}</span>
+          {activeProvider ? (
+            <button
+              type="button"
+              className="ml-auto text-[11.5px] font-semibold text-destructive"
+              onClick={() => openDeleteDialog(activeProvider)}
+            >
+              {t("common.delete")}
+            </button>
           ) : null}
         </div>
         <div className="flex flex-col gap-5 px-6 py-5">
@@ -747,40 +879,19 @@ export function ProvidersPage({
               <Input
                 id="pane-target-url"
                 value={formState.targetBaseUrl}
+                readOnly={presetLocked}
+                aria-readonly={presetLocked}
+                className={cn(presetLocked && "cursor-not-allowed bg-muted/50 text-muted-foreground")}
                 onChange={(event) => setFormState((current) => ({ ...current, targetBaseUrl: event.target.value }))}
               />
               <FieldDescription>
-                {formState.type === "openai" ? t("providers.targetUrlOpenaiHint") : t("providers.targetUrlAnthropicHint")}
+                {presetLocked
+                  ? t("providers.targetUrlPresetHint")
+                  : formState.type === "openai"
+                    ? t("providers.targetUrlOpenaiHint")
+                    : t("providers.targetUrlAnthropicHint")}
               </FieldDescription>
             </Field>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              {formState.type === "openai" ? (
-                <Field>
-                  <FieldLabel>{t("providers.responsesModeLabel")}</FieldLabel>
-                  <SegmentedToggle
-                    value={formState.responsesMode}
-                    onChange={(value) => setFormState((current) => ({ ...current, responsesMode: value as OpenAiResponsesMode }))}
-                    options={[
-                      { value: "native", label: t("providers.responsesModeNative") },
-                      { value: "chat_compat", label: t("providers.responsesModeChatCompat") },
-                      { value: "disabled", label: t("providers.responsesModeDisabled") },
-                    ]}
-                  />
-                </Field>
-              ) : null}
-              <Field>
-                <FieldLabel>{t("providers.routingVisibilityLabel")}</FieldLabel>
-                <SegmentedToggle
-                  value={formState.routingVisibility}
-                  onChange={(value) => setFormState((current) => ({ ...current, routingVisibility: value as RoutingVisibility }))}
-                  options={[
-                    { value: "direct", label: t("providers.routingVisibilityDirect") },
-                    { value: "explicit_only", label: t("providers.routingVisibilityExplicitOnly") },
-                  ]}
-                />
-              </Field>
-            </div>
 
             <Field>
               <FieldLabel htmlFor="pane-auth-header">{t("providers.authMethodLabel")}</FieldLabel>
@@ -818,6 +929,90 @@ export function ProvidersPage({
                   {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
               </div>
+              {dialogMode === "edit" ? (
+                <button
+                  type="button"
+                  className="text-xs text-primary hover:underline self-start"
+                  onClick={() => setFormState((current) => ({ ...current, apiKey: "", apiKeyDirty: true, clearAuth: true }))}
+                >
+                  {t("providers.clearAuth")}
+                </button>
+              ) : null}
+            </Field>
+
+            {/* Models as chips */}
+            <Field>
+              <FieldLabel>{t("providers.modelsLabel")}</FieldLabel>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {formState.models.filter((r) => r.model.trim() !== "").map((row) => (
+                  <span
+                    key={row.id}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[#cfe8ea] bg-[#eef8f8] px-2.5 py-1 text-xs text-[#0c7c86]"
+                  >
+                    {row.model}
+                    <button
+                      type="button"
+                      className="text-[#0c7c86]/60 transition-colors hover:text-destructive"
+                      onClick={() => removeModelRow(row.id)}
+                      aria-label={t("providers.removeModel")}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                ))}
+                <div className="flex items-center gap-1">
+                  <input
+                    className="w-28 rounded-lg border border-dashed border-[#cdd9d9] bg-transparent px-2.5 py-1 text-xs text-muted-foreground outline-none placeholder:text-muted-foreground/50 focus:ring-0"
+                    placeholder={t("providers.addButton")}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        const target = event.target as HTMLInputElement;
+                        if (target.value.trim()) {
+                          addModelRow();
+                          target.value = "";
+                        }
+                      }
+                    }}
+                  />
+                  <Button type="button" variant="ghost" size="sm" onClick={addModelRow}>
+                    <Plus data-icon="inline-start" />
+                    {t("providers.addButton")}
+                  </Button>
+                </div>
+                <Button type="button" variant="ghost" size="sm" onClick={() => void openSyncDialog()} disabled={!formState.targetBaseUrl.trim()}>
+                  <Download data-icon="inline-start" />
+                  {t("providers.syncButton")}
+                </Button>
+              </div>
+            </Field>
+
+            {formState.type === "openai" ? (
+              <Field>
+                <FieldLabel>{t("providers.responsesModeLabel")}</FieldLabel>
+                <SegmentedToggle
+                  value={formState.responsesMode}
+                  onChange={(value) => setFormState((current) => ({ ...current, responsesMode: value as OpenAiResponsesMode }))}
+                  options={[
+                    { value: "native", label: t("providers.responsesModeNative") },
+                    { value: "chat_compat", label: t("providers.responsesModeChatCompat") },
+                    { value: "disabled", label: t("providers.responsesModeDisabled") },
+                  ]}
+                />
+              </Field>
+            ) : null}
+
+            <Field>
+              <FieldLabel>{t("providers.routingVisibilityLabel")}</FieldLabel>
+              <SegmentedToggle
+                value={formState.routingVisibility}
+                onChange={(value) => setFormState((current) => ({ ...current, routingVisibility: value as RoutingVisibility }))}
+                options={[
+                  { value: "direct", label: t("providers.routingVisibilityDirect") },
+                  { value: "explicit_only", label: t("providers.routingVisibilityExplicitOnly") },
+                ]}
+              />
+              <FieldDescription>{t("providers.routingVisibilityHint")}</FieldDescription>
             </Field>
 
             <Field>
@@ -845,66 +1040,27 @@ export function ProvidersPage({
             </Field>
           </FieldGroup>
 
-          {/* Models */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold">{t("providers.modelsLabel")}</span>
-              <div className="flex gap-1">
-                <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={clearAllModels} disabled={formState.models.every((r) => r.model.trim() === "")}>
-                  <Trash2 data-icon="inline-start" />
-                  {t("providers.clearAllModels")}
-                </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => void openSyncDialog()} disabled={!formState.targetBaseUrl.trim()}>
-                  <Download data-icon="inline-start" />
-                  {t("providers.syncButton")}
-                </Button>
-                <Button type="button" variant="ghost" size="sm" onClick={addModelRow}>
-                  <Plus data-icon="inline-start" />
-                  {t("providers.addButton")}
-                </Button>
-              </div>
-            </div>
-            <div className="overflow-hidden rounded-lg border border-border">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border bg-muted/40">
-                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">#</th>
-                    <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("providers.modelIdHeader")}</th>
-                    <th className="w-8 px-2 py-2" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {formState.models.map((row, index) => (
-                    <tr key={row.id} className="border-b border-border/60 last:border-0 hover:bg-muted/20">
-                      <td className="px-3 py-1.5 tabular-nums text-muted-foreground">{index + 1}</td>
-                      <td className="px-3 py-1">
-                        <input
-                          className="w-full bg-transparent font-mono text-xs outline-none placeholder:text-muted-foreground/50 focus:ring-0"
-                          value={row.model}
-                          placeholder="model-id"
-                          onChange={(event) => updateModelRow(row.id, { model: event.target.value })}
-                        />
-                      </td>
-                      <td className="px-2 py-1">
-                        <button type="button" className="text-muted-foreground transition-colors hover:text-destructive" onClick={() => removeModelRow(row.id)} aria-label={t("providers.removeModel")}>
-                          <X className="size-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {formState.models.length === 0 && (
-                    <tr><td colSpan={3} className="px-3 py-4 text-center text-xs text-muted-foreground">{t("providers.noModels")}</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 border-t border-border pt-4">
-            {dialogMode === "edit" ? (
-              <Button type="button" variant="ghost" size="sm" onClick={() => setFormState((current) => ({ ...current, apiKey: "", apiKeyDirty: true, clearAuth: true }))}>
-                {t("providers.clearAuth")}
-              </Button>
+          {/* Bottom: enable toggle + save */}
+          <div className="flex items-center gap-3 border-t border-border pt-4">
+            {dialogMode === "edit" && activeProvider ? (
+              <>
+                <button
+                  type="button"
+                  className="relative h-6 w-[42px] rounded-full transition-colors disabled:opacity-50"
+                  style={{ background: activeProvider.enabled ? "var(--primary)" : "var(--muted)" }}
+                  disabled={togglingChannels.has(activeProvider.channelName)}
+                  onClick={() => toggleSingleProvider(activeProvider.channelName, !activeProvider.enabled)}
+                  aria-label={activeProvider.enabled ? t("providers.disableChannel") : t("providers.enableChannel")}
+                >
+                  <span
+                    className="absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white transition-all"
+                    style={{ [activeProvider.enabled ? "right" : "left"]: "3px" } as React.CSSProperties}
+                  />
+                </button>
+                <span className="text-[13px] text-muted-foreground">
+                  {activeProvider.enabled ? t("providers.enableChannel") : t("providers.disableChannel")}
+                </span>
+              </>
             ) : null}
             <Button type="button" variant="outline" size="sm" onClick={() => setDialogOpen(false)}>{t("common.cancel")}</Button>
             <Button type="submit" size="sm" className="ml-auto" disabled={submitPending}>
@@ -938,7 +1094,7 @@ export function ProvidersPage({
             </EmptyContent>
           </Empty>
         ) : (
-          <div className="grid min-h-[calc(100vh-9rem)] flex-1 grid-cols-1 overflow-hidden rounded-xl border border-border lg:grid-cols-[1fr_1.05fr]">
+          <div className="grid min-h-[calc(100vh-9rem)] flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_1.05fr]">
             {/* Channel list */}
             <div className="flex min-h-0 flex-col border-b border-border lg:border-b-0 lg:border-r">
               <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-3">
@@ -1067,364 +1223,212 @@ export function ProvidersPage({
         )}
       </div>
 
-      <Dialog open={false} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-5xl">
-          <DialogHeader>
-            <DialogTitle>
-              {dialogMode === "create" ? t("providers.createDialogTitle") : t("providers.editDialogTitle", { name: activeProvider?.channelName ?? "" })}
-            </DialogTitle>
-            <DialogDescription>
-              {dialogMode === "create"
-                ? t("providers.createDialogDesc")
-                : t("providers.editDialogDesc")}
-            </DialogDescription>
+      {/* 新增渠道弹窗 — Design: LRS Clear 风格五 */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[600px]">
+          <DialogHeader className="flex-row items-center gap-3 space-y-0 border-b border-border px-7 py-5">
+            <span className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-accent text-[17px] font-bold text-primary">
+              +
+            </span>
+            <div className="flex flex-col gap-0.5">
+              <DialogTitle className="text-base font-extrabold">{t("providers.createDialogTitle")}</DialogTitle>
+              <DialogDescription className="text-[11.5px] text-muted-foreground">
+                {t("providers.createDialogSubtitle")}
+              </DialogDescription>
+            </div>
           </DialogHeader>
 
-          <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-            {formError ? (
-              <Alert variant="destructive">
-                <AlertTitle>{t("common.saveFailed")}</AlertTitle>
-                <AlertDescription>{formError}</AlertDescription>
-              </Alert>
-            ) : null}
+          <form className="flex flex-col" onSubmit={handleSubmit}>
+            <div className="flex max-h-[70vh] flex-col gap-[18px] overflow-y-auto px-7 py-6">
+              {formError ? (
+                <Alert variant="destructive">
+                  <AlertTitle>{t("common.saveFailed")}</AlertTitle>
+                  <AlertDescription>{formError}</AlertDescription>
+                </Alert>
+              ) : null}
 
-            <div className="flex max-h-[70vh] gap-6 overflow-hidden">
-              {/* Left: Provider config */}
-              <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel htmlFor="provider-channel-name">{t("providers.channelNameLabel")}</FieldLabel>
-                    <Input
-                      id="provider-channel-name"
-                      value={formState.channelName}
-                      onChange={(event) =>
-                        setFormState((current) => ({ ...current, channelName: event.target.value }))
-                      }
-                    />
-                    <FieldDescription>
-                      {t("providers.channelNameHint", { name: formState.channelName || "channel-name" })}
-                    </FieldDescription>
-                  </Field>
+              <PresetChannelPicker
+                type={formState.type}
+                baseUrl={formState.targetBaseUrl}
+                onPick={(preset) =>
+                  setFormState((current) => ({
+                    ...current,
+                    type: preset.type,
+                    targetBaseUrl: preset.baseUrl,
+                    channelName: current.channelName.trim() ? current.channelName : preset.suggestedName,
+                    authHeader: "auto",
+                  }))
+                }
+                onCustom={() =>
+                  setFormState((current) => ({
+                    ...current,
+                    targetBaseUrl: "",
+                    channelName: matchPreset(current.type, current.targetBaseUrl) ? "" : current.channelName,
+                  }))
+                }
+              />
 
-                  <Field>
-                    <FieldLabel htmlFor="provider-type">{t("providers.typeLabel")}</FieldLabel>
-                    <Select
-                      value={formState.type}
-                      onValueChange={(value) =>
-                        setFormState((current) => ({
-                          ...current,
-                          type: value as ProviderFormState["type"],
-                        }))
-                      }
-                    >
-                      <SelectTrigger id="provider-type" className="w-full">
-                        <SelectValue placeholder={t("providers.typeLabel")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="anthropic">Anthropic</SelectItem>
-                          <SelectItem value="openai">OpenAI</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <FieldDescription>
-                      {t("providers.typeOpenaiHint")}
-                    </FieldDescription>
-                  </Field>
+              <Field>
+                <FieldLabel htmlFor="create-channel-name">{t("providers.channelNameLabel")}</FieldLabel>
+                <Input
+                  id="create-channel-name"
+                  value={formState.channelName}
+                  placeholder={t("providers.createChannelNamePlaceholder")}
+                  onChange={(event) => setFormState((current) => ({ ...current, channelName: event.target.value }))}
+                />
+              </Field>
 
-                  <Field>
-                    <FieldLabel htmlFor="provider-target-url">{t("providers.targetUrlLabel")}</FieldLabel>
-                    <Input
-                      id="provider-target-url"
-                      value={formState.targetBaseUrl}
-                      onChange={(event) =>
-                        setFormState((current) => ({ ...current, targetBaseUrl: event.target.value }))
-                      }
-                    />
-                    <FieldDescription>
-                      {formState.type === "openai"
-                        ? t("providers.targetUrlOpenaiHint")
-                        : t("providers.targetUrlAnthropicHint")}
-                    </FieldDescription>
-                  </Field>
-
-                  {formState.type === "openai" ? (
-                    <Field>
-                      <FieldLabel htmlFor="provider-responses-mode">
-                        {t("providers.responsesModeLabel")}
-                      </FieldLabel>
-                      <Select
-                        value={formState.responsesMode}
-                        onValueChange={(value) =>
-                          setFormState((current) => ({
-                            ...current,
-                            responsesMode: value as OpenAiResponsesMode,
-                          }))
-                        }
-                      >
-                        <SelectTrigger id="provider-responses-mode" className="w-full">
-                          <SelectValue placeholder={t("providers.responsesModeLabel")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            <SelectItem value="native">{t("providers.responsesModeNative")}</SelectItem>
-                            <SelectItem value="chat_compat">{t("providers.responsesModeChatCompat")}</SelectItem>
-                            <SelectItem value="disabled">{t("providers.responsesModeDisabled")}</SelectItem>
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <FieldDescription>
-                        {t("providers.responsesModeHint")}
-                      </FieldDescription>
-                    </Field>
-                  ) : null}
-
-                  <Field>
-                    <FieldLabel htmlFor="provider-priority">{t("providers.priorityLabel")}</FieldLabel>
-                    <Input
-                      id="provider-priority"
-                      inputMode="numeric"
-                      value={formState.priority}
-                      onChange={(event) =>
-                        setFormState((current) => ({ ...current, priority: event.target.value }))
-                      }
-                    />
-                    <FieldDescription>
-                      {t("providers.priorityHint")}
-                    </FieldDescription>
-                  </Field>
-
-                  <Field>
-                    <FieldLabel htmlFor="provider-routing-visibility">{t("providers.routingVisibilityLabel")}</FieldLabel>
-                    <Select
-                      value={formState.routingVisibility}
-                      onValueChange={(value) =>
-                        setFormState((current) => ({
-                          ...current,
-                          routingVisibility: value as RoutingVisibility,
-                        }))
-                      }
-                    >
-                      <SelectTrigger id="provider-routing-visibility" className="w-full">
-                        <SelectValue placeholder={t("providers.routingVisibilityLabel")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="direct">{t("providers.routingVisibilityDirect")}</SelectItem>
-                          <SelectItem value="explicit_only">{t("providers.routingVisibilityExplicitOnly")}</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <FieldDescription>
-                      {t("providers.routingVisibilityHint")}
-                    </FieldDescription>
-                  </Field>
-
-                  <FieldSeparator>{t("providers.fieldSeparatorRouting")}</FieldSeparator>
-
-                  <Field>
-                    <FieldLabel htmlFor="provider-system-prompt">{t("providers.systemPromptLabel")}</FieldLabel>
-                    <Textarea
-                      id="provider-system-prompt"
-                      rows={4}
-                      value={formState.systemPrompt}
-                      onChange={(event) =>
-                        setFormState((current) => ({ ...current, systemPrompt: event.target.value }))
-                      }
-                    />
-                    <FieldDescription>
-                      {t("providers.systemPromptHint")}
-                    </FieldDescription>
-                  </Field>
-
-                  <FieldSeparator>{t("providers.fieldSeparatorAuth")}</FieldSeparator>
-
-                  <Field>
-                    <FieldLabel htmlFor="provider-auth-header">{t("providers.authMethodLabel")}</FieldLabel>
-                    <Select
-                      value={formState.authHeader}
-                      onValueChange={(value) =>
-                        setFormState((current) => ({
-                          ...current,
-                          authHeader: value as ProviderFormState["authHeader"],
-                          apiKeyDirty: true,
-                          clearAuth: false,
-                        }))
-                      }
-                    >
-                      <SelectTrigger id="provider-auth-header" className="w-full">
-                        <SelectValue placeholder={t("providers.selectAuthMethod")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="auto">{t("providers.authMethodAuto")}</SelectItem>
-                          <SelectItem value="x-api-key">x-api-key</SelectItem>
-                          <SelectItem value="authorization">Authorization: Bearer</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <FieldDescription>
-                      {t("providers.authMethodHint")}
-                    </FieldDescription>
-                  </Field>
-
-                  <Field>
-                    <FieldLabel htmlFor="provider-auth-value">{t("providers.credentialLabel")}</FieldLabel>
-                    <div className="relative">
-                      <Input
-                        id="provider-auth-value"
-                        type={showApiKey ? "text" : "password"}
-                        value={formState.apiKey}
-                        onChange={(event) =>
-                          setFormState((current) => ({
-                            ...current,
-                            apiKey: event.target.value,
-                            apiKeyDirty: true,
-                            clearAuth: false,
-                          }))
-                        }
-                        placeholder={dialogMode === "edit" ? t("providers.noApiKey") : ""}
-                        className="pr-8"
-                      />
-                      <button
-                        type="button"
-                        tabIndex={-1}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                        onClick={() => setShowApiKey((v) => !v)}
-                        aria-label={showApiKey ? t("providers.hideApiKey") : t("providers.showApiKey")}
-                      >
-                        {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                      </button>
-                    </div>
-                    
-                  </Field>
-
-                  <FieldSeparator>{t("providers.fieldSeparatorAdvanced")}</FieldSeparator>
-
-                  <Field>
-                    <FieldLabel htmlFor="provider-extra-fields">{t("providers.extraFieldsLabel")}</FieldLabel>
-                    <Textarea
-                      id="provider-extra-fields"
-                      rows={3}
-                      value={formState.extraFieldsJson}
-                      onChange={(event) =>
-                        setFormState((current) => ({
-                          ...current,
-                          extraFieldsJson: event.target.value,
-                        }))
-                      }
-                      placeholder='{"vendor": "internal"}'
-                      className="text-xs"
-                    />
-                    <FieldDescription>
-                      {t("providers.extraFieldsHint")}
-                    </FieldDescription>
-                  </Field>
-                </FieldGroup>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel>{t("providers.typeLabel")}</FieldLabel>
+                  <SegmentedToggle
+                    value={formState.type}
+                    onChange={(value) => setFormState((current) => ({ ...current, type: value as ProviderFormState["type"] }))}
+                    options={[
+                      { value: "openai", label: "OpenAI" },
+                      { value: "anthropic", label: "Anthropic" },
+                    ]}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="create-priority">{t("providers.priorityLabel")}</FieldLabel>
+                  <Input
+                    id="create-priority"
+                    inputMode="numeric"
+                    value={formState.priority}
+                    onChange={(event) => setFormState((current) => ({ ...current, priority: event.target.value }))}
+                  />
+                </Field>
               </div>
 
-              {/* Divider */}
-              <div className="w-px shrink-0 bg-border" />
+              <Field>
+                <FieldLabel htmlFor="create-target-url">{t("providers.targetUrlLabel")}</FieldLabel>
+                <Input
+                  id="create-target-url"
+                  value={formState.targetBaseUrl}
+                  placeholder={t("providers.createBaseUrlPlaceholder")}
+                  readOnly={presetLocked}
+                  aria-readonly={presetLocked}
+                  className={cn(presetLocked && "cursor-not-allowed bg-muted/50 text-muted-foreground")}
+                  onChange={(event) => setFormState((current) => ({ ...current, targetBaseUrl: event.target.value }))}
+                />
+                <FieldDescription>
+                  {presetLocked
+                    ? t("providers.targetUrlPresetHint")
+                    : formState.type === "openai"
+                      ? t("providers.targetUrlOpenaiHint")
+                      : t("providers.targetUrlAnthropicHint")}
+                </FieldDescription>
+              </Field>
 
-              {/* Right: Models - wider, table style */}
-              <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Models</span>
-                  <div className="flex gap-1">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={clearAllModels}
-                      disabled={formState.models.every((r) => r.model.trim() === "")}
+              <Field>
+                <FieldLabel htmlFor="create-auth-value">{t("providers.credentialLabel")}</FieldLabel>
+                <div className="relative">
+                  <Input
+                    id="create-auth-value"
+                    type={showApiKey ? "text" : "password"}
+                    value={formState.apiKey}
+                    placeholder={t("providers.createApiKeyPlaceholder")}
+                    onChange={(event) => setFormState((current) => ({ ...current, apiKey: event.target.value, apiKeyDirty: true, clearAuth: false }))}
+                    className="pr-8"
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                    onClick={() => setShowApiKey((v) => !v)}
+                    aria-label={showApiKey ? t("providers.hideApiKey") : t("providers.showApiKey")}
+                  >
+                    {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              </Field>
+
+              <Field>
+                <FieldLabel>{t("providers.modelsLabel")}</FieldLabel>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {formState.models.filter((r) => r.model.trim() !== "").map((row) => (
+                    <span
+                      key={row.id}
+                      className="inline-flex items-center gap-1 rounded-lg border border-[#cfe8ea] bg-[#eef8f8] px-2.5 py-1 text-xs text-[#0c7c86]"
                     >
-                      <Trash2 data-icon="inline-start" />
-                      {t("providers.clearAllModels")}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => void openSyncDialog()}
-                      disabled={!formState.targetBaseUrl.trim()}
-                    >
+                      {row.model}
+                      <button
+                        type="button"
+                        className="text-[#0c7c86]/60 transition-colors hover:text-destructive"
+                        onClick={() => removeModelRow(row.id)}
+                        aria-label={t("providers.removeModel")}
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </span>
+                  ))}
+                  {formState.models.filter((r) => r.model.trim() !== "").length === 0 ? (
+                    <span className="rounded-lg border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground">
+                      {t("providers.createModelsHint")}
+                    </span>
+                  ) : null}
+                  <div className="flex items-center gap-1">
+                    <input
+                      className="w-28 rounded-lg border border-dashed border-[#cdd9d9] bg-transparent px-2.5 py-1 text-xs text-muted-foreground outline-none placeholder:text-muted-foreground/50 focus:ring-0"
+                      placeholder={t("providers.addButton")}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault()
+                          const target = event.target as HTMLInputElement
+                          if (target.value.trim()) {
+                            setFormState((current) => ({ ...current, models: [...current.models, createModelRow({ model: target.value.trim() } as ProviderModelInfo)] }))
+                            target.value = ""
+                          }
+                        }
+                      }}
+                    />
+                    <Button type="button" variant="ghost" size="sm" onClick={() => void openSyncDialog()} disabled={!formState.targetBaseUrl.trim()}>
                       <Download data-icon="inline-start" />
                       {t("providers.syncButton")}
                     </Button>
-                    <Button type="button" variant="ghost" size="sm" onClick={addModelRow}>
-                      <Plus data-icon="inline-start" />
-                      {t("providers.addButton")}
-                    </Button>
                   </div>
                 </div>
+              </Field>
 
-                <div className="rounded-none border border-border/60 overflow-hidden">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-border/60 bg-muted/40">
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">#</th>
-                        <th className="px-3 py-2 text-left font-medium text-muted-foreground">{t("providers.modelIdHeader")}</th>
-                        <th className="w-8 px-2 py-2" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {formState.models.map((row, index) => (
-                        <tr key={row.id} className="border-b border-border/40 last:border-0 hover:bg-muted/20">
-                          <td className="px-3 py-1.5 text-muted-foreground tabular-nums">{index + 1}</td>
-                          <td className="px-3 py-1">
-                            <input
-                              className="w-full bg-transparent outline-none font-mono text-xs placeholder:text-muted-foreground/50 focus:ring-0"
-                              value={row.model}
-                              placeholder="model-id"
-                              onChange={(event) => updateModelRow(row.id, { model: event.target.value })}
-                            />
-                          </td>
-                          <td className="px-2 py-1">
-                            <button
-                              type="button"
-                              className="text-muted-foreground hover:text-destructive transition-colors"
-                              onClick={() => removeModelRow(row.id)}
-                              aria-label={t("providers.removeModel")}
-                            >
-                              <X className="size-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                      {formState.models.length === 0 && (
-                        <tr>
-                          <td colSpan={3} className="px-3 py-4 text-center text-muted-foreground text-xs">{t("providers.noModels")}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+              {formState.type === "openai" ? (
+                <Field>
+                  <FieldLabel>{t("providers.responsesModeLabel")}</FieldLabel>
+                  <SegmentedToggle
+                    value={formState.responsesMode}
+                    onChange={(value) => setFormState((current) => ({ ...current, responsesMode: value as OpenAiResponsesMode }))}
+                    options={[
+                      { value: "native", label: t("providers.responsesModeNative") },
+                      { value: "chat_compat", label: t("providers.responsesModeChatCompat") },
+                      { value: "disabled", label: t("providers.responsesModeDisabled") },
+                    ]}
+                  />
+                </Field>
+              ) : null}
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="relative h-6 w-[42px] rounded-full transition-colors"
+                  style={{ background: createEnabled ? "var(--primary)" : "var(--muted)" }}
+                  onClick={() => setCreateEnabled((v) => !v)}
+                  aria-label={t("providers.createEnabledHint")}
+                >
+                  <span
+                    className="absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white transition-all"
+                    style={{ [createEnabled ? "right" : "left"]: "3px" } as React.CSSProperties}
+                  />
+                </button>
+                <span className="text-[13px] text-muted-foreground">{t("providers.createEnabledHint")}</span>
               </div>
             </div>
 
-            <DialogFooter>
-              {dialogMode === "edit" ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() =>
-                    setFormState((current) => ({
-                      ...current,
-                      apiKey: "",
-                      apiKeyDirty: true,
-                      clearAuth: true,
-                    }))
-                  }
-                >
-                  {t("providers.clearAuth")}
-                </Button>
-              ) : null}
-              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                {t("providers.cancel")}
+            <DialogFooter className="border-t border-border px-7 py-4">
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                {t("common.cancel")}
               </Button>
               <Button type="submit" disabled={submitPending}>
-                {submitPending ? t("providers.saving") : dialogMode === "create" ? t("providers.createChannel") : t("providers.saveChanges")}
+                {submitPending ? t("providers.saving") : t("providers.createChannel")}
               </Button>
             </DialogFooter>
           </form>

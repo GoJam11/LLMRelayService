@@ -1,0 +1,1 @@
+ALTER TABLE "console_requests" ADD COLUMN "cost_pricing_json" text;

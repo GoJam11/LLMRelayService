@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/ui/page-header"
 import {
   Dialog,
   DialogContent,
@@ -325,19 +324,18 @@ export function KeysPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        icon={KeyRound}
-        title={t("keys.title")}
-        description={t("keys.description")}
-        actions={
-          <>
-            <Button type="button" variant="outline" size="sm" onClick={() => void loadKeys()}>{t("common.refreshData")}</Button>
-            <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
-              <Plus data-icon="inline-start" />{t("keys.newKey")}
-            </Button>
-          </>
-        }
-      />
+      {/* Toolbar — count + actions */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-xs text-muted-foreground">
+          {t("keys.totalCount", { count: keys?.length ?? 0 })}
+        </span>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => void loadKeys()}>{t("common.refreshData")}</Button>
+          <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus data-icon="inline-start" />{t("keys.newKey")}
+          </Button>
+        </div>
+      </div>
 
       {error ? (
         <Alert variant="destructive">

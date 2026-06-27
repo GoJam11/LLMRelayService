@@ -1,10 +1,9 @@
 import { useMemo, useState } from "react"
-import { BarChart3, Download, MoveRight } from "lucide-react"
+import { Download, MoveRight } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
 import { Combobox } from "@/components/ui/combobox"
-import { PageHeader } from "@/components/ui/page-header"
 import { UsageTrendChart } from "@/features/dashboard/components/usage-trend-chart"
 import { useUsageStats } from "@/features/dashboard/hooks/use-usage-stats"
 import type { ConsoleStatsBucket } from "@/features/dashboard/types"
@@ -115,24 +114,7 @@ export function UsagePage({
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        icon={BarChart3}
-        title={t("usage.title")}
-        description={t("usage.description")}
-        actions={
-          <>
-            <Button type="button" variant="outline" size="sm" onClick={() => void refresh()}>
-              {t("common.refreshData")}
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={onNavigateToLogs}>
-              {t("common.viewLogs")}
-              <MoveRight data-icon="inline-end" />
-            </Button>
-          </>
-        }
-      />
-
-      {/* Group tabs + range/export */}
+      {/* Group tabs + range/export + actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border">
         <div className="flex">
           {groupTabs.map((g) => (
@@ -163,6 +145,13 @@ export function UsagePage({
           <Button type="button" variant="outline" size="sm" onClick={handleExportCsv}>
             <Download data-icon="inline-start" />
             {t("usage.exportCsv")}
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => void refresh()}>
+            {t("common.refreshData")}
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={onNavigateToLogs}>
+            {t("common.viewLogs")}
+            <MoveRight data-icon="inline-end" />
           </Button>
         </div>
       </div>

@@ -154,6 +154,7 @@ interface ConsoleRequestRow {
   ephemeral_5m_input_tokens: number | string;
   ephemeral_1h_input_tokens: number | string;
   token_usage_estimated: number | string;
+  cost_pricing_json: string | null;
   failover_from: string | null;
   failover_chain_json: string | null;
   original_route_prefix: string | null;
@@ -270,6 +271,7 @@ type ConsoleRequestListRow = Pick<ConsoleRequestRow,
   | 'ephemeral_5m_input_tokens'
   | 'ephemeral_1h_input_tokens'
   | 'token_usage_estimated'
+  | 'cost_pricing_json'
   | 'failover_from'
   | 'failover_chain_json'
   | 'original_route_prefix'
@@ -435,6 +437,7 @@ type ConsoleUsageRow = {
   first_chunk_at: number | null;
   first_token_at: number | null;
   completed_at: number | null;
+  cost_pricing_json: string | null;
   failover_from: string | null;
 };
 
@@ -459,6 +462,22 @@ function getEffectivePricing(
   overrides?: Map<string, ModelMetadataOverride>,
 ): ModelPricing | null {
   return overrides?.get(getModelOverrideKey(routePrefix, model))?.pricing ?? getModelPricing(model);
+}
+
+// Cost is computed from the price effective when the request ran. Prefer the snapshot
+// persisted on the row (cost_pricing_json); fall back to current pricing for legacy rows
+// recorded before the snapshot column existed.
+function resolveRowPricing(
+  costPricingJson: string | null | undefined,
+  routePrefix: string,
+  model: string,
+  overrides?: Map<string, ModelMetadataOverride>,
+): ModelPricing | null {
+  const snapshot = parseJson<ModelPricing>(costPricingJson ?? null);
+  if (snapshot && typeof snapshot.input === 'number' && typeof snapshot.output === 'number') {
+    return snapshot;
+  }
+  return getEffectivePricing(routePrefix, model, overrides);
 }
 
 function getClientLabel(kind: string): string {
@@ -576,7 +595,7 @@ function updateUsageAccumulator(
       cache_creation_input_tokens: row.cache_creation_input_tokens,
       cache_read_input_tokens: row.cache_read_input_tokens,
       cached_input_tokens: row.cached_input_tokens,
-    }, getEffectivePricing(row.route_prefix, model, overrides), row.upstream_type);
+    }, resolveRowPricing(row.cost_pricing_json, row.route_prefix, model, overrides), row.upstream_type);
 
     accumulator.total_cost += cost.total_cost;
     accumulator.total_input_cost += cost.input_cost;
@@ -714,6 +733,7 @@ async function listUsageRows(filters?: ConsoleQueryFilters): Promise<ConsoleUsag
     first_chunk_at: consoleRequests.firstChunkAt,
     first_token_at: consoleRequests.firstTokenAt,
     completed_at: consoleRequests.completedAt,
+    cost_pricing_json: consoleRequests.costPricingJson,
     failover_from: consoleRequests.failoverFrom,
   }).from(consoleRequests)
     .where(buildRequestWhere(filters));
@@ -740,6 +760,7 @@ async function listUsageRows(filters?: ConsoleQueryFilters): Promise<ConsoleUsag
     first_chunk_at: normalizeNullableNumber(row.first_chunk_at),
     first_token_at: normalizeNullableNumber(row.first_token_at),
     completed_at: normalizeNullableNumber(row.completed_at),
+    cost_pricing_json: row.cost_pricing_json ?? null,
     failover_from: row.failover_from ?? null,
   }));
 }
@@ -805,7 +826,7 @@ async function buildUsageStats(filters?: ConsoleQueryFilters): Promise<ConsoleUs
         cache_creation_input_tokens: row.cache_creation_input_tokens,
         cache_read_input_tokens: row.cache_read_input_tokens,
         cached_input_tokens: row.cached_input_tokens,
-      }, getEffectivePricing(row.route_prefix, model, overrides), row.upstream_type);
+      }, resolveRowPricing(row.cost_pricing_json, row.route_prefix, model, overrides), row.upstream_type);
       point.total_cost += cost.total_cost;
     }
     timeSeriesMap.set(bucketStart, point);
@@ -1110,6 +1131,7 @@ function toCamelCaseRow(row: typeof consoleRequests.$inferSelect): ConsoleReques
     ephemeral_5m_input_tokens: row.ephemeral5mInputTokens,
     ephemeral_1h_input_tokens: row.ephemeral1hInputTokens,
     token_usage_estimated: row.tokenUsageEstimated,
+    cost_pricing_json: row.costPricingJson,
     failover_from: row.failoverFrom,
     failover_chain_json: row.failoverChainJson,
     original_route_prefix: row.originalRoutePrefix,
@@ -1186,9 +1208,10 @@ function withCalculatedUsage(
   upstreamType: UpstreamTypeForConsole,
   routePrefix: string,
   overrides?: Map<string, ModelMetadataOverride>,
+  costPricingJson?: string | null,
 ): ResponseUsageForConsole {
   const model = responseUsage.model || requestModel;
-  const pricing = getEffectivePricing(routePrefix, model, overrides);
+  const pricing = resolveRowPricing(costPricingJson, routePrefix, model, overrides);
   const cost = calculateCostWithPricing(responseUsage, pricing, upstreamType);
 
   return {
@@ -1243,7 +1266,7 @@ function mapListRow(
   overrides?: Map<string, ModelMetadataOverride>,
 ): ConsoleRequestListItem {
   const upstreamType = row.upstream_type === 'openai' ? 'openai' : 'anthropic';
-  const responseUsage = withCalculatedUsage(row.request_model, toUsage(row), upstreamType, row.route_prefix, overrides);
+  const responseUsage = withCalculatedUsage(row.request_model, toUsage(row), upstreamType, row.route_prefix, overrides, row.cost_pricing_json);
   const sourceRequestType = ((row as any).source_request_type ?? 'unknown') as DetectedRequestKind;
 
   return {
@@ -1282,7 +1305,7 @@ async function mapRow(row: ConsoleRequestRow): Promise<StoredConsoleRequest> {
   const requestId = row.request_id;
   const upstreamType = row.upstream_type === 'openai' ? 'openai' : 'anthropic';
   const overrides = await listModelMetadataOverrides();
-  const responseUsage = withCalculatedUsage(row.request_model, toUsage(row), upstreamType, row.route_prefix, overrides);
+  const responseUsage = withCalculatedUsage(row.request_model, toUsage(row), upstreamType, row.route_prefix, overrides, row.cost_pricing_json);
 
   return {
     request_id: requestId,
@@ -1351,10 +1374,13 @@ function normalizeOffset(offset: number): number {
   return Math.max(0, Math.trunc(offset));
 }
 
-async function getQuotaChargeMicrousd(
+// Resolve the pricing that applies to a request at response time. The returned snapshot
+// is both charged to the key quota and persisted on the row (cost_pricing_json) so later
+// price edits never rewrite this request's recorded cost.
+async function resolveRequestPricing(
   requestId: string,
   responseUsage: ResponseUsageForConsole,
-): Promise<number> {
+): Promise<{ pricing: ModelPricing | null; upstreamType: UpstreamTypeForConsole } | null> {
   const [request] = await db.select({
     routePrefix: consoleRequests.routePrefix,
     upstreamType: consoleRequests.upstreamType,
@@ -1364,7 +1390,7 @@ async function getQuotaChargeMicrousd(
     .where(eq(consoleRequests.requestId, requestId))
     .limit(1);
 
-  if (!request) return 0;
+  if (!request) return null;
 
   try {
     await ensurePricingLoaded();
@@ -1374,19 +1400,20 @@ async function getQuotaChargeMicrousd(
 
   const model = responseUsage.model || request.responseModel || request.requestModel;
   const overrides = await listModelMetadataOverrides();
-  const cost = calculateCostWithPricing(
-    responseUsage,
-    getEffectivePricing(request.routePrefix, model, overrides),
-    request.upstreamType === 'openai' ? 'openai' : 'anthropic',
-  );
-  return usdCostToChargeMicrousd(cost.total_cost);
+  return {
+    pricing: getEffectivePricing(request.routePrefix, model, overrides),
+    upstreamType: request.upstreamType === 'openai' ? 'openai' : 'anthropic',
+  };
 }
 
 async function syncApiKeyQuotaCharge(
   requestId: string,
   responseUsage: ResponseUsageForConsole,
+  pricing: ModelPricing | null,
+  upstreamType: UpstreamTypeForConsole,
 ): Promise<void> {
-  const chargedMicrousd = await getQuotaChargeMicrousd(requestId, responseUsage);
+  const cost = calculateCostWithPricing(responseUsage, pricing, upstreamType);
+  const chargedMicrousd = usdCostToChargeMicrousd(cost.total_cost);
 
   await db.execute(sql`
     WITH target AS (
@@ -1507,9 +1534,14 @@ export async function saveConsoleResponse(record: ConsoleResponseSnapshotInput):
     const totalStart = nowPerfMs();
     const timing = record.response_timing ?? {};
 
+    // Snapshot the pricing effective right now so the recorded cost is frozen against
+    // later price edits (logs + usage read this column back via resolveRowPricing).
+    const pricingResult = await resolveRequestPricing(record.request_id, record.response_usage);
+
     const txStart = nowPerfMs();
     await db.update(consoleRequests)
       .set({
+        costPricingJson: serializeJson(pricingResult?.pricing ?? null),
         responseStatus: record.response_status,
         responseStatusText: record.response_status_text,
         responseHeadersJson: serializeJson(record.response_headers ?? null),
@@ -1535,7 +1567,12 @@ export async function saveConsoleResponse(record: ConsoleResponseSnapshotInput):
         tokenUsageEstimated: record.response_usage.estimated ? 1 : 0,
       })
       .where(eq(consoleRequests.requestId, record.request_id));
-    await syncApiKeyQuotaCharge(record.request_id, record.response_usage);
+    await syncApiKeyQuotaCharge(
+      record.request_id,
+      record.response_usage,
+      pricingResult?.pricing ?? null,
+      pricingResult?.upstreamType ?? 'anthropic',
+    );
     const dbTxMs = elapsedPerfMs(txStart);
     const totalMs = elapsedPerfMs(totalStart);
 
@@ -1614,6 +1651,7 @@ export async function listConsoleRequests(
     ephemeral_5m_input_tokens: consoleRequests.ephemeral5mInputTokens,
     ephemeral_1h_input_tokens: consoleRequests.ephemeral1hInputTokens,
     token_usage_estimated: consoleRequests.tokenUsageEstimated,
+    cost_pricing_json: consoleRequests.costPricingJson,
     failover_from: consoleRequests.failoverFrom,
     failover_chain_json: consoleRequests.failoverChainJson,
     original_route_prefix: consoleRequests.originalRoutePrefix,

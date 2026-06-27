@@ -175,3 +175,6 @@ data/
 scripts/
 
 .idea
+# Local agent / hook config (not for distribution)
+.claude/
+.github/hooks/

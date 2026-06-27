@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { PageHeader } from "@/components/ui/page-header"
 import { Skeleton } from "@/components/ui/skeleton"
 import { fetchGatewayTimeoutSettings, updateGatewayTimeoutSettings } from "@/features/dashboard/api"
 import type { GatewayTimeoutSettingsPayload, TimeoutLimit } from "@/features/dashboard/types"
@@ -176,23 +175,17 @@ export function SettingsPage({ onUnauthorized }: { onUnauthorized: () => void })
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader
-        icon={Clock}
-        title={t("settings.title")}
-        description={t("settings.description")}
-        actions={
-          <>
-            <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => void loadSettings()}>
-              <RefreshCw data-icon="inline-start" className={loading ? "animate-spin" : ""} />
-              {t("common.refresh")}
-            </Button>
-            <Button type="button" size="sm" disabled={!canSubmit} onClick={() => void handleSave()}>
-              {saving ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Save data-icon="inline-start" />}
-              {saving ? t("common.saving") : t("common.save")}
-            </Button>
-          </>
-        }
-      />
+      {/* Toolbar — actions */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => void loadSettings()}>
+          <RefreshCw data-icon="inline-start" className={loading ? "animate-spin" : ""} />
+          {t("common.refresh")}
+        </Button>
+        <Button type="button" size="sm" disabled={!canSubmit} onClick={() => void handleSave()}>
+          {saving ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Save data-icon="inline-start" />}
+          {saving ? t("common.saving") : t("common.save")}
+        </Button>
+      </div>
 
       {error ? (
         <Alert variant="destructive">

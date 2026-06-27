@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react"
-import { BookOpen, Pencil, RefreshCw, Terminal, Wifi } from "lucide-react"
+import { Pencil, RefreshCw, Terminal, Wifi } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/ui/page-header"
 import {
   Card,
   CardContent,
@@ -356,27 +355,23 @@ export function ModelsPage({
   return (
     <div className="flex flex-col gap-6">
       {!embedded ? (
-        <PageHeader
-          icon={BookOpen}
-          title={t("models.title")}
-          description={
-            openaiModels !== null && anthropicModels !== null
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs text-muted-foreground">
+            {openaiModels !== null && anthropicModels !== null
               ? t("models.totalCount", { count: totalCount })
-              : undefined
-          }
-          actions={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={loading}
-              onClick={() => void loadModels()}
-            >
-              <RefreshCw className={loading ? "animate-spin" : ""} />
-              {t("common.refresh")}
-            </Button>
-          }
-        />
+              : ""}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={loading}
+            onClick={() => void loadModels()}
+          >
+            <RefreshCw className={loading ? "animate-spin" : ""} />
+            {t("common.refresh")}
+          </Button>
+        </div>
       ) : (
         <div className="flex justify-end">
           <Button

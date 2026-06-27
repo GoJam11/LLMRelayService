@@ -1,15 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { CheckCircle, GitFork, Loader2, MapIcon, Pencil, Plus, RefreshCw, RotateCcw, Save, Trash2, TriangleAlert, Wifi, X, XCircle } from "lucide-react"
+import React, { useCallback, useEffect, useMemo, useState } from "react"
+import { ArrowRight, CheckCircle, GitFork, Loader2, MapIcon, Plus, RefreshCw, RotateCcw, Save, Trash2, TriangleAlert, Wifi, X, XCircle } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
+import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+
 import { Checkbox } from "@/components/ui/checkbox"
-import { HelpDialogButton } from "@/components/help-dialog-button"
-import { PageHeader } from "@/components/ui/page-header"
-import { ModelsPage } from "@/features/dashboard/components/models-page"
+
 import {
   Dialog,
   DialogContent,
@@ -27,7 +25,6 @@ import {
 } from "@/components/ui/empty"
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldGroup,
   FieldLabel,
@@ -282,11 +279,6 @@ function buildRouteMapEntries(
       hiddenRoutes: matchedAlias ? modelRoutes : [],
     }
   })
-}
-
-function formatUpdatedAt(timestamp: number | null, language: string): string {
-  if (!timestamp) return "--"
-  return new Date(timestamp).toLocaleString(language === "en" ? "en-US" : "zh-CN", { hour12: false })
 }
 
 function toFailoverForm(policy: GatewayFailoverPolicyPayload): FailoverFormState {
@@ -589,6 +581,279 @@ function RouteMapRouteList({ routes, emptyLabel }: { routes: RouteMapRoute[]; em
   )
 }
 
+function GlobalFailoverEditor({
+  failoverForm,
+  failoverPolicy,
+  setFailoverForm,
+  savingFailover,
+  handleFailoverSave,
+  failoverError,
+  failoverFeedback,
+  failoverModeLabel,
+}: {
+  failoverForm: FailoverFormState
+  failoverPolicy: GatewayFailoverPolicyPayload
+  setFailoverForm: (fn: (prev: FailoverFormState | null) => FailoverFormState | null) => void
+  savingFailover: boolean
+  handleFailoverSave: () => Promise<void>
+  failoverError: string
+  failoverFeedback: string
+  failoverModeLabel: string
+  i18nLanguage: string
+}) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <div className="flex items-center gap-2.5 border-b border-border px-7 py-4">
+        <span className="text-[15px] font-extrabold">{t("routes.failoverGlobalTitle")}</span>
+        <span className="rounded-md bg-accent px-2 py-0.5 text-[10.5px] font-semibold text-accent-foreground">
+          {t("routes.failoverGlobalChip")}
+        </span>
+        <span
+          className="ml-auto text-[12px] font-semibold"
+          style={{ color: failoverForm.enabled ? "var(--lrs-success)" : "var(--lrs-faint)" }}
+        >
+          {failoverForm.enabled ? t("common.enabled") : t("common.disabled")}
+        </span>
+      </div>
+
+      <div className="flex-1 overflow-auto px-7 py-6">
+        {/* 匹配顺序说明 */}
+        <div className="mb-6 rounded-lg border border-border/60 bg-accent/20 p-4">
+          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("routes.failoverMatchOrderTitle")}
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-bold text-muted-foreground">
+              1
+            </div>
+            <span className="text-[13px]">{t("routes.failoverMatchOrderStep1")}</span>
+            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+            <div
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+              style={{ background: "var(--primary)" }}
+            >
+              2
+            </div>
+            <span className="text-[13px] font-semibold">{t("routes.failoverMatchOrderStep2")}</span>
+          </div>
+          <p className="mt-3 text-[12px] text-muted-foreground">{t("routes.failoverMatchOrderHint")}</p>
+        </div>
+
+        <FieldGroup className="gap-5">
+          <Field>
+            <div className="flex items-center gap-3">
+              <Switch
+                checked={failoverForm.enabled}
+                onCheckedChange={(checked) => setFailoverForm((c) => c ? { ...c, enabled: checked } : c)}
+              />
+              <FieldLabel className="!mb-0">{t("routes.failoverEnabled")}</FieldLabel>
+            </div>
+            <FieldDescription>{t("routes.failoverEnabledHint")}</FieldDescription>
+          </Field>
+
+          <Field>
+            <FieldLabel>{t("routes.failoverMode")}</FieldLabel>
+            <FieldDescription>
+              {t("routes.failoverCurrentMode")}: <span className="font-semibold text-foreground">{failoverModeLabel}</span>
+            </FieldDescription>
+            <Select
+              value={failoverForm.modelFallbackMode}
+              onValueChange={(v) => setFailoverForm((c) => c ? { ...c, modelFallbackMode: v as ModelFallbackMode } : c)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="none">{t("routes.failoverModeDisabled")}</SelectItem>
+                  <SelectItem value="same_model">{t("routes.failoverModeSameModel")}</SelectItem>
+                  <SelectItem value="any_model">{t("routes.failoverModeAnyModel")}</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field>
+            <FieldLabel>{t("routes.failoverRetryRow")}</FieldLabel>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="mb-1 text-[12px] text-muted-foreground">{t("routes.failoverRetryAttempts")}</div>
+                <Input
+                  type="number"
+                  className="font-mono"
+                  value={failoverForm.retryAttempts}
+                  onChange={(e) => setFailoverForm((c) => c ? { ...c, retryAttempts: e.target.value } : c)}
+                />
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {t("routes.failoverRangeHint", { min: failoverPolicy.limits.retryAttempts.min, max: failoverPolicy.limits.retryAttempts.max })}
+                </div>
+              </div>
+              <div>
+                <div className="mb-1 text-[12px] text-muted-foreground">{t("routes.failoverMaxFallbackAttempts")}</div>
+                <Input
+                  type="number"
+                  className="font-mono"
+                  value={failoverForm.maxFallbackAttempts}
+                  onChange={(e) => setFailoverForm((c) => c ? { ...c, maxFallbackAttempts: e.target.value } : c)}
+                />
+                <div className="mt-1 text-[11px] text-muted-foreground">
+                  {t("routes.failoverRangeHint", { min: failoverPolicy.limits.maxFallbackAttempts.min, max: failoverPolicy.limits.maxFallbackAttempts.max })}
+                </div>
+              </div>
+            </div>
+          </Field>
+
+          <Field>
+            <FieldLabel>{t("routes.failoverTriggers")}</FieldLabel>
+            <FieldDescription>{t("routes.failoverTriggersHint")}</FieldDescription>
+            <div className="grid grid-cols-2 gap-y-2.5">
+              <FailoverTriggerCheckbox
+                id="g-retryOnTimeout"
+                label={t("routes.failoverTriggerTimeout")}
+                checked={failoverForm.retryOnTimeout}
+                onChange={(v) => setFailoverForm((c) => c ? { ...c, retryOnTimeout: v } : c)}
+              />
+              <FailoverTriggerCheckbox
+                id="g-retryOnNetworkError"
+                label={t("routes.failoverTriggerNetwork")}
+                checked={failoverForm.retryOnNetworkError}
+                onChange={(v) => setFailoverForm((c) => c ? { ...c, retryOnNetworkError: v } : c)}
+              />
+              <FailoverTriggerCheckbox
+                id="g-retryOn429"
+                label={t("routes.failoverTrigger429")}
+                checked={failoverForm.retryOn429}
+                onChange={(v) => setFailoverForm((c) => c ? { ...c, retryOn429: v } : c)}
+              />
+              <FailoverTriggerCheckbox
+                id="g-retryOn5xx"
+                label={t("routes.failoverTrigger5xx")}
+                checked={failoverForm.retryOn5xx}
+                onChange={(v) => setFailoverForm((c) => c ? { ...c, retryOn5xx: v } : c)}
+              />
+            </div>
+          </Field>
+        </FieldGroup>
+
+        {/* 两种写法 hint */}
+        <div className="mt-6 rounded-lg border border-border/60 bg-muted/30 p-4">
+          <div className="mb-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("routes.failoverChainSyntaxTitle")}
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-baseline gap-2.5">
+              <code className="rounded bg-accent px-2 py-0.5 font-mono text-[12px] text-foreground">mini</code>
+              <span className="text-[12px] text-muted-foreground">{t("routes.failoverChainSyntaxAliasHint")}</span>
+            </div>
+            <div className="flex items-baseline gap-2.5">
+              <code className="rounded bg-accent px-2 py-0.5 font-mono text-[12px] text-foreground">backup:gpt-4o-mini</code>
+              <span className="text-[12px] text-muted-foreground">{t("routes.failoverChainSyntaxChannelHint")}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 border-t border-border bg-card/60 px-7 py-3">
+        {failoverError ? <p className="text-sm text-destructive">{failoverError}</p> : null}
+        {failoverFeedback ? <span className="text-[12px] text-muted-foreground">{failoverFeedback}</span> : null}
+        <Button
+          type="button"
+          className="ml-auto"
+          size="sm"
+          onClick={handleFailoverSave}
+          disabled={savingFailover}
+        >
+          {savingFailover ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Save data-icon="inline-start" />}
+          {savingFailover ? t("common.saving") : t("routes.failoverSaveGlobal")}
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function CustomFallbackEditor({
+  index,
+  rule,
+  updateCustomFallbackRule,
+  removeCustomFallbackRule,
+  savingFailover,
+  handleFailoverSave,
+  failoverError,
+  failoverFeedback,
+}: {
+  index: number
+  rule: { model: string; fallbacksText: string } | undefined
+  updateCustomFallbackRule: (index: number, patch: Partial<{ model: string; fallbacksText: string }>) => void
+  removeCustomFallbackRule: (idx: number) => void
+  savingFailover: boolean
+  handleFailoverSave: () => Promise<void>
+  failoverError: string
+  failoverFeedback: string
+}) {
+  const { t } = useTranslation()
+  if (!rule) return null
+  return (
+    <>
+      <div className="flex items-center gap-2.5 border-b border-border px-7 py-4">
+        <span className="text-[15px] font-extrabold">{t("routes.failoverCustomRuleTitle")}</span>
+        <span className="font-mono text-[11px] text-muted-foreground">{rule.model || `规则 ${index + 1}`}</span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          className="ml-auto text-destructive hover:text-destructive"
+          onClick={() => removeCustomFallbackRule(index)}
+        >
+          <Trash2 data-icon="inline-start" />
+          {t("routes.failoverDeleteRule")}
+        </Button>
+      </div>
+
+      <div className="flex-1 overflow-auto px-7 py-6">
+        <FieldGroup className="gap-5">
+          <Field>
+            <FieldLabel>{t("routes.failoverCustomRequestModel")}</FieldLabel>
+            <FieldDescription>{t("routes.failoverHelpCustomBody")}</FieldDescription>
+            <Input
+              className="font-mono"
+              placeholder="gpt-4o"
+              value={rule.model}
+              onChange={(e) => updateCustomFallbackRule(index, { model: e.target.value })}
+            />
+          </Field>
+          <Field>
+            <FieldLabel>{t("routes.failoverCustomFallbackModels")}</FieldLabel>
+            <FieldDescription>{t("routes.failoverCustomFallbackHint")}</FieldDescription>
+            <Textarea
+              className="font-mono text-sm"
+              placeholder={t("routes.failoverCustomFallbackPlaceholder")}
+              rows={5}
+              value={rule.fallbacksText}
+              onChange={(e) => updateCustomFallbackRule(index, { fallbacksText: e.target.value })}
+            />
+          </Field>
+        </FieldGroup>
+      </div>
+
+      <div className="flex items-center gap-3 border-t border-border bg-card/60 px-7 py-3">
+        {failoverError ? <p className="text-sm text-destructive">{failoverError}</p> : null}
+        {failoverFeedback ? <span className="text-[12px] text-muted-foreground">{failoverFeedback}</span> : null}
+        <Button
+          type="button"
+          className="ml-auto"
+          size="sm"
+          onClick={handleFailoverSave}
+          disabled={savingFailover}
+        >
+          {savingFailover ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Save data-icon="inline-start" />}
+          {savingFailover ? t("common.saving") : t("routes.failoverSaveRule")}
+        </Button>
+      </div>
+    </>
+  )
+}
+
 export function RoutesPage({
   activeTab = "map",
   onTabChange,
@@ -611,9 +876,13 @@ export function RoutesPage({
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<ModelAlias | null>(null)
+  const [creatingAlias, setCreatingAlias] = useState(false)
   const [draft, setDraft] = useState(EMPTY_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState("")
+  const [aliasFeedback, setAliasFeedback] = useState("")
+
+  const [selectedRuleIndex, setSelectedRuleIndex] = useState<number | null>(null)
 
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [togglingId, setTogglingId] = useState<number | null>(null)
@@ -659,13 +928,15 @@ export function RoutesPage({
 
   const openCreate = () => {
     setEditTarget(null)
+    setCreatingAlias(true)
     setDraft({ ...EMPTY_FORM, targets: [createTargetDraft()] })
     setSubmitError("")
-    setDialogOpen(true)
+    setDialogOpen(false)
   }
 
   const openEdit = (alias: ModelAlias) => {
     setEditTarget(alias)
+    setCreatingAlias(false)
     setDraft({
       alias: alias.alias,
       targets: (alias.targets?.length ? alias.targets : [{ provider: alias.provider, model: alias.model }]).map((target) => createTargetDraft(target.provider, target.model)),
@@ -674,7 +945,13 @@ export function RoutesPage({
       returnRealModel: alias.returnRealModel === true,
     })
     setSubmitError("")
-    setDialogOpen(true)
+    setDialogOpen(false)
+  }
+
+  const closeAliasPane = () => {
+    setEditTarget(null)
+    setCreatingAlias(false)
+    setSubmitError("")
   }
 
   const handleSubmit = async () => {
@@ -695,10 +972,15 @@ export function RoutesPage({
       if (editTarget) {
         const updated = await updateModelAlias(editTarget.id, trimmed)
         setAliases((cur) => cur?.map((a) => (a.id === updated.id ? updated : a)) ?? null)
+        setEditTarget(updated)
       } else {
         const created = await createModelAlias(trimmed)
         setAliases((cur) => [...(cur ?? []), created])
+        setEditTarget(created)
+        setCreatingAlias(false)
       }
+      setAliasFeedback(t("routes.aliasSavedToast"))
+      window.setTimeout(() => setAliasFeedback(""), 1800)
       setDialogOpen(false)
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : String(err))
@@ -727,6 +1009,7 @@ export function RoutesPage({
       await deleteModelAlias(id)
       setAliases((cur) => cur?.filter((a) => a.id !== id) ?? null)
       setTestResults((cur) => { const next = new Map(cur); next.delete(id); return next })
+      if (editTarget?.id === id) closeAliasPane()
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       if (handleUnauth(message)) return
@@ -842,13 +1125,35 @@ export function RoutesPage({
       : t("routes.failoverModeDisabled")
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        icon={GitFork}
-        title={t("routes.title")}
-        description={t("routes.description", { interpolation: { escapeValue: false } })}
-        actions={
-          <>
+    <div className="flex flex-1 flex-col gap-4">
+      {/* Tabs + actions */}
+      <Tabs value={activeTab} onValueChange={(value) => onTabChange?.(value as RouteTab)} className="flex flex-1 flex-col gap-4">
+        <div className="flex items-center justify-between border-b border-border">
+          <TabsList
+            variant="line"
+            className="!h-auto w-auto flex-1 gap-0 justify-start overflow-x-auto border-none bg-transparent px-8 py-0"
+          >
+            {(
+              [
+                ["aliases", t("routes.tabAliases")],
+                ["failover", t("routes.tabFailover")],
+                ["map", t("routes.tabRouteMap")],
+              ] as const
+            ).map(([value, label], i, arr) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className={cn(
+                  "h-auto flex-none px-0.5 py-[13px] text-[13px] font-medium text-muted-foreground after:bottom-0 data-[state=active]:font-bold data-[state=active]:text-foreground",
+                  i < arr.length - 1 && "mr-[26px]",
+                )}
+                style={{ "--tabs-line-color": "var(--primary)", "--tabs-line-bottom": "0px" } as React.CSSProperties}
+              >
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <div className="flex items-center gap-2 pr-4">
             <Button
               type="button"
               variant="outline"
@@ -859,303 +1164,172 @@ export function RoutesPage({
               <RefreshCw className={loading ? "animate-spin" : ""} />
               {t("common.refresh")}
             </Button>
-            <Button type="button" size="sm" onClick={openCreate}>
-              <Plus />
-              {t("routes.newAlias")}
-            </Button>
-          </>
-        }
-      />
-
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-
-      <Tabs value={activeTab} onValueChange={(value) => onTabChange?.(value as RouteTab)} className="gap-4">
-        <TabsList variant="line" className="w-full justify-start overflow-x-auto">
-          <TabsTrigger value="map">{t("routes.tabRouteMap")}</TabsTrigger>
-          <TabsTrigger value="aliases">{t("routes.tabAliases")}</TabsTrigger>
-          <TabsTrigger value="models">{t("routes.tabModels")}</TabsTrigger>
-          <TabsTrigger value="failover">{t("routes.tabFailover")}</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="models" className="mt-0">
-          <ModelsPage onUnauthorized={onUnauthorized} embedded />
-        </TabsContent>
-
-        <TabsContent value="failover" className="mt-0">
-      <Card>
-        <CardHeader className="gap-2 border-b border-border/60">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <CardTitle>{t("routes.failoverTitle")}</CardTitle>
-              <CardDescription className="mt-1">{t("routes.failoverDesc")}</CardDescription>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {failoverPolicy ? (
-                <Badge variant="secondary">
-                  {t("routes.failoverUpdatedAt", { time: formatUpdatedAt(failoverPolicy.updatedAt, i18n.language) })}
-                </Badge>
-              ) : null}
-              <HelpDialogButton
-                title={t("routes.failoverHelpTitle")}
-                description={t("routes.failoverHelpDesc")}
-                buttonLabel={t("common.help")}
-              >
-                <div className="space-y-4">
-                  <div>
-                    <div className="font-medium text-foreground">{t("routes.failoverHelpCustomTitle")}</div>
-                    <p className="mt-1">{t("routes.failoverHelpCustomBody")}</p>
-                  </div>
-                  <div>
-                    <div className="font-medium text-foreground">{t("routes.failoverHelpAliasTitle")}</div>
-                    <p className="mt-1">{t("routes.failoverHelpAliasBody")}</p>
-                  </div>
-                  <div>
-                    <div className="font-medium text-foreground">{t("routes.failoverHelpOrderTitle")}</div>
-                    <p className="mt-1">{t("routes.failoverHelpOrderBody")}</p>
-                  </div>
-                  <div className="border border-border/70 bg-muted/30 p-3 font-mono text-xs text-foreground">
-                    <div>{t("routes.failoverHelpExampleRequest")}: gpt-4o</div>
-                    <div>{t("routes.failoverHelpExampleFallbacks")}: mini, backup:gpt-4o-mini</div>
-                  </div>
-                </div>
-              </HelpDialogButton>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => failoverPolicy && setFailoverForm(toFailoverForm(failoverPolicy))}
-                disabled={!failoverPolicy || savingFailover}
-              >
-                <RotateCcw data-icon="inline-start" />
-                {t("routes.failoverReset")}
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                disabled={!failoverPolicy || !failoverForm || savingFailover}
-                onClick={() => void handleFailoverSave()}
-              >
-                {savingFailover ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Save data-icon="inline-start" />}
-                {savingFailover ? t("common.saving") : t("common.save")}
-              </Button>
-            </div>
           </div>
-        </CardHeader>
-        <CardContent className="pt-5">
+        </div>
+
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+        <TabsContent value="failover" className="mt-0 flex-1">
           {!failoverForm || !failoverPolicy ? (
-            <div className="space-y-2">
+            <div className="space-y-2 p-6">
+              <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
           ) : (
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px]">
-              <FieldGroup className="grid gap-5 md:grid-cols-2">
-                <Field>
-                  <FieldLabel>{t("routes.failoverEnabled")}</FieldLabel>
-                  <FieldContent>
-                    <div className="flex h-10 items-center gap-3">
-                      <Switch
-                        checked={failoverForm.enabled}
-                        onCheckedChange={(checked) => setFailoverForm((current) => current ? { ...current, enabled: checked } : current)}
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        {failoverForm.enabled ? t("common.enabled") : t("common.disabled")}
-                      </span>
-                    </div>
-                    <FieldDescription>{t("routes.failoverEnabledHint")}</FieldDescription>
-                  </FieldContent>
-                </Field>
-                <Field>
-                  <FieldLabel>{t("routes.failoverMode")}</FieldLabel>
-                  <FieldContent>
-                    <Select
-                      value={failoverForm.modelFallbackMode}
-                      onValueChange={(value) => setFailoverForm((current) => current ? { ...current, modelFallbackMode: value as ModelFallbackMode } : current)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="disabled">{t("routes.failoverModeDisabled")}</SelectItem>
-                        <SelectItem value="same_model">{t("routes.failoverModeSameModel")}</SelectItem>
-                        <SelectItem value="any_model">{t("routes.failoverModeAnyModel")}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FieldDescription>{t("routes.failoverModeHint")}</FieldDescription>
-                  </FieldContent>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="failover-retry-attempts">{t("routes.failoverRetryAttempts")}</FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="failover-retry-attempts"
-                      type="number"
-                      min={failoverPolicy.limits.retryAttempts.min}
-                      max={failoverPolicy.limits.retryAttempts.max}
-                      step="1"
-                      value={failoverForm.retryAttempts}
-                      onChange={(event) => setFailoverForm((current) => current ? { ...current, retryAttempts: event.target.value } : current)}
-                      className="tabular-nums"
-                    />
-                    <FieldDescription>
-                      {t("routes.failoverRangeHint", failoverPolicy.limits.retryAttempts)}
-                    </FieldDescription>
-                  </FieldContent>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="failover-max-fallback-attempts">{t("routes.failoverMaxFallbackAttempts")}</FieldLabel>
-                  <FieldContent>
-                    <Input
-                      id="failover-max-fallback-attempts"
-                      type="number"
-                      min={failoverPolicy.limits.maxFallbackAttempts.min}
-                      max={failoverPolicy.limits.maxFallbackAttempts.max}
-                      step="1"
-                      value={failoverForm.maxFallbackAttempts}
-                      onChange={(event) => setFailoverForm((current) => current ? { ...current, maxFallbackAttempts: event.target.value } : current)}
-                      className="tabular-nums"
-                    />
-                    <FieldDescription>
-                      {t("routes.failoverRangeHint", failoverPolicy.limits.maxFallbackAttempts)}
-                    </FieldDescription>
-                  </FieldContent>
-                </Field>
-                <Field className="md:col-span-2">
-                  <FieldLabel>{t("routes.failoverTriggers")}</FieldLabel>
-                  <FieldContent>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                      <FailoverTriggerCheckbox
-                        id="failover-timeout"
-                        label={t("routes.failoverTriggerTimeout")}
-                        checked={failoverForm.retryOnTimeout}
-                        onChange={(checked) => setFailoverForm((current) => current ? { ...current, retryOnTimeout: checked } : current)}
-                      />
-                      <FailoverTriggerCheckbox
-                        id="failover-network"
-                        label={t("routes.failoverTriggerNetwork")}
-                        checked={failoverForm.retryOnNetworkError}
-                        onChange={(checked) => setFailoverForm((current) => current ? { ...current, retryOnNetworkError: checked } : current)}
-                      />
-                      <FailoverTriggerCheckbox
-                        id="failover-429"
-                        label={t("routes.failoverTrigger429")}
-                        checked={failoverForm.retryOn429}
-                        onChange={(checked) => setFailoverForm((current) => current ? { ...current, retryOn429: checked } : current)}
-                      />
-                      <FailoverTriggerCheckbox
-                        id="failover-5xx"
-                        label={t("routes.failoverTrigger5xx")}
-                        checked={failoverForm.retryOn5xx}
-                        onChange={(checked) => setFailoverForm((current) => current ? { ...current, retryOn5xx: checked } : current)}
-                      />
-                    </div>
-                    <FieldDescription>{t("routes.failoverTriggersHint")}</FieldDescription>
-                  </FieldContent>
-                </Field>
-                <Field className="md:col-span-2">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <FieldLabel>{t("routes.failoverCustomTitle")}</FieldLabel>
-                      <FieldDescription>{t("routes.failoverCustomDesc")}</FieldDescription>
-                    </div>
+            <div className="grid min-h-[calc(100vh-12rem)] flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_1.15fr]">
+              {/* Rule list */}
+              <div className="flex min-h-0 flex-col border-b border-border lg:border-b-0 lg:border-r">
+                <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-3">
+                  <span className="text-[13px] text-muted-foreground">
+                    {t("routes.failoverSidebarCount", { count: failoverForm.customModelFallbacks.length })}
+                  </span>
+                  <div className="flex items-center gap-1.5">
                     <Button
                       type="button"
                       variant="outline"
+                      size="xs"
+                      onClick={() => failoverPolicy && setFailoverForm(toFailoverForm(failoverPolicy))}
+                      disabled={savingFailover}
+                    >
+                      <RotateCcw data-icon="inline-start" />
+                      {t("routes.failoverReset")}
+                    </Button>
+                    <Button
+                      type="button"
                       size="sm"
-                      onClick={addCustomFallbackRule}
+                      onClick={() => {
+                        addCustomFallbackRule()
+                        setSelectedRuleIndex(failoverForm.customModelFallbacks.length)
+                      }}
                       disabled={failoverForm.customModelFallbacks.length >= failoverPolicy.limits.customModelFallbackRules.max}
                     >
                       <Plus data-icon="inline-start" />
-                      {t("routes.failoverCustomAdd")}
+                      {t("routes.failoverNewRule")}
                     </Button>
                   </div>
-                  <FieldContent>
-                    {failoverForm.customModelFallbacks.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">{t("routes.failoverCustomEmpty")}</p>
-                    ) : (
-                      <div className="grid gap-3">
-                        {failoverForm.customModelFallbacks.map((rule, index) => (
-                          <div key={index} className="grid gap-3 border border-border/70 bg-card/70 p-3 md:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto]">
-                            <Field>
-                              <FieldLabel htmlFor={`failover-custom-model-${index}`}>{t("routes.failoverCustomRequestModel")}</FieldLabel>
-                              <Input
-                                id={`failover-custom-model-${index}`}
-                                value={rule.model}
-                                placeholder="gpt-4o"
-                                onChange={(event) => updateCustomFallbackRule(index, { model: event.target.value })}
-                              />
-                            </Field>
-                            <Field>
-                              <FieldLabel htmlFor={`failover-custom-fallbacks-${index}`}>{t("routes.failoverCustomFallbackModels")}</FieldLabel>
-                              <Textarea
-                                id={`failover-custom-fallbacks-${index}`}
-                                value={rule.fallbacksText}
-                                placeholder={t("routes.failoverCustomFallbackPlaceholder")}
-                                onChange={(event) => updateCustomFallbackRule(index, { fallbacksText: event.target.value })}
-                                className="min-h-20 font-mono text-xs"
-                              />
-                              <FieldDescription>{t("routes.failoverCustomFallbackHint")}</FieldDescription>
-                            </Field>
-                            <div className="flex items-start justify-end md:pt-6">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="xs"
-                                className="text-destructive hover:text-destructive"
-                                onClick={() => removeCustomFallbackRule(index)}
-                              >
-                                <X data-icon="inline-start" />
-                                {t("common.delete")}
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                </div>
+                <div className="flex flex-1 flex-col overflow-auto">
+                  {/* Global rule card */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRuleIndex(null)}
+                    className={cn(
+                      "block w-full border-b border-l-[3px] border-border/60 px-5 py-4 text-left transition-colors",
+                      selectedRuleIndex === null ? "border-l-primary bg-accent/50" : "border-l-transparent hover:bg-accent/30",
                     )}
-                  </FieldContent>
-                </Field>
-              </FieldGroup>
-              <div className="grid gap-3 border border-border/70 bg-card/70 p-4">
-                <div>
-                  <div className="text-xs font-semibold text-muted-foreground">{t("routes.failoverCurrentMode")}</div>
-                  <div className="mt-1 text-lg font-semibold text-foreground">{failoverModeLabel}</div>
-                </div>
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="text-xs text-muted-foreground">{t("routes.failoverRetryAttempts")}</div>
-                    <div className="font-mono text-base text-foreground">{failoverForm.retryAttempts}</div>
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-[14px] font-extrabold">{t("routes.failoverGlobalTitle")}</span>
+                      <span className="rounded-md bg-accent px-2 py-0.5 text-[10.5px] font-semibold text-accent-foreground">
+                        {t("routes.failoverGlobalChip")}
+                      </span>
+                      <span className="ml-auto text-[11px] font-semibold" style={{ color: failoverForm.enabled ? "var(--lrs-success)" : "var(--lrs-faint)" }}>
+                        {failoverForm.enabled ? t("common.enabled") : t("common.disabled")}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-[11.5px] text-muted-foreground">
+                      {t("routes.failoverGlobalSubtitle")} ·{" "}
+                      <span className="font-mono text-foreground/80">{failoverModeLabel}</span>
+                    </div>
+                  </button>
+
+                  {/* Per-model rules */}
+                  <div className="px-5 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/70">
+                    {t("routes.failoverModelRulesHeader")} · {failoverForm.customModelFallbacks.length}
                   </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">{t("routes.failoverMaxFallbackAttempts")}</div>
-                    <div className="font-mono text-base text-foreground">{failoverForm.maxFallbackAttempts}</div>
-                  </div>
+                  {failoverForm.customModelFallbacks.length === 0 ? (
+                    <div className="px-5 py-6 text-[12px] text-muted-foreground/70">
+                      {t("routes.failoverModelRulesEmpty")}
+                    </div>
+                  ) : (
+                    failoverForm.customModelFallbacks.map((rule, index) => {
+                      const selected = selectedRuleIndex === index
+                      const fallbacks = rule.fallbacksText
+                        .split(/[\n,]/)
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                      return (
+                        <button
+                          type="button"
+                          key={index}
+                          onClick={() => setSelectedRuleIndex(index)}
+                          className={cn(
+                            "block w-full border-b border-l-[3px] border-border/60 px-5 py-4 text-left transition-colors",
+                            selected ? "border-l-primary bg-accent/50" : "border-l-transparent hover:bg-accent/30",
+                          )}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span className="font-mono text-[13.5px] font-bold">
+                              {rule.model || `规则 ${index + 1}`}
+                            </span>
+                            <span className="rounded-md bg-muted px-2 py-0.5 text-[10.5px] font-semibold text-muted-foreground">
+                              {t("routes.failoverCustomTitle")}
+                            </span>
+                          </div>
+                          {fallbacks.length > 0 ? (
+                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              {fallbacks.slice(0, 3).map((target, i) => (
+                                <span
+                                  key={`${target}-${i}`}
+                                  className="rounded-md border border-border bg-muted/40 px-2 py-0.5 font-mono text-[11px] text-foreground/80"
+                                >
+                                  {target}
+                                </span>
+                              ))}
+                              {fallbacks.length > 3 ? (
+                                <span className="text-[11px] text-muted-foreground">+{fallbacks.length - 3}</span>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </button>
+                      )
+                    })
+                  )}
                 </div>
-                <div>
-                  <div className="text-xs text-muted-foreground">{t("routes.failoverCustomRuleCount")}</div>
-                  <div className="font-mono text-base text-foreground">{failoverForm.customModelFallbacks.length}</div>
-                </div>
+              </div>
+
+              {/* Editor pane */}
+              <div className="flex min-h-0 flex-col overflow-auto">
+                {selectedRuleIndex === null ? (
+                  <GlobalFailoverEditor
+                    failoverForm={failoverForm}
+                    failoverPolicy={failoverPolicy}
+                    setFailoverForm={setFailoverForm}
+                    savingFailover={savingFailover}
+                    handleFailoverSave={handleFailoverSave}
+                    failoverError={failoverError}
+                    failoverFeedback={failoverFeedback}
+                    failoverModeLabel={failoverModeLabel}
+                    i18nLanguage={i18n.language}
+                  />
+                ) : (
+                  <CustomFallbackEditor
+                    index={selectedRuleIndex}
+                    rule={failoverForm.customModelFallbacks[selectedRuleIndex]}
+                    updateCustomFallbackRule={updateCustomFallbackRule}
+                    removeCustomFallbackRule={(idx) => {
+                      removeCustomFallbackRule(idx)
+                      setSelectedRuleIndex(null)
+                    }}
+                    savingFailover={savingFailover}
+                    handleFailoverSave={handleFailoverSave}
+                    failoverError={failoverError}
+                    failoverFeedback={failoverFeedback}
+                  />
+                )}
               </div>
             </div>
           )}
-
-          {failoverError ? <p className="mt-4 text-sm text-destructive">{failoverError}</p> : null}
-          {failoverFeedback ? <p className="mt-4 text-sm text-muted-foreground">{failoverFeedback}</p> : null}
-        </CardContent>
-      </Card>
         </TabsContent>
 
-        <TabsContent value="map" className="mt-0">
-      <Card className="c4d-table-shell">
-        <CardHeader className="gap-2 border-b border-border/60">
-          <div className="flex items-start gap-3">
-            <MapIcon className="mt-0.5 h-4 w-4 text-muted-foreground" />
-            <div>
-              <CardTitle>{t("routes.routeMapTitle")}</CardTitle>
-              <CardDescription className="mt-1">{t("routes.routeMapDesc")}</CardDescription>
-            </div>
+        <TabsContent value="map" className="mt-0 flex-1">
+          <div className="flex items-center gap-2.5 border-b border-border px-5 py-3">
+            <MapIcon className="h-4 w-4 text-muted-foreground" />
+            <span className="text-[13px] font-semibold">{t("routes.routeMapTitle")}</span>
+            <span className="text-[13px] text-muted-foreground">—</span>
+            <span className="text-[13px] text-muted-foreground">{t("routes.routeMapDesc")}</span>
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
           {aliases === null ? (
             <div className="space-y-2 p-6">
               <Skeleton className="h-10 w-full" />
@@ -1175,27 +1349,37 @@ export function RoutesPage({
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="w-52">{t("routes.routeMapRequestModel")}</TableHead>
-                  <TableHead className="min-w-72">{t("routes.routeMapPrimaryRoute")}</TableHead>
-                  <TableHead className="min-w-72">{t("routes.routeMapFallbackRoutes")}</TableHead>
-                  <TableHead className="min-w-72">{t("routes.routeMapCoveredRoutes")}</TableHead>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-52 border-b border-border py-2 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t("routes.routeMapRequestModel")}
+                  </TableHead>
+                  <TableHead className="min-w-72 border-b border-border py-2 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t("routes.routeMapPrimaryRoute")}
+                  </TableHead>
+                  <TableHead className="min-w-72 border-b border-border py-2 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t("routes.routeMapFallbackRoutes")}
+                  </TableHead>
+                  <TableHead className="min-w-72 border-b border-border py-2 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t("routes.routeMapCoveredRoutes")}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {routeMapEntries.map((entry) => (
-                  <TableRow key={`${entry.requestType}:${entry.requestModel}`}>
+                  <TableRow key={`${entry.requestType}:${entry.requestModel}`} className="hover:bg-accent/30">
                     <TableCell className="align-top">
                       <div className="font-mono text-xs font-medium">{entry.requestModel}</div>
                       <div className="mt-2 flex flex-wrap gap-1">
-                        <Badge variant="secondary" className="text-xs">{entry.requestType}</Badge>
-                        <Badge variant={entry.kind === "model" ? "secondary" : "outline"} className="text-xs">
+                        <span className="rounded-md bg-accent px-2 py-0.5 text-[10.5px] font-semibold text-accent-foreground">
+                          {entry.requestType}
+                        </span>
+                        <span className="rounded-md bg-muted px-2 py-0.5 text-[10.5px] font-semibold text-muted-foreground">
                           {entry.kind === "alias_override"
                             ? t("routes.routeMapAliasOverride")
                             : entry.kind === "alias"
                               ? t("routes.routeMapAlias")
                               : t("routes.routeMapModel")}
-                        </Badge>
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell className="align-top">
@@ -1212,108 +1396,150 @@ export function RoutesPage({
               </TableBody>
             </Table>
           )}
-        </CardContent>
-      </Card>
         </TabsContent>
 
-        <TabsContent value="aliases" className="mt-0">
-      <Card className="c4d-table-shell">
-        <CardHeader className="gap-2 border-b border-border/60">
-          <div className="flex items-start gap-3">
-            <GitFork className="mt-0.5 h-4 w-4 text-muted-foreground" />
-            <div>
-              <CardTitle>{t("routes.aliasesTitle")}</CardTitle>
-              <CardDescription className="mt-1">{t("routes.aliasesDesc")}</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
+        <TabsContent value="aliases" className="mt-0 flex-1">
           {aliases === null ? (
             <div className="space-y-2 p-6">
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
             </div>
-          ) : !hasAliases ? (
-            <Empty>
-              <EmptyHeader>
-                <GitFork className="h-8 w-8 text-muted-foreground" />
-              </EmptyHeader>
-              <EmptyContent>
-              <EmptyTitle>{t("routes.emptyTitle")}</EmptyTitle>
-                <EmptyDescription>
-                  {t("routes.emptyDescription")}
-                </EmptyDescription>
-              </EmptyContent>
-            </Empty>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t("routes.colAlias")}</TableHead>
-                  <TableHead>{t("routes.colTargets")}</TableHead>
-                  <TableHead>{t("routes.colNotes")}</TableHead>
-                  <TableHead>{t("routes.colStatus")}</TableHead>
-                  <TableHead className="w-24 text-right">{t("routes.colActions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {aliases.map((alias) => (
-                  <TableRow key={alias.id} className={!alias.enabled ? "opacity-50" : ""}>
-                    <TableCell className="font-mono text-xs font-medium">
-                      <div className="flex flex-col gap-1">
-                        <span>{alias.alias}</span>
-                        {alias.returnRealModel ? (
-                          <Badge variant="outline" className="w-fit text-[10px] font-normal">
-                            {t("routes.returnRealModelBadge")}
-                          </Badge>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <RouteMapRouteList
-                        routes={getAliasTargets(alias).map((target) => getAliasRoute(alias, providers, "alias", target))}
-                        emptyLabel={t("routes.routeMapNoRoute")}
-                      />
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {alias.description ?? "—"}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={alias.enabled}
-                          disabled={togglingId === alias.id}
-                          onCheckedChange={(checked) => handleToggle(alias, checked)}
-                        />
-                        {alias.enabled && (
-                          <AliasStatus alias={alias} providers={providers} />
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-1">
-                        {(() => {
-                          const result = testResults.get(alias.id)
-                          if (result === "loading") {
-                            return (
-                              <Button type="button" variant="outline" size="xs" disabled>
-                                <Loader2 data-icon="inline-start" className="animate-spin" />
-                                {t("common.testing")}
-                              </Button>
-                            )
-                          }
-                          if (result) {
-                            return (
-                              <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
+            <div className="grid min-h-[calc(100vh-12rem)] flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[1fr_1.05fr]">
+              {/* Alias list */}
+              <div className="flex min-h-0 flex-col border-b border-border lg:border-b-0 lg:border-r">
+                <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-3">
+                  <span className="text-[13px] text-muted-foreground">
+                    {hasAliases
+                      ? t("routes.aliasSidebarCount", { count: aliases.length })
+                      : t("routes.emptyTitle")}
+                  </span>
+                  <Button type="button" size="sm" onClick={openCreate}>
+                    <Plus data-icon="inline-start" />
+                    {t("routes.newAlias")}
+                  </Button>
+                </div>
+                <div className="flex flex-1 flex-col overflow-auto">
+                  {!hasAliases ? (
+                    <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-1 px-6 text-center text-xs text-muted-foreground">
+                      <GitFork className="h-8 w-8 text-muted-foreground/60" />
+                      <div className="mt-2 text-sm text-foreground">{t("routes.emptyTitle")}</div>
+                      <div>{t("routes.emptyDescription")}</div>
+                    </div>
+                  ) : (
+                    aliases.map((alias) => {
+                      const selected = editTarget?.id === alias.id
+                      const targets = getAliasTargets(alias)
+                      const primary = targets[0]
+                      const fallbacks = targets.slice(1)
+                      const testResult = testResults.get(alias.id)
+                      const okTest = testResult && testResult !== "loading" ? testResult : null
+                      return (
+                        <button
+                          type="button"
+                          key={alias.id}
+                          onClick={() => openEdit(alias)}
+                          className={cn(
+                            "block w-full border-b border-l-[3px] border-border/60 px-5 py-4 text-left transition-colors",
+                            selected ? "border-l-primary bg-accent/50" : "border-l-transparent hover:bg-accent/30",
+                            !alias.enabled && "opacity-60",
+                          )}
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-full"
+                              style={{ background: alias.enabled ? "var(--lrs-success)" : "var(--lrs-faint)" }}
+                            />
+                            <span className="text-[14px] font-bold">{alias.alias}</span>
+                            <span className="rounded-md bg-accent px-2 py-0.5 text-[10.5px] font-semibold text-accent-foreground">
+                              alias
+                            </span>
+                            {alias.returnRealModel ? (
+                              <span className="rounded-md bg-muted px-2 py-0.5 text-[10.5px] font-semibold text-muted-foreground">
+                                {t("routes.returnRealModelBadge")}
+                              </span>
+                            ) : null}
+                            {okTest ? (
+                              <span
+                                className="ml-auto h-1.5 w-1.5 rounded-full"
+                                title={okTest.message}
+                                style={{ background: okTest.status === "ok" ? "var(--lrs-success)" : "var(--lrs-danger)" }}
+                              />
+                            ) : null}
+                          </div>
+                          {primary ? (
+                            <div className="mt-2 font-mono text-[11.5px] text-muted-foreground">
+                              <ArrowRight className="mr-1 inline h-3 w-3 align-[-2px]" />
+                              {primary.provider}
+                              <span className="text-muted-foreground/60"> : </span>
+                              {primary.model}
+                            </div>
+                          ) : null}
+                          <div className="mt-1.5 text-[11px] text-muted-foreground">
+                            {fallbacks.length > 0 ? (
+                              <>
+                                <span>{t("routes.aliasSummaryFallback")} </span>
+                                <span className="font-mono text-foreground/80">
+                                  {fallbacks.map((f) => `${f.provider}:${f.model}`).join(" → ")}
+                                </span>
+                              </>
+                            ) : (
+                              <span className="text-muted-foreground/60">{t("routes.aliasSummaryNoFallback")}</span>
+                            )}
+                          </div>
+                          <div className="mt-2 inline-flex items-center gap-1.5">
+                            <AliasStatus alias={alias} providers={providers} />
+                          </div>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Edit pane */}
+              <div className="flex min-h-0 flex-col overflow-auto">
+                {!editTarget && !creatingAlias ? (
+                  <div className="flex h-full flex-col items-center justify-center gap-3 px-8 py-12 text-center">
+                    <GitFork className="h-10 w-10 text-muted-foreground/40" />
+                    <div className="text-sm font-semibold text-foreground">{t("routes.aliasNoSelection")}</div>
+                    <p className="max-w-sm text-xs text-muted-foreground">{t("routes.aliasNoSelectionHint")}</p>
+                    <Button type="button" variant="outline" size="sm" onClick={openCreate}>
+                      <Plus data-icon="inline-start" />
+                      {t("routes.newAlias")}
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2.5 border-b border-border px-7 py-4">
+                      <span className="text-[15px] font-extrabold">
+                        {editTarget ? t("routes.aliasEditTitle") : t("routes.aliasCreateTitle")}
+                      </span>
+                      {editTarget ? (
+                        <span className="font-mono text-[11px] text-muted-foreground">{editTarget.alias}</span>
+                      ) : null}
+                      <div className="ml-auto flex items-center gap-1.5">
+                        {editTarget ? (
+                          <>
+                            {(() => {
+                              const result = testResults.get(editTarget.id)
+                              if (result === "loading") {
+                                return (
+                                  <Button type="button" variant="outline" size="xs" disabled>
+                                    <Loader2 data-icon="inline-start" className="animate-spin" />
+                                    {t("common.testing")}
+                                  </Button>
+                                )
+                              }
+                              if (result) {
+                                return (
                                   <Button
                                     type="button"
                                     variant="outline"
                                     size="xs"
                                     className={result.status === "ok" ? "text-green-600 border-green-500/50 hover:text-green-700" : "text-destructive border-destructive/50 hover:text-destructive"}
-                                    onClick={() => handleTest(alias)}
+                                    onClick={() => handleTest(editTarget)}
                                   >
                                     {result.status === "ok"
                                       ? <CheckCircle data-icon="inline-start" />
@@ -1321,93 +1547,88 @@ export function RoutesPage({
                                     }
                                     {t("common.test")}
                                   </Button>
-                                </TooltipTrigger>
-                                <TooltipContent className="max-w-xs">
-                                  <p className="text-xs">{result.message}</p>
-                                  {result.latencyMs != null && (
-                                    <p className="text-xs text-muted-foreground">{result.latencyMs}ms</p>
-                                  )}
-                                </TooltipContent>
-                              </Tooltip>
-                              </TooltipProvider>
-                            )
-                          }
-                          return (
+                                )
+                              }
+                              return (
+                                <Button type="button" variant="outline" size="xs" onClick={() => handleTest(editTarget)}>
+                                  <Wifi data-icon="inline-start" />
+                                  {t("common.test")}
+                                </Button>
+                              )
+                            })()}
                             <Button
                               type="button"
-                              variant="outline"
+                              variant="ghost"
                               size="xs"
-                              onClick={() => handleTest(alias)}
+                              className="text-destructive hover:text-destructive"
+                              disabled={deletingId === editTarget.id}
+                              onClick={() => handleDelete(editTarget.id)}
                             >
-                              <Wifi data-icon="inline-start" />
-                              {t("common.test")}
+                              <Trash2 data-icon="inline-start" />
+                              {t("common.delete")}
                             </Button>
-                          )
-                        })()}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="xs"
-                          onClick={() => openEdit(alias)}
-                        >
-                          <Pencil data-icon="inline-start" />
-                          {t("common.edit")}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="xs"
-                          className="text-destructive hover:text-destructive"
-                          disabled={deletingId === alias.id}
-                          onClick={() => handleDelete(alias.id)}
-                        >
-                          <Trash2 data-icon="inline-start" />
-                          {t("common.delete")}
+                          </>
+                        ) : null}
+                        <Button type="button" variant="ghost" size="xs" onClick={closeAliasPane}>
+                          <X data-icon="inline-start" />
+                          {t("common.cancel")}
                         </Button>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                    </div>
+                    <div className="flex-1 overflow-auto px-7 py-6">
+                      <AliasForm
+                        draft={draft}
+                        providers={providers}
+                        onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
+                      />
+                      {submitError ? (
+                        <p className="mt-4 text-sm text-destructive">{submitError}</p>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-3 border-t border-border bg-card/60 px-7 py-3">
+                      {editTarget ? (
+                        <div className="flex items-center gap-2.5">
+                          <Switch
+                            checked={editTarget.enabled}
+                            disabled={togglingId === editTarget.id}
+                            onCheckedChange={(checked) => handleToggle(editTarget, checked)}
+                          />
+                          <span className="text-[13px] text-muted-foreground">
+                            {editTarget.enabled ? t("common.enabled") : t("common.disabled")}
+                          </span>
+                        </div>
+                      ) : null}
+                      {aliasFeedback ? (
+                        <span className="text-[12px] text-muted-foreground">{aliasFeedback}</span>
+                      ) : null}
+                      <Button
+                        type="button"
+                        className="ml-auto"
+                        size="sm"
+                        onClick={handleSubmit}
+                        disabled={submitting}
+                      >
+                        {submitting ? <Loader2 data-icon="inline-start" className="animate-spin" /> : <Save data-icon="inline-start" />}
+                        {submitting ? t("common.saving") : t("common.save")}
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
           )}
-        </CardContent>
-      </Card>
         </TabsContent>
       </Tabs>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{editTarget ? t("routes.editDialogTitle") : t("routes.createDialogTitle")}</DialogTitle>
-            <DialogDescription>
-              {editTarget
-                ? t("routes.editDialogDesc")
-                : t("routes.createDialogDesc")}
-            </DialogDescription>
+            <DialogTitle>{t("routes.editDialogTitle")}</DialogTitle>
+            <DialogDescription>{t("routes.editDialogDesc")}</DialogDescription>
           </DialogHeader>
-
-          <AliasForm
-            draft={draft}
-            providers={providers}
-            onChange={(patch) => setDraft((d) => ({ ...d, ...patch }))}
-          />
-
-          {submitError && (
-            <p className="text-sm text-destructive">{submitError}</p>
-          )}
-
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setDialogOpen(false)}
-              disabled={submitting}
-            >
+            <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
               {t("common.cancel")}
-            </Button>
-            <Button type="button" onClick={handleSubmit} disabled={submitting}>
-              {submitting ? t("common.saving") : t("common.save")}
             </Button>
           </DialogFooter>
         </DialogContent>

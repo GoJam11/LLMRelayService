@@ -64,6 +64,13 @@
       "when": 1782318845308,
       "tag": "0008_alias_return_real_model",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782568245349,
+      "tag": "0009_request_cost_pricing_snapshot",
+      "breakpoints": true
     }
   ]
 }

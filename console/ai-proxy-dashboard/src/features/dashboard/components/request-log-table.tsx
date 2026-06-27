@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import type { ConsoleRequestListItem } from "@/features/dashboard/types"
 import type { RequestSortKey, SortDirection } from "@/features/dashboard/api"
 import {
+  formatCost,
   formatCount,
   formatDuration,
   formatTime,
@@ -142,7 +143,7 @@ export function RequestLogTable({
         {/* Header row */}
         <div
           className="grid shrink-0 items-center gap-2 border-b border-border px-6 py-3 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground"
-          style={{ gridTemplateColumns: "60px 78px 1fr 50px 62px 78px 50px" }}
+          style={{ gridTemplateColumns: "60px 78px 1fr 50px 62px 78px 50px 64px" }}
         >
           <span>
             <SortButton
@@ -172,6 +173,7 @@ export function RequestLogTable({
             />
           </span>
           <span className="text-right">{t("logTable.colCacheHitRate")}</span>
+          <span className="text-right">{t("logTable.colPrice")}</span>
         </div>
 
         {/* Body */}
@@ -206,7 +208,7 @@ export function RequestLogTable({
                     onMouseLeave={() => setHoveredId(null)}
                     className="grid cursor-pointer items-center gap-2 border-b border-border/50 border-l-[3px] px-6 py-3 text-xs transition-colors"
                     style={{
-                      gridTemplateColumns: "60px 78px 1fr 50px 62px 78px 50px",
+                      gridTemplateColumns: "60px 78px 1fr 50px 62px 78px 50px 64px",
                       borderLeftColor: isSelected ? "var(--primary)" : isHovered ? "var(--accent-foreground)" : "transparent",
                       background: isSelected ? "var(--accent)" : isHovered ? "var(--accent/50)" : "transparent",
                     }}
@@ -254,6 +256,16 @@ export function RequestLogTable({
                     {/* Cache */}
                     <span className="text-right font-mono text-[11px] text-muted-foreground">
                       {cacheHitRate != null ? `${Math.round(cacheHitRate)}%` : "—"}
+                    </span>
+
+                    {/* 价格 */}
+                    <span
+                      className="text-right font-mono text-[11px] text-foreground"
+                      title={item.response_usage?.estimated ? t("logTable.priceEstimatedHint") : undefined}
+                    >
+                      {item.response_usage?.cost != null
+                        ? `${formatCost(item.response_usage.cost)}${item.response_usage?.estimated ? "*" : ""}`
+                        : "—"}
                     </span>
                   </div>
                 )
