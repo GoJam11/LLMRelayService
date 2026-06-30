@@ -925,8 +925,10 @@ async function handleProxyRequest(c: any): Promise<Response> {
       return response;
     }
 
+    // 即使是流式请求，错误状态码也是在开流前返回的（响应体尚未转发给客户端，下面会 cancel 掉），
+    // 此时重试/回退是安全的；只有已经开始流式响应体后才不应重试，而那种情况状态码是 2xx，不会命中 failover。
     const statusTrigger: FailoverTrigger = { kind: 'status', status: upstreamResponse.status };
-    if (!retryableStreamRequest && shouldContinueAfterFailure(failoverPolicy, statusTrigger, retryIndexForRoute)) {
+    if (shouldContinueAfterFailure(failoverPolicy, statusTrigger, retryIndexForRoute)) {
       lastFailureTrigger = statusTrigger;
       const reason = describeFailoverTrigger(statusTrigger);
       failoverReason = reason;

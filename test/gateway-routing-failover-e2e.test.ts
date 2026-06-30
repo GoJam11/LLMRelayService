@@ -4,7 +4,7 @@
  * 覆盖的场景：
  *   - 路由：基于模型路由、显式 provider 路由、未知模型 400、优先级选择、禁用 provider 跳过
  *   - 认证：缺少 key → 401、错误 key → 401、正确 key → 通过
- *   - 故障转移—重试：5xx 重试、429 重试、400 不重试、流式请求不重试状态码错误
+ *   - 故障转移—重试：5xx 重试、429 重试、400 不重试、流式请求开流前的状态码错误也会重试/回退
  *   - 故障转移—网络/超时：网络错误重试、超时重试、全部超时 → 504
  *   - 故障转移—模型回退：same_model 模式、any_model 模式、自定义回退、全部失败 → 5xx 透传
  *   - 策略控制：failover 禁用、maxFallbackAttempts=0
@@ -430,24 +430,66 @@ describe('failover – retry on error status', () => {
     expect(requestLog).toHaveLength(1);
   });
 
-  it('does NOT retry a streaming request on 5xx — stream errors pass through', async () => {
+  it('retries a streaming request when the upstream returns an error status before the first byte', async () => {
     loadProviderConfigsForTest(singleProviderConfig());
     loadFailoverPolicyForTest({
       enabled: true,
-      retryAttempts: 2,
+      retryAttempts: 1,
       maxFallbackAttempts: 0,
       retryOnStatusRanges: ['5xx'],
-      retryOnStatusCodes: [],
+      retryOnStatusCodes: [429],
     });
-    responseQueue.push(() => errorResponse(500, 'Internal error'));
+    responseQueue.push(() => errorResponse(429, 'Rate limited'));
+    responseQueue.push(() => defaultOkResponse());
 
-    // stream: true marks this as a streaming request; status-based retries are skipped
+    // stream: true must NOT disable status-based failover: the error status arrives
+    // before any body is streamed to the client, so retrying to the next attempt is safe.
     const res = await app.fetch(
       gatewayReq('/v1/chat/completions', chatBody('gpt-4o', { stream: true })),
     );
 
-    expect(res.status).toBe(500);
-    expect(requestLog).toHaveLength(1); // no retry
+    expect(res.status).toBe(200);
+    expect(requestLog).toHaveLength(2);
+  });
+
+  it('falls over a streaming request to the next provider on 5xx', async () => {
+    const configs = validateConfigEntries({
+      primary: {
+        type: 'openai',
+        targetBaseUrl: `${mockBaseUrl}/primary/v1`,
+        auth: { header: 'authorization', value: 'key' },
+        models: ['gpt-4o'],
+        priority: 10,
+      },
+      secondary: {
+        type: 'openai',
+        targetBaseUrl: `${mockBaseUrl}/secondary/v1`,
+        auth: { header: 'authorization', value: 'key' },
+        models: ['gpt-4o'],
+        priority: 5,
+      },
+    } as any);
+    loadProviderConfigsForTest(configs);
+    loadFailoverPolicyForTest({
+      enabled: true,
+      retryAttempts: 0,
+      modelFallbackMode: 'same_model',
+      maxFallbackAttempts: 1,
+      retryOnStatusRanges: ['5xx'],
+      retryOnStatusCodes: [],
+    });
+    responseQueue.push(() => errorResponse(503, 'Service unavailable'));
+    responseQueue.push(() => defaultOkResponse());
+
+    const res = await app.fetch(
+      gatewayReq('/v1/chat/completions', chatBody('gpt-4o', { stream: true })),
+    );
+
+    expect(res.status).toBe(200);
+    expect(requestLog).toHaveLength(2);
+    // Primary (high priority) is tried first, then the request falls over to secondary.
+    expect(requestLog[0]!.path).toBe('/primary/v1/chat/completions');
+    expect(requestLog[1]!.path).toBe('/secondary/v1/chat/completions');
   });
 });
 
