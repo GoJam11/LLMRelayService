@@ -1,5 +1,6 @@
-import { createConsoleProviderEntry, deleteConsoleProviderEntry, listConsoleProviderEntries, toggleConsoleProviderEntry, updateConsoleProviderEntry } from './console-provider-store';
+import { createConsoleProviderEntry, deleteConsoleProviderEntry, listConsoleProviderEntries, toggleConsoleProviderEntry, updateConsoleProviderEntry, updateConsoleProviderModels } from './console-provider-store';
 import { listModelAliases } from './console-model-alias-store';
+import { fetchUpstreamModelIds } from './upstream-models';
 
 export type UpstreamType = 'anthropic' | 'openai';
 export type RouteAuthHeader = 'x-api-key' | 'authorization';
@@ -39,6 +40,8 @@ export interface ConfigEntry {
   responsesMode?: OpenAiResponsesMode;
   extraFields?: Record<string, unknown>;
   providerUuid?: string;
+  /** 开启后，渠道模型列表由上游 /v1/models 自动同步（保存时立即同步，之后每 24h 定时同步）。 */
+  autoSyncModels?: boolean;
 }
 
 export interface RouteResult {
@@ -80,6 +83,7 @@ export interface ProviderInfo {
   responsesMode?: OpenAiResponsesMode;
   extraFields: Record<string, unknown> | null;
   providerUuid: string;
+  autoSyncModels: boolean;
 }
 
 export interface ProviderMutationAuthInput {
@@ -98,6 +102,7 @@ export interface ProviderMutationInput {
   auth?: ProviderMutationAuthInput | null;
   responsesMode?: OpenAiResponsesMode | null;
   extraFields?: Record<string, unknown> | null;
+  autoSyncModels?: boolean | null;
 }
 
 type RawConfigEntry = ConfigEntry & {
@@ -196,6 +201,7 @@ export function validateConfigEntries(entries: Record<string, RawConfigEntry>): 
       ...(responsesMode ? { responsesMode } : {}),
       ...(normalizedExtraFields ? { extraFields: normalizedExtraFields } : {}),
       ...(providerUuid ? { providerUuid } : {}),
+      ...(entry.autoSyncModels === true ? { autoSyncModels: true } : {}),
     };
   }
 
@@ -437,6 +443,7 @@ function buildProviderInfo(
       : {}),
     extraFields: extraFields ?? null,
     providerUuid: entry.providerUuid ?? '',
+    autoSyncModels: entry.autoSyncModels === true,
   };
 }
 
@@ -651,6 +658,9 @@ function buildNormalizedEntry(payload: ProviderMutationInput, existingEntry?: Co
     type,
   );
   const extraFields = mergeResponsesModeIntoExtraFields(rawExtraFields, responsesMode, type);
+  const autoSyncModels = payload.autoSyncModels === undefined
+    ? (existingEntry?.autoSyncModels ?? false)
+    : payload.autoSyncModels === true;
 
   const normalized: ConfigEntry = {
     type,
@@ -664,6 +674,7 @@ function buildNormalizedEntry(payload: ProviderMutationInput, existingEntry?: Co
   if (auth) normalized.auth = auth;
   if (responsesMode) normalized.responsesMode = responsesMode;
   if (extraFields && Object.keys(extraFields).length > 0) normalized.extraFields = extraFields;
+  if (autoSyncModels) normalized.autoSyncModels = true;
 
   return normalized;
 }
@@ -931,6 +942,12 @@ export async function createProvider(input: ProviderMutationInput): Promise<Prov
   }
 
   const entry = buildNormalizedEntry(input);
+
+  // 开启自动同步时立即拉取上游模型：失败则整体报错，成功则用上游列表覆盖模型列表。
+  if (entry.autoSyncModels) {
+    await syncEntryModelsFromUpstream(entry);
+  }
+
   const snapshot = providerConfigs;
   validateConsoleCandidate(channelName, entry);
 
@@ -958,6 +975,17 @@ export async function updateProvider(channelName: string, input: ProviderMutatio
     ? normalizedChannelName
     : normalizeChannelName(input.channelName);
   const entry = buildNormalizedEntry(input, existingEntry);
+
+  // 「自动同步」被开启时（新开启，或已开启且改动了地址/认证）立即拉取上游模型，
+  // 失败则整体报错、不落库；成功则用上游列表覆盖模型列表。
+  const autoSyncJustEnabled = entry.autoSyncModels === true && existingEntry.autoSyncModels !== true;
+  const connectionChanged = entry.targetBaseUrl !== existingEntry.targetBaseUrl
+    || entry.type !== existingEntry.type
+    || entry.auth?.value !== existingEntry.auth?.value;
+  if (entry.autoSyncModels && (autoSyncJustEnabled || connectionChanged)) {
+    await syncEntryModelsFromUpstream(entry);
+  }
+
   const snapshot = providerConfigs;
   validateConsoleCandidate(nextChannelName, entry, normalizedChannelName);
 
@@ -1018,4 +1046,68 @@ export async function toggleProvider(channelName: string, enabled: boolean): Pro
   }
 
   return buildProviderInfo(normalizedChannelName, updated);
+}
+
+/**
+ * 请求上游 /v1/models 并把结果写入 entry.models（原地修改）。
+ * 认证信息缺失或上游请求失败时抛错。
+ */
+async function syncEntryModelsFromUpstream(entry: ConfigEntry): Promise<void> {
+  if (!entry.auth?.value) {
+    throw new Error('开启「自动同步上游模型」需要先配置认证信息（Credential）');
+  }
+  const ids = await fetchUpstreamModelIds({
+    targetBaseUrl: entry.targetBaseUrl,
+    type: entry.type ?? 'openai',
+    authHeader: entry.auth.header,
+    authValue: entry.auth.value,
+  });
+  if (ids.length === 0) {
+    throw new Error('上游未返回任何模型，无法开启自动同步');
+  }
+  entry.models = ids.map((id) => ({ model: id }));
+}
+
+/**
+ * 24h 定时任务：为所有开启了自动同步且启用中的渠道刷新上游模型列表。
+ * 单个渠道失败只记录日志、不影响其他渠道。
+ */
+export async function runAutoModelSync(): Promise<{ synced: number; failed: number }> {
+  await ensureProviderConfigsLoaded();
+  const targets = Object.entries(getConfigs()).filter(
+    ([, entry]) => entry.autoSyncModels === true && entry.enabled !== false,
+  );
+
+  let synced = 0;
+  let failed = 0;
+  for (const [channelName, entry] of targets) {
+    if (!entry.auth?.value) {
+      console.warn(`[auto-sync] 跳过 "${channelName}"：未配置认证信息`);
+      continue;
+    }
+    try {
+      const ids = await fetchUpstreamModelIds({
+        targetBaseUrl: entry.targetBaseUrl,
+        type: entry.type ?? 'openai',
+        authHeader: entry.auth.header,
+        authValue: entry.auth.value,
+      });
+      if (ids.length === 0) {
+        // 上游返回空列表时不清空既有模型，避免误伤
+        console.warn(`[auto-sync] "${channelName}" 上游返回空模型列表，保留原有配置`);
+        continue;
+      }
+      await updateConsoleProviderModels(channelName, ids.map((id) => ({ model: id })));
+      synced += 1;
+      console.log(`[auto-sync] "${channelName}" 已同步 ${ids.length} 个上游模型`);
+    } catch (error) {
+      failed += 1;
+      console.warn(`[auto-sync] "${channelName}" 同步失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (synced > 0) {
+    await refreshProviderConfigs();
+  }
+  return { synced, failed };
 }

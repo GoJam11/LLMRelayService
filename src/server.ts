@@ -4,6 +4,7 @@
 
 import app from './index';
 import { startPerfMonitor } from './perf-monitor';
+import { runAutoModelSync } from './config';
 import { warmModelCatalogFromDb } from './model-catalog';
 import { fetchModelsDevData } from './model-catalog';
 import { saveCatalogToDb } from './catalog-db';
@@ -142,6 +143,22 @@ Bun.serve({
 console.log(`LLM Gateway running on :${PORT} (idleTimeout=${Number.isFinite(IDLE_TIMEOUT_SECONDS) && IDLE_TIMEOUT_SECONDS >= 0 ? IDLE_TIMEOUT_SECONDS : 0}s)`);
 
 startPerfMonitor();
+
+// 每 24h 自动同步开启了「自动同步上游模型」的渠道模型列表
+const AUTO_MODEL_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
+if (migrationStatus.state === 'success' || migrationStatus.state === 'skipped') {
+  setInterval(() => {
+    runAutoModelSync()
+      .then(({ synced, failed }) => {
+        if (synced > 0 || failed > 0) {
+          console.log(`[auto-sync] 定时任务完成：成功 ${synced} 个，失败 ${failed} 个`);
+        }
+      })
+      .catch((error) => {
+        console.warn('[auto-sync] 定时任务异常:', error instanceof Error ? error.message : error);
+      });
+  }, AUTO_MODEL_SYNC_INTERVAL_MS);
+}
 
 // 并行从 models.dev 刷新 catalog（不阻塞启动，DB 缓存过期时才需要）
 if (!dbCatalogFresh) {

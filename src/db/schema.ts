@@ -98,6 +98,8 @@ export const consoleProviders = pgTable('console_providers', {
   extraFieldsJson: text('extra_fields_json').notNull().default(''),
   routingVisibility: text('routing_visibility').notNull().default('direct'),
   enabled: integer('enabled').notNull().default(1),
+  autoSyncModels: integer('auto_sync_models').notNull().default(0),
+  modelsSyncedAt: bigint('models_synced_at', { mode: 'number' }),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
 }, (table) => ({

@@ -508,6 +508,8 @@ export default {
     extraFieldsInvalidJson: "Extra fields must be valid JSON object",
     extraFieldsInvalidObj: "Extra fields must be a JSON object",
     modelsLabel: "Models",
+    autoSyncModelsLabel: "Auto-sync upstream models",
+    autoSyncModelsHint: "When enabled, saving first validates the upstream /v1/models endpoint; on success the model list is immediately replaced with the upstream list, then re-synced automatically every 24 hours.",
     modelIdHeader: "Model ID",
     noModels: "No models. Click Add to create one.",
     clearAllModels: "Clear",

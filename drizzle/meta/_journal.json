@@ -71,6 +71,13 @@
       "when": 1782568245349,
       "tag": "0009_request_cost_pricing_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782897719065,
+      "tag": "0010_unusual_cammi",
+      "breakpoints": true
     }
   ]
 }

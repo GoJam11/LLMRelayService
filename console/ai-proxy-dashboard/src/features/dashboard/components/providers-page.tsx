@@ -197,6 +197,7 @@ type ProviderFormState = {
   apiKeyDirty: boolean
   clearAuth: boolean
   extraFieldsJson: string
+  autoSyncModels: boolean
   models: ModelRowState[]
 }
 
@@ -251,6 +252,7 @@ function createFormState(provider?: ProviderInfo): ProviderFormState {
         ? JSON.stringify(extraFields, null, 2)
         : ""
     })(),
+    autoSyncModels: provider?.autoSyncModels ?? false,
     models: provider?.models.length
       ? provider.models.map((model) => createModelRow(model))
       : [createModelRow()],
@@ -305,6 +307,7 @@ function buildProviderPayload(
     routingVisibility: state.routingVisibility,
     responsesMode: state.type === "openai" ? state.responsesMode : null,
     extraFields: parseExtraJson(state.extraFieldsJson),
+    autoSyncModels: state.autoSyncModels,
   }
 
   const explicitHeader = state.authHeader === "auto" ? undefined : state.authHeader
@@ -794,6 +797,7 @@ export function ProvidersPage({
         auth: p.auth,
         responsesMode: p.responsesMode,
         extraFields: p.extraFields,
+        autoSyncModels: p.autoSyncModels,
       })),
     }
     setConfigJson(JSON.stringify(exportData, null, 2))
@@ -984,6 +988,24 @@ export function ProvidersPage({
                   <Download data-icon="inline-start" />
                   {t("providers.syncButton")}
                 </Button>
+              </div>
+              <div className="mt-2 flex items-start gap-2 rounded-[10px] border border-input bg-muted/30 px-3 py-2">
+                <Checkbox
+                  id="pane-auto-sync-models"
+                  checked={formState.autoSyncModels}
+                  onCheckedChange={(checked) =>
+                    setFormState((current) => ({ ...current, autoSyncModels: checked === true }))
+                  }
+                  className="mt-0.5"
+                />
+                <label htmlFor="pane-auto-sync-models" className="cursor-pointer select-none">
+                  <span className="block text-[13px] font-medium text-foreground">
+                    {t("providers.autoSyncModelsLabel")}
+                  </span>
+                  <span className="mt-0.5 block text-[11.5px] leading-snug text-muted-foreground">
+                    {t("providers.autoSyncModelsHint")}
+                  </span>
+                </label>
               </div>
             </Field>
 

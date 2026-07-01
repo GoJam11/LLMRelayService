@@ -11,6 +11,7 @@ import { createModelAlias, deleteModelAlias, listModelAliases, toggleModelAlias,
 import { ensureModelCatalogLoaded, lookupModelContext } from './model-catalog';
 import { ensurePricingLoaded, getModelPricing } from './pricing';
 import { getModelOverrideKey, listModelMetadataOverrides, upsertModelMetadataOverride } from './model-metadata-overrides';
+import { fetchUpstreamModelIds } from './upstream-models';
 import { getGatewayTimeoutSettings, updateGatewayTimeoutSettings } from './gateway-timeouts';
 import { getGatewayFailoverPolicy, updateGatewayFailoverPolicy } from './gateway-failover';
 
@@ -702,54 +703,14 @@ export function registerConsoleRoutes(app: Hono<any>): void {
       return c.json({ error: '该渠道未配置认证信息，无法请求上游 models 接口' }, 400);
     }
 
-    const baseUrl = provider.targetBaseUrl.replace(/\/$/, '');
-    const authHeaders: Record<string, string> = {};
-    if (auth.header === 'authorization') {
-      authHeaders.Authorization = auth.value;
-    } else {
-      authHeaders['x-api-key'] = auth.value;
-    }
-
-    let modelsUrl: string;
-    let extraHeaders: Record<string, string> = {};
-    if (provider.type === 'anthropic') {
-      const v1Prefix = baseUrl.endsWith('/v1') ? '' : '/v1';
-      modelsUrl = baseUrl + v1Prefix + '/models';
-      extraHeaders = { 'anthropic-version': '2023-06-01' };
-    } else {
-      modelsUrl = baseUrl + '/models';
-    }
-
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-      const response = await fetch(modelsUrl, {
-        method: 'GET',
-        headers: { ...authHeaders, ...extraHeaders },
-        signal: controller.signal,
+      const ids = await fetchUpstreamModelIds({
+        targetBaseUrl: provider.targetBaseUrl,
+        type: provider.type === 'anthropic' ? 'anthropic' : 'openai',
+        authHeader: auth.header,
+        authValue: auth.value,
       });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        return c.json({ error: `上游返回 HTTP ${response.status}: ${text.slice(0, 200)}` }, 502);
-      }
-
-      const data = await response.json();
-      // OpenAI 和 Anthropic 的 /v1/models 均返回 { data: [{ id: string, ... }] }
-      const items: unknown[] = Array.isArray(data?.data) ? data.data : [];
-      const models = items
-        .map((item) => {
-          if (typeof item === 'object' && item !== null && 'id' in item) {
-            return { id: String((item as Record<string, unknown>).id) };
-          }
-          return null;
-        })
-        .filter((m): m is { id: string } => m !== null);
-
-      return c.json({ models });
+      return c.json({ models: ids.map((id) => ({ id })) });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
     }
@@ -779,57 +740,18 @@ export function registerConsoleRoutes(app: Hono<any>): void {
       return c.json({ error: '未填写认证信息（Credential），无法请求上游 models 接口' }, 400);
     }
 
-    const authHeaders: Record<string, string> = {};
     const headerName = body.authHeader && body.authHeader !== 'auto'
-      ? body.authHeader
+      ? (body.authHeader as 'x-api-key' | 'authorization')
       : body.type === 'anthropic' ? 'x-api-key' : 'authorization';
 
-    if (headerName === 'authorization') {
-      const val = body.authValue.startsWith('Bearer ') ? body.authValue : `Bearer ${body.authValue}`;
-      authHeaders.Authorization = val;
-    } else {
-      authHeaders['x-api-key'] = body.authValue;
-    }
-
-    let modelsUrl: string;
-    let extraHeaders: Record<string, string> = {};
-    if (body.type === 'anthropic') {
-      const v1Prefix = baseUrl.endsWith('/v1') ? '' : '/v1';
-      modelsUrl = baseUrl + v1Prefix + '/models';
-      extraHeaders = { 'anthropic-version': '2023-06-01' };
-    } else {
-      modelsUrl = baseUrl + '/models';
-    }
-
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-      const response = await fetch(modelsUrl, {
-        method: 'GET',
-        headers: { ...authHeaders, ...extraHeaders },
-        signal: controller.signal,
+      const ids = await fetchUpstreamModelIds({
+        targetBaseUrl: baseUrl,
+        type: body.type === 'anthropic' ? 'anthropic' : 'openai',
+        authHeader: headerName,
+        authValue: body.authValue,
       });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const text = await response.text().catch(() => '');
-        return c.json({ error: `上游返回 HTTP ${response.status}: ${text.slice(0, 200)}` }, 502);
-      }
-
-      const data = await response.json();
-      const items: unknown[] = Array.isArray(data?.data) ? data.data : [];
-      const models = items
-        .map((item) => {
-          if (typeof item === 'object' && item !== null && 'id' in item) {
-            return { id: String((item as Record<string, unknown>).id) };
-          }
-          return null;
-        })
-        .filter((m): m is { id: string } => m !== null);
-
-      return c.json({ models });
+      return c.json({ models: ids.map((id) => ({ id })) });
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
     }

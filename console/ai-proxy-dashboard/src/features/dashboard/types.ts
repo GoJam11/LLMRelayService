@@ -243,6 +243,7 @@ export type ProviderInfo = {
   responsesMode?: OpenAiResponsesMode
   extraFields: Record<string, unknown> | null
   providerUuid: string
+  autoSyncModels?: boolean
   healthStatus?: "healthy" | "degraded" | "down" | "no-data"
 }
 
@@ -264,6 +265,7 @@ export type ProviderMutationPayload = {
   } | null
   responsesMode?: OpenAiResponsesMode | null
   extraFields?: Record<string, unknown> | null
+  autoSyncModels?: boolean
 }
 
 export type ManagedApiKey = {
