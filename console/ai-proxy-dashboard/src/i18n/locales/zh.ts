@@ -508,6 +508,8 @@ export default {
     extraFieldsInvalidJson: "高级字段必须是合法 JSON 对象",
     extraFieldsInvalidObj: "高级字段必须是 JSON 对象",
     modelsLabel: "模型列表",
+    autoSyncModelsLabel: "自动同步上游模型",
+    autoSyncModelsHint: "开启后保存时会先校验上游 /v1/models，成功则立即用上游列表覆盖当前模型，之后每 24 小时自动同步一次。",
     modelIdHeader: "模型 ID",
     noModels: "暂无模型，点击添加",
     clearAllModels: "清空",

@@ -29,6 +29,7 @@ interface ConfigEntry {
   routingVisibility?: RoutingVisibility;
   extraFields?: Record<string, unknown>;
   providerUuid?: string;
+  autoSyncModels?: boolean;
 }
 
 const db = createDbClient();
@@ -94,6 +95,7 @@ function rowToConfigEntry(row: typeof consoleProviders.$inferSelect): ConfigEntr
       ? { extraFields: JSON.parse(row.extraFieldsJson) as Record<string, unknown> }
       : {}),
     providerUuid: row.providerUuid || '',
+    ...(row.autoSyncModels === 1 ? { autoSyncModels: true } : {}),
   };
 }
 
@@ -113,6 +115,7 @@ function serializeEntry(channelName: string, entry: ConfigEntry, now = Date.now(
       : '',
     routingVisibility: entry.routingVisibility ?? 'direct',
     enabled: entry.enabled !== false ? 1 : 0,
+    autoSyncModels: entry.autoSyncModels ? 1 : 0,
     createdAt: now,
     updatedAt: now,
   };
@@ -167,6 +170,7 @@ export async function upsertConsoleProviderEntry(channelName: string, entry: Con
           : '',
         routingVisibility: entry.routingVisibility ?? 'direct',
         enabled: entry.enabled !== false ? 1 : 0,
+        autoSyncModels: entry.autoSyncModels ? 1 : 0,
         updatedAt: now,
       },
     });
@@ -195,6 +199,7 @@ export async function updateConsoleProviderEntry(currentChannelName: string, nex
       routingVisibility: entry.routingVisibility ?? 'direct',
       providerUuid: existingUuid,
       enabled: entry.enabled !== false ? 1 : 0,
+      autoSyncModels: entry.autoSyncModels ? 1 : 0,
       updatedAt: now,
     })
     .where(eq(consoleProviders.channelName, currentChannelName))
@@ -202,6 +207,18 @@ export async function updateConsoleProviderEntry(currentChannelName: string, nex
 
   if (rows.length === 0) {
     throw new Error(`Provider "${currentChannelName}" does not exist.`);
+  }
+}
+
+export async function updateConsoleProviderModels(channelName: string, models: ModelConfig[], syncedAt = Date.now()): Promise<void> {
+  await storeReady;
+  const result = await db.update(consoleProviders)
+    .set({ modelsJson: JSON.stringify(models), modelsSyncedAt: syncedAt, updatedAt: syncedAt })
+    .where(eq(consoleProviders.channelName, channelName))
+    .returning({ channelName: consoleProviders.channelName });
+
+  if (result.length === 0) {
+    throw new Error(`Provider "${channelName}" does not exist`);
   }
 }
 
