@@ -20,9 +20,13 @@
     "start": "bun run src/server.ts",
     "test": "bun test",
     "db:generate": "drizzle-kit generate",
+    "db:generate:sqlite": "drizzle-kit generate --config drizzle.sqlite.config.ts",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate:sqlite": "drizzle-kit migrate --config drizzle.sqlite.config.ts",
     "db:push": "drizzle-kit push",
+    "db:push:sqlite": "drizzle-kit push --config drizzle.sqlite.config.ts",
     "db:studio": "drizzle-kit studio",
+    "db:studio:sqlite": "drizzle-kit studio --config drizzle.sqlite.config.ts",
     "hooks:install": "git config core.hooksPath .githooks"
   },
   "dependencies": {

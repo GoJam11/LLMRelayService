@@ -19,11 +19,13 @@
   - `cd console/ai-proxy-dashboard && bun run build`
 - **push 前必须先启动本地后端服务验证无报错**：`bun run dev:server`，确认服务正常启动（无崩溃、无 ReferenceError 等启动时错误）后再 push。服务启动后可用 Ctrl-C 停止。
 - **数据库迁移：只用 drizzle-kit，禁用 inline migrations。**
-  - 改 schema 后必须运行 `drizzle-kit generate` 生成迁移文件
+  - 支持 PostgreSQL 与 SQLite 双方言：schema 定义在 `src/db/schema.pg.ts` 和 `src/db/schema.sqlite.ts`，**两个文件必须同步修改**（表名/列名/默认值保持一致）
+  - 改 schema 后必须运行 `bun run db:generate`（PG → `drizzle/`）**和** `bun run db:generate:sqlite`（SQLite → `drizzle-sqlite/`）生成两套迁移文件
   - **schema 改动和迁移文件必须在同一个 commit 中提交**，禁止只 push schema 不 push 迁移
-  - 部署时自动执行 `drizzle-kit migrate`（Dockerfile CMD 已配置）
+  - 部署时启动阶段自动按方言执行迁移（`runMigrations()`）
   - **禁止**在 `src/db/migrate.ts` 或 store 文件中写内联迁移
   - 如果 snapshot 损坏，从 git 历史恢复，不要删除后重新生成
+  - 方言不可移植的原生 SQL 必须按 `getDbDialect()` 显式分支（SQLite 分支用 `getSqliteDatabase()`）
 - 对项目的功能/行为改动，默认**同步更新 changelog**；不要只改代码不记变更。
 - **代码改动和对应的 changelog 更新必须在同一个 commit 中提交**，禁止拆分成多个 commit。
 - 如果根目录 lockfile 因依赖变化被修改（例如 `bun.lock`），不要漏提、漏 push。

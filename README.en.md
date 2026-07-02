@@ -78,7 +78,9 @@ LRS is a lightweight LLM relay service built on **Bun + Hono**. It unifies multi
 ### Prerequisites
 
 - [Bun](https://bun.sh) >= 1.1
-- A PostgreSQL database
+- One database, chosen at first deploy (the choice is **permanent** — data is not migrated between dialects):
+  - **SQLite** (default) — zero dependencies; leave `DATABASE_URL` unset to use `./data/llm-relay.sqlite`
+  - **PostgreSQL** — set `DATABASE_URL=postgresql://...`
 
 ### Install and run
 
@@ -92,12 +94,11 @@ bun install
 
 # 3. Configure environment variables (see .env.example)
 cp .env.example .env
-# Edit .env and fill in DATABASE_URL and GATEWAY_API_KEY
+# Edit .env and fill in GATEWAY_API_KEY; leave DATABASE_URL unset for SQLite,
+# or set a postgresql:// connection string for PostgreSQL
 
-# 4. Initialize the database
-bun run db:migrate
-
-# 5. Start the service (backend + frontend dev server together)
+# 4. Start the service (backend + frontend dev server together;
+#    database migrations run automatically on startup)
 bun run dev
 ```
 
@@ -148,7 +149,29 @@ Once sent, the request appears in the console's request log along with its origi
 
 Prebuilt GHCR image: `ghcr.io/gojam11/llmrelayservice:main`, updated automatically on every push to the main branch — no local build needed.
 
-### Docker Compose (recommended)
+Two databases are supported: **SQLite** (default, zero dependencies) and **PostgreSQL**. The dialect is fixed by `DATABASE_URL` at first deploy and **cannot be switched later** (data is not migrated between dialects; startup validates the choice and rejects accidental switches).
+
+### Single-container SQLite (recommended for personal use)
+
+No compose file and no external database — one container solves everything. Leave `DATABASE_URL` unset to use `/app/data/llm-relay.sqlite` inside the container, and mount a volume to persist it:
+
+```bash
+docker run -d \
+  --name llm-relay \
+  -p 3000:3000 \
+  -e GATEWAY_API_KEY=your-key \
+  -v llm-relay-data:/app/data \
+  ghcr.io/gojam11/llmrelayservice:main
+```
+
+Open `http://localhost:3000` to access the console. To update later:
+
+```bash
+docker pull ghcr.io/gojam11/llmrelayservice:main && docker rm -f llm-relay
+# Re-run the docker run command above (data lives in the llm-relay-data volume and survives)
+```
+
+### Docker Compose (PostgreSQL)
 
 ```bash
 # 1. Copy and configure environment variables
@@ -167,22 +190,7 @@ To update later:
 docker compose pull && docker compose up -d
 ```
 
-> **Tip**: If you already have an external PostgreSQL, just remove the `postgres` service from `docker-compose.yml` and point `DATABASE_URL` at your connection string.
-
-### Single-container Docker
-
-If you already have your own PostgreSQL, run a single container (it listens on `3300` by default):
-
-```bash
-docker run -d \
-  --name lrs \
-  -p 3300:3300 \
-  -e GATEWAY_API_KEY=your-key \
-  -e DATABASE_URL=postgresql://user:password@host:5432/lrs \
-  ghcr.io/gojam11/llmrelayservice:main
-```
-
-Open `http://localhost:3300` to access the console.
+> **Tip**: If you already have an external PostgreSQL, just remove the `postgres` service from `docker-compose.yml` and point `DATABASE_URL` at your connection string — or run a single container with `-e DATABASE_URL=postgresql://user:password@host:5432/lrs`.
 
 ### Build from source
 
@@ -218,7 +226,7 @@ Open the root path `/` to access the console. Features include:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string |
+| `DATABASE_URL` | — | Database connection. Unset defaults to SQLite (`./data/llm-relay.sqlite`); `sqlite:<path>` for a custom SQLite file; `postgresql://...` for PostgreSQL. **The dialect is fixed at first deploy and cannot be switched later** |
 | `GATEWAY_API_KEY` | ✅ | The key clients use to access the gateway; also the console login password |
 | `PORT` | — | Listening port, default `3300` |
 | `UPSTREAM_DEFAULT_FIRST_BYTE_TIMEOUT_MS` | — | Default timeout for normal requests waiting on upstream response headers, default `300000` ms; can be overridden persistently in the console Settings page |
@@ -293,7 +301,7 @@ src/
   config.ts             # Route resolution (resolveRoute / resolveRouteByModel)
   console-ui.ts         # Console static asset hosting and /__console/* API
   providers/            # Anthropic / OpenAI adapters
-  db/                   # Drizzle ORM + PostgreSQL
+  db/                   # Drizzle ORM + PostgreSQL / SQLite (dialect chosen via DATABASE_URL)
 console/
   ai-proxy-dashboard/   # Vite + React console frontend
 drizzle/                # Database migration files

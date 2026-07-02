@@ -78,7 +78,9 @@ LRS 是一个基于 **Bun + Hono** 的轻量 LLM 中继服务，把多个 AI 服
 ### 前置条件
 
 - [Bun](https://bun.sh) >= 1.1
-- PostgreSQL 数据库
+- 数据库二选一（首次部署选定后**不可切换**，两种方言数据互不迁移）：
+  - **SQLite**（默认）— 零依赖，不设置 `DATABASE_URL` 即自动使用 `./data/llm-relay.sqlite`
+  - **PostgreSQL** — 设置 `DATABASE_URL=postgresql://...`
 
 ### 安装与启动
 
@@ -92,12 +94,9 @@ bun install
 
 # 3. 配置环境变量（参考 .env.example）
 cp .env.example .env
-# 编辑 .env，填写 DATABASE_URL 和 GATEWAY_API_KEY
+# 编辑 .env，填写 GATEWAY_API_KEY；DATABASE_URL 留空即默认 SQLite，用 PostgreSQL 则填连接字符串
 
-# 4. 初始化数据库
-bun run db:migrate
-
-# 5. 启动服务（同时启动后端和前端开发服务器）
+# 4. 启动服务（同时启动后端和前端开发服务器；数据库迁移在启动时自动执行）
 bun run dev
 ```
 
@@ -148,7 +147,29 @@ curl http://localhost:3300/v1/chat/completions \
 
 GHCR 预构建镜像：`ghcr.io/gojam11/llmrelayservice:main`，每次主分支推送自动更新，无需本地构建。
 
-### Docker Compose（推荐）
+支持两种数据库：**SQLite**（默认，零依赖）与 **PostgreSQL**。方言在首次部署时由 `DATABASE_URL` 一次性选定，**选定后不可切换**（两种方言的数据互不迁移，启动时会校验并拒绝误切换）。
+
+### 单容器 SQLite（个人部署推荐）
+
+不需要 compose，也不需要外部数据库，一个容器解决所有问题。不设置 `DATABASE_URL` 即默认使用容器内 `/app/data/llm-relay.sqlite`，挂载数据卷即可持久化：
+
+```bash
+docker run -d \
+  --name llm-relay \
+  -p 3000:3000 \
+  -e GATEWAY_API_KEY=your-key \
+  -v llm-relay-data:/app/data \
+  ghcr.io/gojam11/llmrelayservice:main
+```
+
+访问 `http://localhost:3000` 打开控制台。后续更新：
+
+```bash
+docker pull ghcr.io/gojam11/llmrelayservice:main && docker rm -f llm-relay
+# 重新执行上面的 docker run（数据保存在 llm-relay-data 卷中，不会丢失）
+```
+
+### Docker Compose（PostgreSQL）
 
 ```bash
 # 1. 复制并配置环境变量
@@ -167,22 +188,7 @@ GATEWAY_API_KEY=your-key docker compose up -d
 docker compose pull && docker compose up -d
 ```
 
-> **提示**：如已有外部 PostgreSQL，只需删除 `docker-compose.yml` 中的 `postgres` 服务，并将 `DATABASE_URL` 改为对应连接字符串。
-
-### 单容器 Docker
-
-如果你已经有自己的 PostgreSQL，可以直接运行单个容器（容器默认监听 `3300`）：
-
-```bash
-docker run -d \
-  --name lrs \
-  -p 3300:3300 \
-  -e GATEWAY_API_KEY=your-key \
-  -e DATABASE_URL=postgresql://user:password@host:5432/lrs \
-  ghcr.io/gojam11/llmrelayservice:main
-```
-
-访问 `http://localhost:3300` 打开控制台。
+> **提示**：如已有外部 PostgreSQL，只需删除 `docker-compose.yml` 中的 `postgres` 服务，并将 `DATABASE_URL` 改为对应连接字符串；也可以直接单容器运行并传入 `-e DATABASE_URL=postgresql://user:password@host:5432/lrs`。
 
 ### 从源码构建
 
@@ -218,7 +224,7 @@ Railway / Render 等平台部署时构建命令同上。
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
-| `DATABASE_URL` | ✅ | PostgreSQL 连接字符串 |
+| `DATABASE_URL` | — | 数据库连接。留空默认 SQLite（`./data/llm-relay.sqlite`）；`sqlite:<路径>` 指定 SQLite 文件；`postgresql://...` 使用 PostgreSQL。**首次部署选定方言后不可切换** |
 | `GATEWAY_API_KEY` | ✅ | 客户端访问网关所需的 key，同时用作控制台登录密码 |
 | `PORT` | — | 监听端口，默认 `3300` |
 | `UPSTREAM_DEFAULT_FIRST_BYTE_TIMEOUT_MS` | — | 普通请求等待上游响应头的默认超时时间，默认 `300000` 毫秒；可在控制台配置页持久化覆盖 |
@@ -293,7 +299,7 @@ src/
   config.ts             # 路由解析（resolveRoute / resolveRouteByModel）
   console-ui.ts         # 控制台静态资源托管与 /__console/* API
   providers/            # Anthropic / OpenAI 适配器
-  db/                   # Drizzle ORM + PostgreSQL
+  db/                   # Drizzle ORM + PostgreSQL / SQLite（方言按 DATABASE_URL 选定）
 console/
   ai-proxy-dashboard/   # Vite + React 控制台前端
 drizzle/                # 数据库迁移文件

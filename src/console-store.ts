@@ -1,8 +1,8 @@
 import { calculateCostWithPricing, ensurePricingLoaded, getModelPricing, type CostBreakdown, type ModelPricing } from './pricing';
 import { detectRequestKindForProvider } from './providers';
 import type { DetectedRequestKind } from './providers';
-import { createDbClient } from './db/client';
-import { getDatabaseUrl } from './db/config';
+import { createDbClient, getSqliteDatabase } from './db/client';
+import { getDatabaseUrl, getDbDialect } from './db/config';
 import { isTrustedTestDatabaseUrl } from './db/test-database';
 
 import { consoleRequests } from './db/schema';
@@ -1421,6 +1421,11 @@ async function syncApiKeyQuotaCharge(
   const cost = calculateCostWithPricing(responseUsage, pricing, upstreamType);
   const chargedMicrousd = usdCostToChargeMicrousd(cost.total_cost);
 
+  if (getDbDialect() === 'sqlite') {
+    syncApiKeyQuotaChargeSqlite(requestId, chargedMicrousd);
+    return;
+  }
+
   await db.execute(sql`
     WITH target AS (
       SELECT request_id, api_key_id, quota_charged_microusd
@@ -1443,6 +1448,30 @@ async function syncApiKeyQuotaCharge(
       AND updated_request.api_key_id IS NOT NULL
       AND updated_request.delta <> 0
   `);
+}
+
+// SQLite 版本：PG 的 CTE + FOR UPDATE + UPDATE...FROM 不可移植，改为 BEGIN IMMEDIATE
+// 事务内先读旧值再分别更新两张表（bun:sqlite 单连接串行写，事务保证 delta 计算原子性）
+function syncApiKeyQuotaChargeSqlite(requestId: string, chargedMicrousd: number): void {
+  const sqlite = getSqliteDatabase();
+  const applyCharge = sqlite.transaction(() => {
+    const target = sqlite.query(
+      'SELECT api_key_id, quota_charged_microusd FROM console_requests WHERE request_id = ?',
+    ).get(requestId) as { api_key_id: string | null; quota_charged_microusd: number | null } | null;
+    if (!target) return;
+
+    sqlite.query(
+      'UPDATE console_requests SET quota_charged_microusd = ? WHERE request_id = ?',
+    ).run(chargedMicrousd, requestId);
+
+    const delta = chargedMicrousd - Number(target.quota_charged_microusd ?? 0);
+    if (target.api_key_id && delta !== 0) {
+      sqlite.query(
+        'UPDATE console_api_keys SET cost_used_microusd = MAX(0, cost_used_microusd + ?) WHERE id = ?',
+      ).run(delta, target.api_key_id);
+    }
+  });
+  applyCharge.immediate();
 }
 
 export async function saveConsoleRequest(record: ConsoleRequestSnapshotInput): Promise<void> {

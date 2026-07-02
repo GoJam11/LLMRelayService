@@ -1,3 +1,8 @@
+# PostgreSQL 部署示例（自带 postgres 服务）。
+# 个人轻量部署推荐单容器 SQLite（无需 compose），见 README「部署」一节：
+#   docker run -d -p 3001:3000 -e GATEWAY_API_KEY=your-key \
+#     -v llm-relay-data:/app/data ghcr.io/gojam11/llmrelayservice:main
+# 注意：数据库方言（PostgreSQL / SQLite）首次部署选定后不可切换，数据互不迁移。
 services:
   app:
     image: ghcr.io/gojam11/llmrelayservice:main

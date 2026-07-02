@@ -10,7 +10,9 @@ import { fetchModelsDevData } from './model-catalog';
 import { saveCatalogToDb } from './catalog-db';
 import { initializeTokenEstimator } from './token-estimator';
 import { runMigrations, type MigrationStatus } from './db/migrate';
-import { getDatabaseUrl } from './db/config';
+import { getDatabaseUrl, getDbDialect } from './db/config';
+import { getSqliteDatabase } from './db/client';
+import { writeDialectMarker } from './db/dialect-guard';
 import postgres from 'postgres';
 import { createCorsPreflightResponse, withCorsHeaders } from './cors';
 
@@ -60,7 +62,44 @@ function showMigrationGuide(status: Extract<MigrationStatus, { state: 'failed' }
   });
 }
 
+async function rerunMigrationsAfterReset(): Promise<{ success: boolean; message?: string; error?: string }> {
+  // 用户显式重置数据库后，把方言标记重写为当前 DATABASE_URL 的方言
+  writeDialectMarker();
+  const result = await runMigrations(undefined, true);
+  if (result.state === 'success') {
+    return { success: true, message: '数据库已重置并重新迁移' };
+  }
+  return { success: false, error: result.state === 'failed' ? result.error : '迁移失败' };
+}
+
+function resetSqliteDatabase(): { success: boolean; error?: string } {
+  const sqlite = getSqliteDatabase();
+  const tables = sqlite.query(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+  ).all() as { name: string }[];
+
+  sqlite.run('PRAGMA foreign_keys = OFF');
+  try {
+    for (const { name } of tables) {
+      sqlite.run(`DROP TABLE IF EXISTS "${name.replaceAll('"', '""')}"`);
+      console.log(`[DB] Dropped table: ${name}`);
+    }
+  } finally {
+    sqlite.run('PRAGMA foreign_keys = ON');
+  }
+  return { success: true };
+}
+
 async function resetDatabase(): Promise<{ success: boolean; message?: string; error?: string }> {
+  if (getDbDialect() === 'sqlite') {
+    try {
+      resetSqliteDatabase();
+      return await rerunMigrationsAfterReset();
+    } catch (err: any) {
+      return { success: false, error: err?.message ?? String(err) };
+    }
+  }
+
   const databaseUrl = getDatabaseUrl();
   const sql = postgres(databaseUrl, { max: 1, prepare: false });
 
@@ -87,11 +126,7 @@ async function resetDatabase(): Promise<{ success: boolean; message?: string; er
     await sql.end();
 
     // 重新执行迁移（强制重新执行，不走缓存）
-    const result = await runMigrations(undefined, true);
-    if (result.state === 'success') {
-      return { success: true, message: '数据库已重置并重新迁移' };
-    }
-    return { success: false, error: result.state === 'failed' ? result.error : '迁移失败' };
+    return await rerunMigrationsAfterReset();
   } catch (err: any) {
     await sql.end().catch(() => {});
     return { success: false, error: err?.message ?? String(err) };
