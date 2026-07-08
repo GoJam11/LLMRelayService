@@ -1,151 +1,19 @@
-import { bigint, index, integer, pgTable, serial, text, uniqueIndex } from 'drizzle-orm/pg-core';
+import { getDbDriver } from './config';
+import * as pgSchema from './schema.pg';
+import * as sqliteSchema from './schema.sqlite';
 
-export const consoleRequests = pgTable('console_requests', {
-  requestId: text('request_id').primaryKey(),
-  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
-  routePrefix: text('route_prefix').notNull(),
-  upstreamType: text('upstream_type').notNull().default('anthropic'),
-  method: text('method').notNull(),
-  path: text('path').notNull(),
-  targetUrl: text('target_url').notNull(),
-  requestModel: text('request_model').notNull(),
-  apiKeyId: text('api_key_id'),
-  apiKeyName: text('api_key_name'),
-  originalPayload: text('original_payload'),
-  originalPayloadTruncated: integer('original_payload_truncated').notNull().default(0),
-  originalSummaryJson: text('original_summary_json'),
-  forwardedPayload: text('forwarded_payload'),
-  forwardedPayloadTruncated: integer('forwarded_payload_truncated').notNull().default(0),
-  forwardedSummaryJson: text('forwarded_summary_json'),
-  originalHeadersJson: text('original_headers_json'),
-  forwardHeadersJson: text('forward_headers_json'),
-  responseHeadersJson: text('response_headers_json'),
-  responseStatus: integer('response_status'),
-  responseStatusText: text('response_status_text'),
-  responsePayload: text('response_payload'),
-  responsePayloadTruncated: integer('response_payload_truncated').notNull().default(0),
-  responsePayloadTruncationReason: text('response_payload_truncation_reason'),
-  responseBodyBytes: integer('response_body_bytes').notNull().default(0),
-  firstChunkAt: bigint('first_chunk_at', { mode: 'number' }),
-  firstTokenAt: bigint('first_token_at', { mode: 'number' }),
-  completedAt: bigint('completed_at', { mode: 'number' }),
-  hasStreamingContent: integer('has_streaming_content').notNull().default(0),
-  responseModel: text('response_model'),
-  stopReason: text('stop_reason'),
-  inputTokens: integer('input_tokens').notNull().default(0),
-  outputTokens: integer('output_tokens').notNull().default(0),
-  totalTokens: integer('total_tokens').notNull().default(0),
-  cacheCreationInputTokens: integer('cache_creation_input_tokens').notNull().default(0),
-  cacheReadInputTokens: integer('cache_read_input_tokens').notNull().default(0),
-  cachedInputTokens: integer('cached_input_tokens').notNull().default(0),
-  reasoningOutputTokens: integer('reasoning_output_tokens').notNull().default(0),
-  ephemeral5mInputTokens: integer('ephemeral_5m_input_tokens').notNull().default(0),
-  ephemeral1hInputTokens: integer('ephemeral_1h_input_tokens').notNull().default(0),
-  quotaChargedMicrousd: bigint('quota_charged_microusd', { mode: 'number' }).notNull().default(0),
-  // Per-unit pricing (ModelPricing JSON) effective at response time. Persisted so log /
-  // usage cost is computed from the price that applied when the request ran, not the
-  // current price — later price edits don't rewrite historical cost. Null for legacy rows.
-  costPricingJson: text('cost_pricing_json'),
-  failoverFrom: text('failover_from'),
-  failoverChainJson: text('failover_chain_json'),
-  originalRoutePrefix: text('original_route_prefix'),
-  originalRequestModel: text('original_request_model'),
-  failoverReason: text('failover_reason'),
-  retryAttempt: integer('retry_attempt').notNull().default(0),
-  sourceRequestType: text('source_request_type').notNull().default('unknown'),
-  tokenUsageEstimated: integer('token_usage_estimated').notNull().default(0),
-}, (table) => ({
-  createdAtIdx: index('idx_console_requests_created_at').on(table.createdAt),
-  compareIdx: index('idx_console_requests_compare').on(
-    table.routePrefix,
-    table.method,
-    table.path,
-    table.requestModel,
-    table.createdAt,
-  ),
-  routePrefixIdx: index('idx_console_requests_route_prefix').on(table.routePrefix, table.createdAt),
-  responseModelIdx: index('idx_console_requests_response_model').on(table.responseModel, table.createdAt),
-  apiKeyIdIdx: index('idx_console_requests_api_key_id').on(table.apiKeyId),
-}));
+// The target database is fixed at deploy time (derived from DATABASE_URL). We
+// expose a single set of table objects for the active driver; the store layer
+// imports these and uses the shared Drizzle query builder, which emits the SQL
+// dialect matching the connected client. Column names/shapes are identical
+// across ./schema.pg.ts and ./schema.sqlite.ts, so we surface the PostgreSQL
+// types as the canonical shape while swapping the runtime objects.
+const active = getDbDriver() === 'sqlite' ? sqliteSchema : pgSchema;
 
-export const consoleApiKeys = pgTable('console_api_keys', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  keyHash: text('key_hash').notNull(),
-  keyValue: text('key_value').notNull(),
-  prefix: text('prefix').notNull(),
-  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
-  lastUsedAt: bigint('last_used_at', { mode: 'number' }),
-  revoked: integer('revoked').notNull().default(0),
-  allowedModelsJson: text('allowed_models_json').notNull().default('[]'),
-  costQuotaMicrousd: bigint('cost_quota_microusd', { mode: 'number' }),
-  costUsedMicrousd: bigint('cost_used_microusd', { mode: 'number' }).notNull().default(0),
-}, (table) => ({
-  keyHashIdx: index('idx_console_api_keys_key_hash').on(table.keyHash),
-  createdAtIdx: index('idx_console_api_keys_created_at').on(table.createdAt),
-}));
-
-export const consoleProviders = pgTable('console_providers', {
-  channelName: text('channel_name').primaryKey(),
-  providerUuid: text('provider_uuid').notNull().default(''),
-  type: text('type').notNull(),
-  targetBaseUrl: text('target_base_url').notNull(),
-  systemPrompt: text('system_prompt'),
-  modelsJson: text('models_json').notNull().default('[]'),
-  priority: integer('priority').notNull().default(0),
-  authHeader: text('auth_header'),
-  authValue: text('auth_value'),
-  extraFieldsJson: text('extra_fields_json').notNull().default(''),
-  routingVisibility: text('routing_visibility').notNull().default('direct'),
-  enabled: integer('enabled').notNull().default(1),
-  autoSyncModels: integer('auto_sync_models').notNull().default(0),
-  modelsSyncedAt: bigint('models_synced_at', { mode: 'number' }),
-  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
-  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
-}, (table) => ({
-  createdAtIdx: index('idx_console_providers_created_at').on(table.createdAt),
-  updatedAtIdx: index('idx_console_providers_updated_at').on(table.updatedAt),
-}));
-
-export const modelAliases = pgTable('model_aliases', {
-  id: serial('id').primaryKey(),
-  alias: text('alias').notNull().unique(),
-  provider: text('provider').notNull(),
-  model: text('model').notNull(),
-  targetsJson: text('targets_json').notNull().default(''),
-  description: text('description'),
-  visible: integer('visible').notNull().default(1),
-  enabled: integer('enabled').notNull().default(1),
-  returnRealModel: integer('return_real_model').notNull().default(0),
-  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
-  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
-}, (table) => ({
-  aliasIdx: index('idx_model_aliases_alias').on(table.alias),
-  createdAtIdx: index('idx_model_aliases_created_at').on(table.createdAt),
-}));
-
-export const modelCatalogCache = pgTable('model_catalog_cache', {
-  modelId: text('model_id').primaryKey(),
-  contextWindow: integer('context_window'),
-  pricingJson: text('pricing_json'),
-  fetchedAt: bigint('fetched_at', { mode: 'number' }).notNull(),
-});
-
-export const modelMetadataOverrides = pgTable('model_metadata_overrides', {
-  id: serial('id').primaryKey(),
-  channelName: text('channel_name').notNull(),
-  modelId: text('model_id').notNull(),
-  contextWindow: integer('context_window'),
-  pricingJson: text('pricing_json'),
-  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
-  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
-}, (table) => ({
-  channelModelIdx: uniqueIndex('idx_model_metadata_overrides_channel_model').on(table.channelName, table.modelId),
-  updatedAtIdx: index('idx_model_metadata_overrides_updated_at').on(table.updatedAt),
-}));
-
-export const gatewaySettings = pgTable('gateway_settings', {
-  key: text('key').primaryKey(),
-  valueJson: text('value_json').notNull().default('{}'),
-  updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
-});
+export const consoleRequests = active.consoleRequests as unknown as typeof pgSchema.consoleRequests;
+export const consoleApiKeys = active.consoleApiKeys as unknown as typeof pgSchema.consoleApiKeys;
+export const consoleProviders = active.consoleProviders as unknown as typeof pgSchema.consoleProviders;
+export const modelAliases = active.modelAliases as unknown as typeof pgSchema.modelAliases;
+export const modelCatalogCache = active.modelCatalogCache as unknown as typeof pgSchema.modelCatalogCache;
+export const modelMetadataOverrides = active.modelMetadataOverrides as unknown as typeof pgSchema.modelMetadataOverrides;
+export const gatewaySettings = active.gatewaySettings as unknown as typeof pgSchema.gatewaySettings;

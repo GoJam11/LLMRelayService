@@ -78,7 +78,10 @@ LRS 是一个基于 **Bun + Hono** 的轻量 LLM 中继服务，把多个 AI 服
 ### 前置条件
 
 - [Bun](https://bun.sh) >= 1.1
-- PostgreSQL 数据库
+- 数据库：PostgreSQL **或** SQLite（二选一）
+  - **SQLite**：内嵌于进程，无需额外部署数据库，最省成本；设 `DATABASE_URL=sqlite:./data/llm-relay.db` 即可
+  - **PostgreSQL**：适合更高并发/多实例场景
+  - ⚠️ 目标数据库在部署时确定，运行时不支持切换（避免数据分散在两套库中）
 
 ### 安装与启动
 
@@ -169,6 +172,14 @@ docker compose pull && docker compose up -d
 
 > **提示**：如已有外部 PostgreSQL，只需删除 `docker-compose.yml` 中的 `postgres` 服务，并将 `DATABASE_URL` 改为对应连接字符串。
 
+#### SQLite（无需 PostgreSQL，最省成本）
+
+不想部署 PostgreSQL 时，可使用内置的 SQLite 编排文件，数据库为单个文件并持久化到命名卷：
+
+```bash
+GATEWAY_API_KEY=your-key docker compose -f docker-compose.sqlite.yml up -d
+```
+
 ### 单容器 Docker
 
 如果你已经有自己的 PostgreSQL，可以直接运行单个容器（容器默认监听 `3300`）：
@@ -179,6 +190,18 @@ docker run -d \
   -p 3300:3300 \
   -e GATEWAY_API_KEY=your-key \
   -e DATABASE_URL=postgresql://user:password@host:5432/lrs \
+  ghcr.io/gojam11/llmrelayservice:main
+```
+
+使用 SQLite（挂载卷以持久化数据库文件）：
+
+```bash
+docker run -d \
+  --name lrs \
+  -p 3300:3300 \
+  -e GATEWAY_API_KEY=your-key \
+  -e DATABASE_URL=sqlite:///data/llm-relay.db \
+  -v lrs_sqlite:/data \
   ghcr.io/gojam11/llmrelayservice:main
 ```
 
@@ -218,7 +241,7 @@ Railway / Render 等平台部署时构建命令同上。
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
-| `DATABASE_URL` | ✅ | PostgreSQL 连接字符串 |
+| `DATABASE_URL` | ✅ | 数据库连接字符串。PostgreSQL：`postgresql://...`；SQLite：`sqlite:./data/llm-relay.db`（内嵌，无需额外数据库）。部署时确定，运行时不可切换 |
 | `GATEWAY_API_KEY` | ✅ | 客户端访问网关所需的 key，同时用作控制台登录密码 |
 | `PORT` | — | 监听端口，默认 `3300` |
 | `UPSTREAM_DEFAULT_FIRST_BYTE_TIMEOUT_MS` | — | 普通请求等待上游响应头的默认超时时间，默认 `300000` 毫秒；可在控制台配置页持久化覆盖 |

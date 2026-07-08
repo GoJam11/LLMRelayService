@@ -78,7 +78,10 @@ LRS is a lightweight LLM relay service built on **Bun + Hono**. It unifies multi
 ### Prerequisites
 
 - [Bun](https://bun.sh) >= 1.1
-- A PostgreSQL database
+- A database: PostgreSQL **or** SQLite (pick one)
+  - **SQLite**: embedded in the process, no separate database to deploy — cheapest option; just set `DATABASE_URL=sqlite:./data/llm-relay.db`
+  - **PostgreSQL**: better for higher concurrency / multiple instances
+  - ⚠️ The target database is fixed at deploy time and cannot be switched at runtime (to avoid data ending up split across two stores)
 
 ### Install and run
 
@@ -169,6 +172,14 @@ docker compose pull && docker compose up -d
 
 > **Tip**: If you already have an external PostgreSQL, just remove the `postgres` service from `docker-compose.yml` and point `DATABASE_URL` at your connection string.
 
+#### SQLite (no PostgreSQL, cheapest)
+
+If you'd rather not run PostgreSQL, use the bundled SQLite compose file — the database is a single file persisted on a named volume:
+
+```bash
+GATEWAY_API_KEY=your-key docker compose -f docker-compose.sqlite.yml up -d
+```
+
 ### Single-container Docker
 
 If you already have your own PostgreSQL, run a single container (it listens on `3300` by default):
@@ -179,6 +190,18 @@ docker run -d \
   -p 3300:3300 \
   -e GATEWAY_API_KEY=your-key \
   -e DATABASE_URL=postgresql://user:password@host:5432/lrs \
+  ghcr.io/gojam11/llmrelayservice:main
+```
+
+With SQLite (mount a volume so the database file persists):
+
+```bash
+docker run -d \
+  --name lrs \
+  -p 3300:3300 \
+  -e GATEWAY_API_KEY=your-key \
+  -e DATABASE_URL=sqlite:///data/llm-relay.db \
+  -v lrs_sqlite:/data \
   ghcr.io/gojam11/llmrelayservice:main
 ```
 
@@ -218,7 +241,7 @@ Open the root path `/` to access the console. Features include:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DATABASE_URL` | ✅ | PostgreSQL connection string |
+| `DATABASE_URL` | ✅ | Database connection string. PostgreSQL: `postgresql://...`; SQLite: `sqlite:./data/llm-relay.db` (embedded, no separate database). Fixed at deploy time, not switchable at runtime |
 | `GATEWAY_API_KEY` | ✅ | The key clients use to access the gateway; also the console login password |
 | `PORT` | — | Listening port, default `3300` |
 | `UPSTREAM_DEFAULT_FIRST_BYTE_TIMEOUT_MS` | — | Default timeout for normal requests waiting on upstream response headers, default `300000` ms; can be overridden persistently in the console Settings page |
