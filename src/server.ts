@@ -10,7 +10,7 @@ import { fetchModelsDevData } from './model-catalog';
 import { saveCatalogToDb } from './catalog-db';
 import { initializeTokenEstimator } from './token-estimator';
 import { runMigrations, type MigrationStatus } from './db/migrate';
-import { getDatabaseUrl } from './db/config';
+import { getDatabaseUrl, getDbDriver, getSqliteFilePath } from './db/config';
 import postgres from 'postgres';
 import { createCorsPreflightResponse, withCorsHeaders } from './cors';
 
@@ -60,7 +60,40 @@ function showMigrationGuide(status: Extract<MigrationStatus, { state: 'failed' }
   });
 }
 
+async function resetDatabaseSqlite(): Promise<{ success: boolean; message?: string; error?: string }> {
+  const databaseUrl = getDatabaseUrl();
+  try {
+    const { Database } = require('bun:sqlite') as typeof import('bun:sqlite');
+    const db = new Database(getSqliteFilePath(databaseUrl), { create: true });
+    try {
+      db.exec('PRAGMA foreign_keys = OFF;');
+      const tables = db
+        .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+        .all() as { name: string }[];
+      for (const { name } of tables) {
+        db.exec(`DROP TABLE IF EXISTS "${name}"`);
+        console.log(`[DB] Dropped table: ${name}`);
+      }
+    } finally {
+      db.close();
+    }
+
+    // 重新执行迁移（强制重新执行，不走缓存）
+    const result = await runMigrations(undefined, true);
+    if (result.state === 'success') {
+      return { success: true, message: '数据库已重置并重新迁移' };
+    }
+    return { success: false, error: result.state === 'failed' ? result.error : '迁移失败' };
+  } catch (err: any) {
+    return { success: false, error: err?.message ?? String(err) };
+  }
+}
+
 async function resetDatabase(): Promise<{ success: boolean; message?: string; error?: string }> {
+  if (getDbDriver() === 'sqlite') {
+    return resetDatabaseSqlite();
+  }
+
   const databaseUrl = getDatabaseUrl();
   const sql = postgres(databaseUrl, { max: 1, prepare: false });
 

@@ -2,13 +2,18 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { sql as drizzleSql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
-import { getDatabaseUrl } from './config';
+import { dirname } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { getDatabaseUrl, getDbDriver, getSqliteFilePath } from './config';
 import { TEST_DATABASE_URL } from './test-database';
 
 export type MigrationStatus =
   | { state: 'success' }
   | { state: 'skipped'; reason: string }
   | { state: 'failed'; error: string };
+
+export const PG_MIGRATIONS_FOLDER = './drizzle';
+export const SQLITE_MIGRATIONS_FOLDER = './drizzle/sqlite';
 
 const MIGRATION_LOCK_NAMESPACE = 20817;
 const MIGRATION_LOCK_KEY = 1;
@@ -65,6 +70,59 @@ async function waitForDbReady(databaseUrl: string): Promise<void> {
   }
 }
 
+async function runSqliteMigrations(databaseUrl: string): Promise<MigrationStatus> {
+  const { Database } = require('bun:sqlite') as typeof import('bun:sqlite');
+  const { drizzle: drizzleSqlite } = require('drizzle-orm/bun-sqlite') as typeof import('drizzle-orm/bun-sqlite');
+  const { migrate: migrateSqlite } = require('drizzle-orm/bun-sqlite/migrator') as typeof import('drizzle-orm/bun-sqlite/migrator');
+
+  const filePath = getSqliteFilePath(databaseUrl);
+  if (filePath !== ':memory:') {
+    mkdirSync(dirname(filePath), { recursive: true });
+  }
+  const sqliteDb = new Database(filePath, { create: true });
+  try {
+    sqliteDb.exec('PRAGMA journal_mode = WAL;');
+    sqliteDb.exec('PRAGMA busy_timeout = 5000;');
+    const db = drizzleSqlite(sqliteDb);
+    console.info('[DB] Running migrations (sqlite)...');
+    migrateSqlite(db, { migrationsFolder: SQLITE_MIGRATIONS_FOLDER });
+    console.info('[DB] Migrations complete.');
+    return { state: 'success' };
+  } catch (err: any) {
+    const errorMessage = err?.message ?? String(err);
+    console.error('[DB] Migration failed:', errorMessage);
+    return { state: 'failed', error: errorMessage };
+  } finally {
+    sqliteDb.close();
+  }
+}
+
+async function runPostgresMigrations(databaseUrl: string): Promise<MigrationStatus> {
+  // Wait for PostgreSQL to be accepting connections
+  await waitForDbReady(databaseUrl);
+
+  const sql = postgres(databaseUrl, { max: 1, prepare: false });
+  const db = drizzle(sql);
+
+  try {
+    await db.execute(drizzleSql`SELECT pg_advisory_lock(${MIGRATION_LOCK_NAMESPACE}, ${MIGRATION_LOCK_KEY})`);
+    console.info('[DB] Running migrations...');
+    await migrate(db, { migrationsFolder: PG_MIGRATIONS_FOLDER });
+    console.info('[DB] Migrations complete.');
+    return { state: 'success' };
+  } catch (err: any) {
+    const errorMessage = err?.message ?? String(err);
+    console.error('[DB] Migration failed:', errorMessage);
+    return { state: 'failed', error: errorMessage };
+  } finally {
+    try {
+      await db.execute(drizzleSql`SELECT pg_advisory_unlock(${MIGRATION_LOCK_NAMESPACE}, ${MIGRATION_LOCK_KEY})`);
+    } finally {
+      await sql.end();
+    }
+  }
+}
+
 export async function runMigrations(databaseUrl = getDatabaseUrl(), force = false): Promise<MigrationStatus> {
   if (!force) {
     const existingPromise = migrationPromises.get(databaseUrl);
@@ -76,29 +134,10 @@ export async function runMigrations(databaseUrl = getDatabaseUrl(), force = fals
       return { state: 'skipped', reason: 'Test database detected' };
     }
 
-    // Wait for PostgreSQL to be accepting connections
-    await waitForDbReady(databaseUrl);
-
-    const sql = postgres(databaseUrl, { max: 1, prepare: false });
-    const db = drizzle(sql);
-
-    try {
-      await db.execute(drizzleSql`SELECT pg_advisory_lock(${MIGRATION_LOCK_NAMESPACE}, ${MIGRATION_LOCK_KEY})`);
-      console.info('[DB] Running migrations...');
-      await migrate(db, { migrationsFolder: './drizzle' });
-      console.info('[DB] Migrations complete.');
-      return { state: 'success' };
-    } catch (err: any) {
-      const errorMessage = err?.message ?? String(err);
-      console.error('[DB] Migration failed:', errorMessage);
-      return { state: 'failed', error: errorMessage };
-    } finally {
-      try {
-        await db.execute(drizzleSql`SELECT pg_advisory_unlock(${MIGRATION_LOCK_NAMESPACE}, ${MIGRATION_LOCK_KEY})`);
-      } finally {
-        await sql.end();
-      }
+    if (getDbDriver() === 'sqlite') {
+      return runSqliteMigrations(databaseUrl);
     }
+    return runPostgresMigrations(databaseUrl);
   })();
 
   migrationPromises.set(databaseUrl, migrationPromise);

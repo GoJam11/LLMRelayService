@@ -171,6 +171,13 @@ dist
 *.local.*
 data/
 
+# Local SQLite database files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
 # Personal test scripts (not for public distribution)
 scripts/
 

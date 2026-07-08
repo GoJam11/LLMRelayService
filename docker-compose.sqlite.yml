@@ -1,0 +1,21 @@
+# SQLite deployment — no external database container required. The database is a
+# single embedded file persisted on the `sqlite_data` volume. Start with:
+#   GATEWAY_API_KEY=your-key docker compose -f docker-compose.sqlite.yml up -d
+services:
+  app:
+    image: ghcr.io/gojam11/llmrelayservice:main
+    ports:
+      - "3001:3000"
+    environment:
+      PORT: 3000
+      # Absolute path inside the container; the parent dir is created on startup.
+      DATABASE_URL: sqlite:///data/llm-relay.db
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY:?GATEWAY_API_KEY is required}
+      PASSWORD: ${PASSWORD:-}
+      DEBUG_DB_MAX_RECORDS: ${DEBUG_DB_MAX_RECORDS:-50000}
+    volumes:
+      - sqlite_data:/data
+    restart: unless-stopped
+
+volumes:
+  sqlite_data:

@@ -2,10 +2,10 @@ import { calculateCostWithPricing, ensurePricingLoaded, getModelPricing, type Co
 import { detectRequestKindForProvider } from './providers';
 import type { DetectedRequestKind } from './providers';
 import { createDbClient } from './db/client';
-import { getDatabaseUrl } from './db/config';
+import { getDatabaseUrl, getDbDriver } from './db/config';
 import { isTrustedTestDatabaseUrl } from './db/test-database';
 
-import { consoleRequests } from './db/schema';
+import { consoleRequests, consoleApiKeys } from './db/schema';
 import { eq, desc, asc, and, or, sql, count, gte, isNotNull, isNull, like, notInArray, type SQL } from 'drizzle-orm';
 import { elapsedPerfMs, getMaxPerfPhase, nowPerfMs, shouldLogBackgroundPerf } from './perf-detail';
 import { recordBackgroundPerfSample } from './perf-monitor';
@@ -369,6 +369,10 @@ const consoleStoreReady = Promise.resolve();
 
 function assertConsoleClearAllowed(): void {
   if (process.env.ALLOW_CONSOLE_DB_CLEAR === '1') return;
+
+  // SQLite is an embedded, single-file local database — there is no remote host
+  // to accidentally wipe, so console clears are always permitted.
+  if (getDbDriver() === 'sqlite') return;
 
   const databaseUrl = getDatabaseUrl();
   const parsed = new URL(databaseUrl);
@@ -1421,6 +1425,11 @@ async function syncApiKeyQuotaCharge(
   const cost = calculateCostWithPricing(responseUsage, pricing, upstreamType);
   const chargedMicrousd = usdCostToChargeMicrousd(cost.total_cost);
 
+  if (getDbDriver() === 'sqlite') {
+    await syncApiKeyQuotaChargeSqlite(requestId, chargedMicrousd);
+    return;
+  }
+
   await db.execute(sql`
     WITH target AS (
       SELECT request_id, api_key_id, quota_charged_microusd
@@ -1443,6 +1452,34 @@ async function syncApiKeyQuotaCharge(
       AND updated_request.api_key_id IS NOT NULL
       AND updated_request.delta <> 0
   `);
+}
+
+// SQLite lacks `UPDATE ... FROM ... RETURNING` in a CTE, `FOR UPDATE` row locks
+// and `GREATEST`. bun:sqlite serializes writes, and each statement below is
+// individually atomic — the key increment is a single read-modify-write SQL
+// statement, so concurrent charges against the same key still compose without
+// lost updates. `delta` is derived from the request's own persisted charge, so
+// re-running for the same request is idempotent.
+async function syncApiKeyQuotaChargeSqlite(requestId: string, chargedMicrousd: number): Promise<void> {
+  const rows = await db
+    .select({ apiKeyId: consoleRequests.apiKeyId, quotaCharged: consoleRequests.quotaChargedMicrousd })
+    .from(consoleRequests)
+    .where(eq(consoleRequests.requestId, requestId));
+  const row = rows[0];
+  if (!row) return;
+
+  await db
+    .update(consoleRequests)
+    .set({ quotaChargedMicrousd: chargedMicrousd })
+    .where(eq(consoleRequests.requestId, requestId));
+
+  const delta = chargedMicrousd - row.quotaCharged;
+  if (row.apiKeyId && delta !== 0) {
+    await db
+      .update(consoleApiKeys)
+      .set({ costUsedMicrousd: sql`MAX(0, ${consoleApiKeys.costUsedMicrousd} + ${delta})` })
+      .where(eq(consoleApiKeys.id, row.apiKeyId));
+  }
 }
 
 export async function saveConsoleRequest(record: ConsoleRequestSnapshotInput): Promise<void> {
