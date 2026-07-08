@@ -130,8 +130,11 @@ export async function runMigrations(databaseUrl = getDatabaseUrl(), force = fals
   }
 
   const migrationPromise = (async (): Promise<MigrationStatus> => {
-    if (isTestDatabase(databaseUrl)) {
-      return { state: 'skipped', reason: 'Test database detected' };
+    // A PostgreSQL test database is expected to be provisioned/migrated
+    // externally, so skip. A SQLite test database is a fresh local file
+    // (see test/setup.ts) and must be migrated in-process like production.
+    if (isTestDatabase(databaseUrl) && getDbDriver() === 'postgres') {
+      return { state: 'skipped', reason: 'External PostgreSQL test database (pre-migrated)' };
     }
 
     if (getDbDriver() === 'sqlite') {

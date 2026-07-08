@@ -3,3 +3,6 @@ registry = "https://registry.npmjs.org/"
 
 [loader]
 ".md" = "text"
+
+[test]
+preload = ["./test/setup.ts"]
