@@ -15,6 +15,8 @@ export default {
     deleting: "Deleting...",
     loading: "Loading...",
     copy: "Copy",
+    copied: "Copied",
+    copyFailed: "Copy failed, please copy manually",
     help: "Help",
     viewLogs: "View Logs",
     clearFilters: "Clear Filters",

@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
+import { toast } from "@/components/ui/toast"
 import { Textarea } from "@/components/ui/textarea"
 import {
   createProvider,
@@ -1748,7 +1749,10 @@ export function ProvidersPage({
               <Button
                 type="button"
                 onClick={() => {
-                  navigator.clipboard.writeText(configJson).catch(() => {})
+                  navigator.clipboard
+                    .writeText(configJson)
+                    .then(() => toast.success(t("common.copied")))
+                    .catch(() => toast.error(t("common.copyFailed")))
                 }}
               >
                 <Copy data-icon="inline-start" />

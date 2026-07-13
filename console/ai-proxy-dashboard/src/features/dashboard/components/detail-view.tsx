@@ -22,6 +22,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { toast } from "@/components/ui/toast"
 import { PayloadPanel } from "@/features/dashboard/components/payload-panel"
 import type { ConsoleRequestDetail } from "@/features/dashboard/types"
 import {
@@ -354,7 +355,10 @@ export function DetailView({
             type="button"
             className="text-[11.5px] font-semibold text-primary hover:underline"
             onClick={() => {
-              void navigator.clipboard?.writeText(JSON.stringify(record, null, 2))
+              navigator.clipboard
+                ?.writeText(JSON.stringify(record, null, 2))
+                .then(() => toast.success(t("common.copied")))
+                .catch(() => toast.error(t("common.copyFailed")))
             }}
           >
             {t("detail.copy")}
