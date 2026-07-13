@@ -15,6 +15,8 @@ export default {
     deleting: "删除中...",
     loading: "加载中...",
     copy: "复制",
+    copied: "已复制",
+    copyFailed: "复制失败，请手动复制",
     help: "帮助",
     viewLogs: "查看日志",
     clearFilters: "清空筛选",

@@ -23,6 +23,7 @@ import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/
 import { Input } from "@/components/ui/input"
 import { Combobox } from "@/components/ui/combobox"
 import { Skeleton } from "@/components/ui/skeleton"
+import { toast } from "@/components/ui/toast"
 import { createKey, deleteKey, fetchKeys, fetchModels, getKey, renameKey, setKeyAllowedModels, setKeyCostQuota } from "@/features/dashboard/api"
 import type { GatewayModel, ManagedApiKey, ManagedApiKeyDetail } from "@/features/dashboard/types"
 import { formatCost } from "@/features/dashboard/utils"
@@ -51,7 +52,6 @@ export function KeysPage({
   const { t } = useTranslation()
   const [keys, setKeys] = useState<ManagedApiKey[] | null>(null)
   const [error, setError] = useState("")
-  const [feedback, setFeedback] = useState("")
   const [createOpen, setCreateOpen] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
   const [modelsOpen, setModelsOpen] = useState(false)
@@ -76,8 +76,7 @@ export function KeysPage({
   const [modelsModelSelect, setModelsModelSelect] = useState("")
 
   const showFeedback = (message: string) => {
-    setFeedback(message)
-    window.setTimeout(() => setFeedback(""), 1800)
+    toast.success(message)
   }
 
   const handleUnauthorized = (message: string) => {
@@ -344,13 +343,6 @@ export function KeysPage({
         </Alert>
       ) : null}
 
-      {feedback ? (
-        <Alert>
-          <AlertTitle>{t("common.done")}</AlertTitle>
-          <AlertDescription>{feedback}</AlertDescription>
-        </Alert>
-      ) : null}
-
       {keys === null ? (
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, index) => (
@@ -421,7 +413,8 @@ export function KeysPage({
                     onClick={async () => {
                       const detail = await getKey(key.id)
                       const copied = await copyText(detail.key)
-                      showFeedback(copied ? t("keys.keyCopied") : t("keys.copyFailed"))
+                      if (copied) toast.success(t("keys.keyCopied"))
+                      else toast.error(t("keys.copyFailed"))
                     }}
                   >
                     <Copy className="h-3.5 w-3.5" />
@@ -660,7 +653,8 @@ export function KeysPage({
             <Button type="button" variant="outline" onClick={async () => {
               if (!visibleKey?.key) return
               const copied = await copyText(visibleKey.key)
-              showFeedback(copied ? t("keys.keyCopied") : t("keys.copyFailed"))
+              if (copied) toast.success(t("keys.keyCopied"))
+              else toast.error(t("keys.copyFailed"))
             }}>
               <Copy data-icon="inline-start" />{t("keys.copyKey")}
             </Button>
