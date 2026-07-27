@@ -103,6 +103,7 @@ export const consoleProviders = sqliteTable('console_providers', {
   routingVisibility: text('routing_visibility').notNull().default('direct'),
   enabled: integer('enabled').notNull().default(1),
   autoSyncModels: integer('auto_sync_models').notNull().default(0),
+  claudeCodeCompat: integer('claude_code_compat').notNull().default(0),
   modelsSyncedAt: integer('models_synced_at', { mode: 'number' }),
   createdAt: integer('created_at', { mode: 'number' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'number' }).notNull(),

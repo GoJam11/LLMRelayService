@@ -8,6 +8,13 @@
       "when": 1783509514553,
       "tag": "0000_many_the_hand",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1785166858266,
+      "tag": "0001_steady_whiplash",
+      "breakpoints": true
     }
   ]
 }

@@ -199,6 +199,7 @@ type ProviderFormState = {
   clearAuth: boolean
   extraFieldsJson: string
   autoSyncModels: boolean
+  claudeCodeCompat: boolean
   models: ModelRowState[]
 }
 
@@ -254,6 +255,7 @@ function createFormState(provider?: ProviderInfo): ProviderFormState {
         : ""
     })(),
     autoSyncModels: provider?.autoSyncModels ?? false,
+    claudeCodeCompat: provider?.claudeCodeCompat ?? false,
     models: provider?.models.length
       ? provider.models.map((model) => createModelRow(model))
       : [createModelRow()],
@@ -309,6 +311,8 @@ function buildProviderPayload(
     responsesMode: state.type === "openai" ? state.responsesMode : null,
     extraFields: parseExtraJson(state.extraFieldsJson),
     autoSyncModels: state.autoSyncModels,
+    // 服务端对非 anthropic 渠道会强制关掉，这里直接传状态即可。
+    claudeCodeCompat: state.claudeCodeCompat,
   }
 
   const explicitHeader = state.authHeader === "auto" ? undefined : state.authHeader
@@ -799,6 +803,7 @@ export function ProvidersPage({
         responsesMode: p.responsesMode,
         extraFields: p.extraFields,
         autoSyncModels: p.autoSyncModels,
+        claudeCodeCompat: p.claudeCodeCompat,
       })),
     }
     setConfigJson(JSON.stringify(exportData, null, 2))
@@ -1022,6 +1027,30 @@ export function ProvidersPage({
                     { value: "disabled", label: t("providers.responsesModeDisabled") },
                   ]}
                 />
+              </Field>
+            ) : null}
+
+            {formState.type === "anthropic" ? (
+              <Field>
+                <FieldLabel>{t("providers.claudeCodeCompatLabel")}</FieldLabel>
+                <div className="flex items-start gap-2 rounded-[10px] border border-input bg-muted/30 px-3 py-2">
+                  <Checkbox
+                    id="pane-claude-code-compat"
+                    checked={formState.claudeCodeCompat}
+                    onCheckedChange={(checked) =>
+                      setFormState((current) => ({ ...current, claudeCodeCompat: checked === true }))
+                    }
+                    className="mt-0.5"
+                  />
+                  <label htmlFor="pane-claude-code-compat" className="cursor-pointer select-none">
+                    <span className="block text-[13px] font-medium text-foreground">
+                      {t("providers.claudeCodeCompatCheckboxLabel")}
+                    </span>
+                    <span className="mt-0.5 block text-[11.5px] leading-snug text-muted-foreground">
+                      {t("providers.claudeCodeCompatHint")}
+                    </span>
+                  </label>
+                </div>
               </Field>
             ) : null}
 

@@ -1,0 +1,1 @@
+ALTER TABLE `console_providers` ADD `claude_code_compat` integer DEFAULT 0 NOT NULL;

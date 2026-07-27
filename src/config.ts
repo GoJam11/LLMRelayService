@@ -42,6 +42,13 @@ export interface ConfigEntry {
   providerUuid?: string;
   /** 开启后，渠道模型列表由上游 /v1/models 自动同步（保存时立即同步，之后每 24h 定时同步）。 */
   autoSyncModels?: boolean;
+  /**
+   * 仅 anthropic 渠道：把请求伪装成 Claude Code CLI 发出去。
+   * Claude Code OAuth 代理（cliproxyapi 等）对「不像 Claude Code 的客户端」会 cloak，
+   * 把客户端的 system 整段丢掉换成自己的 Claude Code 提示词。开启后网关会补上
+   * `user-agent: claude-cli/...` 和 Claude Code 身份 system 块，代理就原样透传。
+   */
+  claudeCodeCompat?: boolean;
 }
 
 export interface RouteResult {
@@ -50,6 +57,8 @@ export interface RouteResult {
   targetUrl: string;
   systemPrompt?: string;
   auth?: RouteAuthConfig;
+  /** 见 ConfigEntry.claudeCodeCompat。 */
+  claudeCodeCompat?: boolean;
   /** OpenAI /v1/responses handling strategy for this provider. */
   responsesMode?: OpenAiResponsesMode;
   /** 当请求 model 是一个别名时，此字段为真实的上游模型名，需要改写请求体 */
@@ -84,6 +93,7 @@ export interface ProviderInfo {
   extraFields: Record<string, unknown> | null;
   providerUuid: string;
   autoSyncModels: boolean;
+  claudeCodeCompat: boolean;
 }
 
 export interface ProviderMutationAuthInput {
@@ -103,6 +113,7 @@ export interface ProviderMutationInput {
   responsesMode?: OpenAiResponsesMode | null;
   extraFields?: Record<string, unknown> | null;
   autoSyncModels?: boolean | null;
+  claudeCodeCompat?: boolean | null;
 }
 
 type RawConfigEntry = ConfigEntry & {
@@ -202,6 +213,7 @@ export function validateConfigEntries(entries: Record<string, RawConfigEntry>): 
       ...(normalizedExtraFields ? { extraFields: normalizedExtraFields } : {}),
       ...(providerUuid ? { providerUuid } : {}),
       ...(entry.autoSyncModels === true ? { autoSyncModels: true } : {}),
+      ...(type === 'anthropic' && entry.claudeCodeCompat === true ? { claudeCodeCompat: true } : {}),
     };
   }
 
@@ -377,6 +389,7 @@ function buildRouteResult(channelName: string, entry: ConfigEntry, path: string,
     targetUrl: entry.targetBaseUrl + normalizedPath + search,
     systemPrompt: entry.systemPrompt,
     auth: entry.auth,
+    ...(entry.claudeCodeCompat === true ? { claudeCodeCompat: true } : {}),
     ...(providerType === 'openai'
       ? { responsesMode: getOpenAiResponsesMode(entry, providerType) }
       : {}),
@@ -444,6 +457,7 @@ function buildProviderInfo(
     extraFields: extraFields ?? null,
     providerUuid: entry.providerUuid ?? '',
     autoSyncModels: entry.autoSyncModels === true,
+    claudeCodeCompat: entry.claudeCodeCompat === true,
   };
 }
 
@@ -661,6 +675,10 @@ function buildNormalizedEntry(payload: ProviderMutationInput, existingEntry?: Co
   const autoSyncModels = payload.autoSyncModels === undefined
     ? (existingEntry?.autoSyncModels ?? false)
     : payload.autoSyncModels === true;
+  // Claude Code 伪装只对 anthropic 渠道有意义，切成 openai 时自动丢弃。
+  const claudeCodeCompat = type === 'anthropic' && (payload.claudeCodeCompat === undefined
+    ? (existingEntry?.claudeCodeCompat ?? false)
+    : payload.claudeCodeCompat === true);
 
   const normalized: ConfigEntry = {
     type,
@@ -675,6 +693,7 @@ function buildNormalizedEntry(payload: ProviderMutationInput, existingEntry?: Co
   if (responsesMode) normalized.responsesMode = responsesMode;
   if (extraFields && Object.keys(extraFields).length > 0) normalized.extraFields = extraFields;
   if (autoSyncModels) normalized.autoSyncModels = true;
+  if (claudeCodeCompat) normalized.claudeCodeCompat = true;
 
   return normalized;
 }

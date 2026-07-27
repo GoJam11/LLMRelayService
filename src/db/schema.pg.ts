@@ -99,6 +99,7 @@ export const consoleProviders = pgTable('console_providers', {
   routingVisibility: text('routing_visibility').notNull().default('direct'),
   enabled: integer('enabled').notNull().default(1),
   autoSyncModels: integer('auto_sync_models').notNull().default(0),
+  claudeCodeCompat: integer('claude_code_compat').notNull().default(0),
   modelsSyncedAt: bigint('models_synced_at', { mode: 'number' }),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),

@@ -244,6 +244,7 @@ export type ProviderInfo = {
   extraFields: Record<string, unknown> | null
   providerUuid: string
   autoSyncModels?: boolean
+  claudeCodeCompat?: boolean
   healthStatus?: "healthy" | "degraded" | "down" | "no-data"
 }
 
@@ -266,6 +267,7 @@ export type ProviderMutationPayload = {
   responsesMode?: OpenAiResponsesMode | null
   extraFields?: Record<string, unknown> | null
   autoSyncModels?: boolean
+  claudeCodeCompat?: boolean
 }
 
 export type ManagedApiKey = {

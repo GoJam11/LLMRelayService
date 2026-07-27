@@ -1,5 +1,5 @@
 import type { RouteAuthConfig } from '../config';
-import type { DetectedRequestKind, PreparedRequestResult, ProviderAdapter, ProviderPrepareRequestOptions, UsageData } from './types';
+import type { BuildForwardHeadersOptions, DetectedRequestKind, PreparedRequestResult, ProviderAdapter, ProviderPrepareRequestOptions, UsageData } from './types';
 import { summarizeJsonPayload } from './summary';
 
 const REMOVE_NODE = Symbol('removeNode');
@@ -16,6 +16,46 @@ export function detectAnthropicRequestKind(rawPayload: string | null, _rawHeader
     return 'generic';
   } catch {
     return 'unknown';
+  }
+}
+
+// Claude Code OAuth 代理（cliproxyapi 等）对「不像 Claude Code 的客户端」会做 cloak：
+// 把客户端的 system 整段丢掉，换成它自己那份 ~1900 token 的 Claude Code 系统提示词。
+// 结果是客户端注入的人设、记忆、工具约束全部失效，模型还自称 Claude Code。
+// 只要请求本身长得像 Claude Code CLI，代理就不再 cloak、原样透传：
+//   1. user-agent 是 claude-cli/... —— 代理判断客户端身份的依据
+//   2. system 第一块是 Claude Code 身份行 —— Anthropic 的 OAuth 端点要求它在，
+//      只改 user-agent 不加身份块会直接 auth_unavailable
+// 两者都由 claudeCodeCompat 开关控制，只对 anthropic 渠道有意义。
+const CLAUDE_CODE_IDENTITY = "You are Claude Code, Anthropic's official CLI for Claude.";
+const CLAUDE_CODE_USER_AGENT = 'claude-cli/2.1.44 (external, cli)';
+
+function hasClaudeCodeIdentity(system: unknown): boolean {
+  if (typeof system === 'string') return system.startsWith(CLAUDE_CODE_IDENTITY);
+  if (!Array.isArray(system)) return false;
+  const first = system[0];
+  return !!first && typeof first === 'object' && !Array.isArray(first)
+    && typeof (first as Record<string, unknown>).text === 'string'
+    && ((first as Record<string, unknown>).text as string).startsWith(CLAUDE_CODE_IDENTITY);
+}
+
+function injectClaudeCodeIdentityIntoSystem(json: Record<string, unknown>): void {
+  const { system } = json;
+  if (hasClaudeCodeIdentity(system)) return;
+
+  const identityBlock = { type: 'text', text: CLAUDE_CODE_IDENTITY };
+  if (system === undefined || system === null) {
+    json.system = [identityBlock];
+    return;
+  }
+  if (typeof system === 'string') {
+    // 转成数组而不是字符串拼接：拼接会让身份行和客户端提示词共用一个缓存块，
+    // 身份行哪天变一个字节，客户端整段 prompt cache 就失效。
+    json.system = [identityBlock, { type: 'text', text: system }];
+    return;
+  }
+  if (Array.isArray(system)) {
+    json.system = [identityBlock, ...system];
   }
 }
 
@@ -50,7 +90,7 @@ function finalizeUsageTotals(result: UsageData): UsageData {
   return result;
 }
 
-function buildForwardHeaders(sourceHeaders: Headers, auth?: RouteAuthConfig): Headers {
+function buildForwardHeaders(sourceHeaders: Headers, auth?: RouteAuthConfig, options?: BuildForwardHeadersOptions): Headers {
   const forwardHeaders = new Headers(sourceHeaders);
   forwardHeaders.delete('host');
   forwardHeaders.delete('content-length');
@@ -71,6 +111,14 @@ function buildForwardHeaders(sourceHeaders: Headers, auth?: RouteAuthConfig): He
     forwardHeaders.set(headerName, auth.value);
   }
 
+  if (options?.claudeCodeCompat) {
+    // 客户端本来就是 Claude Code（自带 claude-cli UA）时保留它自己的版本号。
+    const currentUserAgent = forwardHeaders.get('user-agent');
+    if (!currentUserAgent || !currentUserAgent.startsWith('claude-cli/')) {
+      forwardHeaders.set('user-agent', CLAUDE_CODE_USER_AGENT);
+    }
+  }
+
   return forwardHeaders;
 }
 
@@ -79,6 +127,7 @@ function prepareRequest(options: ProviderPrepareRequestOptions): PreparedRequest
     method,
     rawBodyText,
     routeSystem,
+    claudeCodeCompat,
   } = options;
   if (method !== 'POST' || rawBodyText == null) {
     return {
@@ -99,6 +148,11 @@ function prepareRequest(options: ProviderPrepareRequestOptions): PreparedRequest
 
   if (routeSystem) {
     injectRouteSystemIntoSystem(workingJson, routeSystem);
+  }
+
+  // 身份行必须是 system 的第一块，所以放在渠道 systemPrompt 注入之后。
+  if (claudeCodeCompat) {
+    injectClaudeCodeIdentityIntoSystem(workingJson);
   }
 
   return {
