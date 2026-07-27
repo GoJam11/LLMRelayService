@@ -34,18 +34,13 @@ export interface ProviderPrepareRequestOptions {
   rawHeaders: Headers;
   routePrefix?: string;
   routeSystem?: string;
-  /** 见 ConfigEntry.claudeCodeCompat：把请求伪装成 Claude Code CLI。 */
-  claudeCodeCompat?: boolean;
-}
-
-export interface BuildForwardHeadersOptions {
-  /** 见 ConfigEntry.claudeCodeCompat：补上 claude-cli 的 user-agent。 */
+  /** 见 ConfigEntry.claudeCodeCompat：把 system 搬进第一条 user 消息。 */
   claudeCodeCompat?: boolean;
 }
 
 export interface ProviderAdapter {
   type: UpstreamType;
-  buildForwardHeaders(sourceHeaders: Headers, auth?: RouteAuthConfig, options?: BuildForwardHeadersOptions): Headers;
+  buildForwardHeaders(sourceHeaders: Headers, auth?: RouteAuthConfig): Headers;
   prepareRequest(options: ProviderPrepareRequestOptions): PreparedRequestResult;
   transformResponse(response: Response): Response;
   parseUsage(body: string): UsageData;

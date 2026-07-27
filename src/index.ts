@@ -632,7 +632,6 @@ async function handleProxyRequest(c: any): Promise<Response> {
       c.req.raw.headers,
       route.type,
       route.auth,
-      { claudeCodeCompat: route.claudeCodeCompat === true },
     );
     addPerfPhase(requestPerfPhases, 'build_forward_headers_ms', elapsedPerfMs(buildHeadersStart));
 

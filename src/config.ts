@@ -43,10 +43,10 @@ export interface ConfigEntry {
   /** 开启后，渠道模型列表由上游 /v1/models 自动同步（保存时立即同步，之后每 24h 定时同步）。 */
   autoSyncModels?: boolean;
   /**
-   * 仅 anthropic 渠道：把请求伪装成 Claude Code CLI 发出去。
+   * 仅 anthropic 渠道：把 `system` 搬进第一条 user 消息，请求体里不再带 system。
    * Claude Code OAuth 代理（cliproxyapi 等）对「不像 Claude Code 的客户端」会 cloak，
-   * 把客户端的 system 整段丢掉换成自己的 Claude Code 提示词。开启后网关会补上
-   * `user-agent: claude-cli/...` 和 Claude Code 身份 system 块，代理就原样透传。
+   * 把客户端的 system 整段丢掉换成自己的 Claude Code 提示词；搬进 messages 后
+   * 内容能原样抵达模型（cloak 只动 system，不碰 messages）。
    */
   claudeCodeCompat?: boolean;
 }

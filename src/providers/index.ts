@@ -1,7 +1,7 @@
 import { anthropicProvider } from './anthropic';
 import { openaiProvider } from './openai';
 import type { RouteAuthConfig } from '../config';
-import type { BuildForwardHeadersOptions, DetectedRequestKind, PreparedRequestResult, ProviderAdapter, ProviderPrepareRequestOptions, UpstreamType, UsageData } from './types';
+import type { DetectedRequestKind, PreparedRequestResult, ProviderAdapter, ProviderPrepareRequestOptions, UpstreamType, UsageData } from './types';
 
 const providers: Record<UpstreamType, ProviderAdapter> = {
   anthropic: anthropicProvider,
@@ -18,9 +18,8 @@ export function buildForwardHeadersForProvider(
   sourceHeaders: Headers,
   upstreamType: UpstreamType,
   auth?: RouteAuthConfig,
-  options?: BuildForwardHeadersOptions,
 ): Headers {
-  return getProviderAdapter(upstreamType).buildForwardHeaders(sourceHeaders, auth, options);
+  return getProviderAdapter(upstreamType).buildForwardHeaders(sourceHeaders, auth);
 }
 
 export function prepareRequestForProvider(options: ProviderPrepareRequestOptions): PreparedRequestResult {
