@@ -43,6 +43,8 @@ export default {
     searchTimeRange: "Search time range...",
     export: "Export",
     import: "Import",
+    show: "Show",
+    hide: "Hide",
   },
 
   // ── Language ──
@@ -69,6 +71,8 @@ export default {
     loggingOut: "Logging out...",
     logout: "Logout",
     live: "Live",
+    apiDocs: "API Docs",
+    subtitleMonitor: "Real-time traffic overview",
   },
 
   // ── Session / Login ──
@@ -682,6 +686,7 @@ export default {
     failoverHelpExampleFallbacks: "Fallback target array",
     failoverCurrentMode: "Current mode",
     failoverCustomTitle: "Custom model fallback",
+    failoverRuleFallbackLabel: "Rule {{index}}",
     failoverCustomDesc: "Configure fallback arrays by the model name sent in the request. Aliases match as independent virtual models; fallbacks can be route aliases or channel:model entries.",
     failoverCustomAdd: "Add rule",
     failoverCustomEmpty: "No custom rules configured. Failed requests will use the site-wide fallback mode.",
@@ -882,5 +887,113 @@ export default {
     peakTokens: "Peak Tokens",
     peakCost: "Peak Cost",
     dataPoints: "Data Points",
+  },
+
+  // ── Login page hero (not covered by session.*) ──
+  loginHero: {
+    feature1Title: "Multi-Channel Routing & Failover",
+    feature1Desc: "Auto-routes by priority, with tiered fallback on failure",
+    feature2Title: "Verbatim Request Logs",
+    feature2Desc: "Original / forwarded / response bodies fully retained for side-by-side debugging",
+    feature3Title: "Real-Time Usage & Quotas",
+    feature3Desc: "Grouped stats and limits by key / channel / model",
+    heroTitleLine1: "Self-Hosted LLM",
+    heroTitleLine2: "Relay Gateway Console",
+    heroDesc: "Unify multiple upstream providers, get smart routing and failover, and observe every request verbatim. A single admin account controls all traffic.",
+    heroTagline: "Bun + Hono · Lightweight Relay",
+    gatewayRunning: "Gateway running",
+    rememberDevice: "Remember this device for 30 days",
+    singleAdmin: "Single admin account",
+  },
+
+  // ── Combobox (generic select-with-search) ──
+  combobox: {
+    placeholder: "Select...",
+    searchPlaceholder: "Search...",
+    emptyText: "No matches found",
+  },
+
+  // ── Pagination ──
+  pagination: {
+    showing: "Showing",
+    of: "of",
+    total: "items",
+    perPage: "Per page",
+    perPageUnit: "items",
+    firstPage: "First page",
+    prevPage: "Previous",
+    nextPage: "Next",
+    lastPage: "Last page",
+  },
+
+  // ── Cost / usage formula labels (dashboard utils) ──
+  costFormula: {
+    outputSpeed: "Output Speed",
+    totalCost: "Total Cost",
+    model: "Model",
+    formulaLabel: "Calculation Formula",
+    formulaMissing: "Missing pricing data for this model — the calculation formula can't be shown yet.",
+    unitPriceLabel: "Model Unit Price",
+    unitPriceSimple: "Input {{input}} · Output {{output}} · cached prompt {{cacheRead}}",
+    unitPriceFull: "Input {{input}} · Output {{output}} · Cache Read {{cacheRead}} · Cache Write {{cacheWrite}}",
+    inputFormulaLabel: "Input Formula",
+    outputFormulaLabel: "Output Formula",
+    cachedPromptFormulaLabel: "Cached Prompt Formula",
+    cacheReadFormulaLabel: "Cache Read Formula",
+    cacheWriteFormulaLabel: "Cache Write Formula",
+    totalFormulaLabel: "Total Formula",
+    requestInProgress: "In progress",
+  },
+
+  // ── API Docs Page ──
+  apiDocs: {
+    pageTitle: "OpenAPI Docs",
+    authDesc: "Uses Bearer Token authentication; the token matches GATEWAY_API_KEY",
+    searchPlaceholder: "Search endpoints...",
+    endpointListTitle: "Endpoint List",
+    endpointCount: "{{count}} endpoints",
+    authRequired: "Auth required",
+    ep: {
+      health: "Health check",
+      providersList: "Get all channels",
+      providerGet: "Get a single channel's details",
+      providerCreate: "Create a channel",
+      providerUpdate: "Update a channel",
+      providerDelete: "Delete a channel",
+      providerEnabled: "Enable/disable a channel",
+      requestsList: "Get the request log list",
+      requestGet: "Get a single request's details",
+      statsGet: "Get statistics",
+      keysList: "Get all API Keys",
+      keyGet: "Get a single API Key",
+      keyCreate: "Create an API Key",
+      keyRename: "Rename an API Key",
+      keyDelete: "Delete an API Key",
+      keyAllowedModels: "Set an API Key's allowed models",
+      modelMetadata: "Set a model's manual price and context override",
+      aliasesList: "Get all model aliases",
+      aliasCreate: "Create a model alias",
+      aliasUpdate: "Update a model alias",
+      aliasEnabled: "Enable/disable a model alias",
+      aliasDelete: "Delete a model alias",
+    },
+    body: {
+      providerBody: "Create/update a channel",
+      providerEnabledBody: "Enable/disable a channel",
+      keyNameBody: "Create/rename an API Key",
+      keyModelsBody: "Set the allowed model list",
+      aliasBody: "Create/update a model alias",
+      aliasDescriptionExample: "GPT-4o primary model",
+      aliasEnabledBody: "Enable/disable a model alias",
+      modelMetadataBody: "Set a channel model's manual context and price override",
+    },
+  },
+
+  // ── Providers page extras ──
+  providersExtra: {
+    channelCount: "{{count}} channels",
+    searchPlaceholder: "Search channel, URL, model...",
+    allTypes: "All Types",
+    allStatus: "All Status",
   },
 } as const

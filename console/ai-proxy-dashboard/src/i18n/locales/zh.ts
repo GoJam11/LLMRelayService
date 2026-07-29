@@ -43,6 +43,8 @@ export default {
     searchTimeRange: "搜索时间范围...",
     export: "导出",
     import: "导入",
+    show: "显示",
+    hide: "隐藏",
   },
 
   // ── Language names ──
@@ -69,6 +71,8 @@ export default {
     loggingOut: "退出中...",
     logout: "退出",
     live: "实时",
+    apiDocs: "API 文档",
+    subtitleMonitor: "实时流量概览",
   },
 
   // ── Session / Login ──
@@ -682,6 +686,7 @@ export default {
     failoverHelpExampleFallbacks: "Fallback 目标数组",
     failoverCurrentMode: "当前模式",
     failoverCustomTitle: "自定义模型回退",
+    failoverRuleFallbackLabel: "规则 {{index}}",
     failoverCustomDesc: "按请求传入的 model 名称配置 fallback 数组；alias 会作为独立虚拟模型匹配，fallback 可填写路由别名或 渠道名:模型名。",
     failoverCustomAdd: "添加规则",
     failoverCustomEmpty: "未配置自定义规则，失败后将使用全站回退模式。",
@@ -882,5 +887,113 @@ export default {
     peakTokens: "峰值 Tokens",
     peakCost: "峰值成本",
     dataPoints: "时间点数量",
+  },
+
+  // ── Login page hero (not covered by session.*) ──
+  loginHero: {
+    feature1Title: "多渠道路由与回退",
+    feature1Desc: "按 priority 自动选路，失败逐级兜底",
+    feature2Title: "逐字请求日志",
+    feature2Desc: "原始 / 转发 / 响应完整留存，可对照定位",
+    feature3Title: "实时用量与额度",
+    feature3Desc: "按密钥 / 渠道 / 模型分组统计与限额",
+    heroTitleLine1: "自托管 LLM",
+    heroTitleLine2: "中继网关控制台",
+    heroDesc: "统一接入多家上游、智能路由与回退、逐字可观测。单一管理员账户即可掌控全部流量。",
+    heroTagline: "Bun + Hono · 轻量中继",
+    gatewayRunning: "网关运行中",
+    rememberDevice: "记住此设备 30 天",
+    singleAdmin: "单一管理员账户",
+  },
+
+  // ── Combobox (generic select-with-search) ──
+  combobox: {
+    placeholder: "请选择...",
+    searchPlaceholder: "搜索...",
+    emptyText: "未找到匹配项",
+  },
+
+  // ── Pagination ──
+  pagination: {
+    showing: "显示",
+    of: "条，共",
+    total: "条",
+    perPage: "每页",
+    perPageUnit: "条",
+    firstPage: "首页",
+    prevPage: "上一页",
+    nextPage: "下一页",
+    lastPage: "尾页",
+  },
+
+  // ── Cost / usage formula labels (dashboard utils) ──
+  costFormula: {
+    outputSpeed: "输出速度",
+    totalCost: "总成本",
+    model: "模型",
+    formulaLabel: "计算公式",
+    formulaMissing: "缺少该模型的定价数据，暂时无法展开计算公式。",
+    unitPriceLabel: "模型单价",
+    unitPriceSimple: "输入 {{input}} · 输出 {{output}} · cached prompt {{cacheRead}}",
+    unitPriceFull: "输入 {{input}} · 输出 {{output}} · 缓存读 {{cacheRead}} · 缓存写 {{cacheWrite}}",
+    inputFormulaLabel: "输入公式",
+    outputFormulaLabel: "输出公式",
+    cachedPromptFormulaLabel: "cached prompt公式",
+    cacheReadFormulaLabel: "缓存读公式",
+    cacheWriteFormulaLabel: "缓存写公式",
+    totalFormulaLabel: "汇总公式",
+    requestInProgress: "请求中",
+  },
+
+  // ── API Docs Page ──
+  apiDocs: {
+    pageTitle: "OpenAPI 文档",
+    authDesc: "使用 Bearer Token 认证，Token 与 GATEWAY_API_KEY 相同",
+    searchPlaceholder: "搜索端点...",
+    endpointListTitle: "端点列表",
+    endpointCount: "共 {{count}} 个端点",
+    authRequired: "需认证",
+    ep: {
+      health: "健康检查",
+      providersList: "获取所有渠道",
+      providerGet: "获取单个渠道详情",
+      providerCreate: "创建渠道",
+      providerUpdate: "更新渠道",
+      providerDelete: "删除渠道",
+      providerEnabled: "启用/禁用渠道",
+      requestsList: "获取请求日志列表",
+      requestGet: "获取单个请求详情",
+      statsGet: "获取统计数据",
+      keysList: "获取所有 API Keys",
+      keyGet: "获取单个 API Key",
+      keyCreate: "创建 API Key",
+      keyRename: "重命名 API Key",
+      keyDelete: "删除 API Key",
+      keyAllowedModels: "设置 API Key 允许模型",
+      modelMetadata: "设置模型手动价格和上下文",
+      aliasesList: "获取所有模型别名",
+      aliasCreate: "创建模型别名",
+      aliasUpdate: "更新模型别名",
+      aliasEnabled: "启用/禁用模型别名",
+      aliasDelete: "删除模型别名",
+    },
+    body: {
+      providerBody: "创建/更新渠道",
+      providerEnabledBody: "启用/禁用渠道",
+      keyNameBody: "创建/重命名 API Key",
+      keyModelsBody: "设置允许模型列表",
+      aliasBody: "创建/更新模型别名",
+      aliasDescriptionExample: "GPT-4o 主力模型",
+      aliasEnabledBody: "启用/禁用模型别名",
+      modelMetadataBody: "设置渠道模型的手动上下文和价格覆盖",
+    },
+  },
+
+  // ── Providers page extras ──
+  providersExtra: {
+    channelCount: "共 {{count}} 个渠道",
+    searchPlaceholder: "搜索渠道、URL、模型...",
+    allTypes: "全部类型",
+    allStatus: "全部状态",
   },
 } as const

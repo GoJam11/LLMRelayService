@@ -618,7 +618,7 @@ function GlobalFailoverEditor({
       </div>
 
       <div className="flex-1 overflow-auto px-7 py-6">
-        {/* 匹配顺序说明 */}
+        {/* 匹配顺序说明 / Match order explanation */}
         <div className="mb-6 rounded-lg border border-border/60 bg-accent/20 p-4">
           <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             {t("routes.failoverMatchOrderTitle")}
@@ -736,7 +736,7 @@ function GlobalFailoverEditor({
           </Field>
         </FieldGroup>
 
-        {/* 两种写法 hint */}
+        {/* 两种写法 hint / Two syntax variants hint */}
         <div className="mt-6 rounded-lg border border-border/60 bg-muted/30 p-4">
           <div className="mb-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             {t("routes.failoverChainSyntaxTitle")}
@@ -797,7 +797,7 @@ function CustomFallbackEditor({
     <>
       <div className="flex items-center gap-2.5 border-b border-border px-7 py-4">
         <span className="text-[15px] font-extrabold">{t("routes.failoverCustomRuleTitle")}</span>
-        <span className="font-mono text-[11px] text-muted-foreground">{rule.model || `规则 ${index + 1}`}</span>
+        <span className="font-mono text-[11px] text-muted-foreground">{rule.model || t("routes.failoverRuleFallbackLabel", { index: index + 1 })}</span>
         <Button
           type="button"
           variant="ghost"
@@ -1261,7 +1261,7 @@ export function RoutesPage({
                         >
                           <div className="flex items-center gap-2.5">
                             <span className="font-mono text-[13.5px] font-bold">
-                              {rule.model || `规则 ${index + 1}`}
+                              {rule.model || t("routes.failoverRuleFallbackLabel", { index: index + 1 })}
                             </span>
                             <span className="rounded-md bg-muted px-2 py-0.5 text-[10.5px] font-semibold text-muted-foreground">
                               {t("routes.failoverCustomTitle")}

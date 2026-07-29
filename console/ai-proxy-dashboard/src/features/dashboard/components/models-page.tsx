@@ -471,7 +471,7 @@ export function ModelsPage({
         </CardContent>
       </Card>
 
-      {/* 测试弹窗 */}
+      {/* 测试弹窗 (Test dialog) */}
       <Dialog open={testDialogOpen} onOpenChange={setTestDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>

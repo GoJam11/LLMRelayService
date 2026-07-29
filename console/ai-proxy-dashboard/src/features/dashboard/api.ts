@@ -21,6 +21,7 @@ import type {
   ProviderMutationPayload,
   UpdateModelMetadataPayload,
 } from "@/features/dashboard/types"
+import i18n from "@/i18n"
 
 export const DEFAULT_REQUEST_LIMIT = 50
 export const DEFAULT_REQUEST_OFFSET = 0
@@ -116,7 +117,7 @@ export async function login(password: string): Promise<void> {
     const payload = (await response.json().catch(() => ({}))) as {
       error?: unknown
     }
-    throw new Error(String(payload.error ?? "登录失败"))
+    throw new Error(String(payload.error ?? i18n.t("session.loginFailed")))
   }
 }
 
