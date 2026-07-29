@@ -48,18 +48,18 @@ export function LoginView({
   const features = [
     {
       icon: RefreshCw,
-      title: "多渠道路由与回退",
-      desc: "按 priority 自动选路，失败逐级兜底",
+      title: t("loginHero.feature1Title"),
+      desc: t("loginHero.feature1Desc"),
     },
     {
       icon: ScrollText,
-      title: "逐字请求日志",
-      desc: "原始 / 转发 / 响应完整留存，可对照定位",
+      title: t("loginHero.feature2Title"),
+      desc: t("loginHero.feature2Desc"),
     },
     {
       icon: Clock,
-      title: "实时用量与额度",
-      desc: "按密钥 / 渠道 / 模型分组统计与限额",
+      title: t("loginHero.feature3Title"),
+      desc: t("loginHero.feature3Desc"),
     },
   ]
 
@@ -78,12 +78,12 @@ export function LoginView({
             LLM Relay Service
           </div>
           <h1 className="mt-4 text-[42px] font-extrabold leading-[1.12] tracking-[-0.02em]">
-            自托管 LLM
+            {t("loginHero.heroTitleLine1")}
             <br />
-            中继网关控制台
+            {t("loginHero.heroTitleLine2")}
           </h1>
           <p className="mt-5 max-w-[400px] text-[15px] leading-[1.7] text-[#9fb6b8]">
-            统一接入多家上游、智能路由与回退、逐字可观测。单一管理员账户即可掌控全部流量。
+            {t("loginHero.heroDesc")}
           </p>
           <div className="mt-9 flex flex-col gap-4">
             {features.map(({ icon: Icon, title, desc }) => (
@@ -100,7 +100,7 @@ export function LoginView({
           </div>
         </div>
         <div className="mt-auto flex justify-between pt-10 text-xs text-[#6f8688]">
-          <span>Bun + Hono · 轻量中继</span>
+          <span>{t("loginHero.heroTagline")}</span>
           <span className="font-mono">v1.0 · MIT</span>
         </div>
       </div>
@@ -110,7 +110,7 @@ export function LoginView({
         <div className="flex items-center justify-end border-b border-border px-10 py-6">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="lrs-pulse h-[7px] w-[7px] rounded-full bg-primary" />
-            网关运行中 · <span className="font-mono">v1.0</span>
+            {t("loginHero.gatewayRunning")} · <span className="font-mono">v1.0</span>
           </div>
         </div>
         <div className="flex flex-1 items-center justify-center px-6 py-6 sm:px-10">
@@ -159,7 +159,7 @@ export function LoginView({
                 onClick={() => setShow((s) => !s)}
                 className="text-xs text-muted-foreground"
               >
-                {show ? "隐藏" : "显示"}
+                {show ? t("common.hide") : t("common.show")}
               </button>
             </div>
 
@@ -176,7 +176,7 @@ export function LoginView({
               >
                 {remember ? "✓" : ""}
               </span>
-              <span className="text-[12.5px] text-muted-foreground">记住此设备 30 天</span>
+              <span className="text-[12.5px] text-muted-foreground">{t("loginHero.rememberDevice")}</span>
             </button>
 
             <button
@@ -196,7 +196,7 @@ export function LoginView({
           </form>
         </div>
         <div className="flex justify-between border-t border-border px-10 py-4 text-[11.5px] text-muted-foreground">
-          <span>单一管理员账户</span>
+          <span>{t("loginHero.singleAdmin")}</span>
           <span className="font-mono">MIT License</span>
         </div>
       </div>

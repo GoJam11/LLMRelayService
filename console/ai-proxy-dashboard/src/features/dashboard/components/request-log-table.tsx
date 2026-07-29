@@ -137,6 +137,7 @@ export function RequestLogTable({
 
   // Compact 7-column layout per LRS Clear 风格五 design spec:
   // 时间 | Key | 渠道 / 模型 | 状态 | 首Token | Tokens | Cache
+  // (Time | Key | Provider / Model | Status | First Token | Tokens | Cache)
   if (variant === "compact") {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -213,7 +214,7 @@ export function RequestLogTable({
                       background: isSelected ? "var(--accent)" : isHovered ? "var(--accent/50)" : "transparent",
                     }}
                   >
-                    {/* 时间 */}
+                    {/* 时间 / Time */}
                     <span className="font-mono text-[11px] text-muted-foreground">
                       {formatTime(item.created_at)}
                     </span>
@@ -226,13 +227,13 @@ export function RequestLogTable({
                       {item.client_label ?? item.api_key_name ?? "—"}
                     </span>
 
-                    {/* 渠道 / 模型 */}
+                    {/* 渠道 / 模型 (Provider / Model) */}
                     <span className="truncate">
                       <span className="font-semibold text-foreground">{item.route_prefix}</span>
                       <span className="ml-1 text-[11px] text-muted-foreground/80">· {shortText(item.request_model, 22)}</span>
                     </span>
 
-                    {/* 状态 */}
+                    {/* 状态 / Status */}
                     <span>
                       <span
                         className="inline-block rounded px-1.5 py-0.5 font-mono text-[10.5px] font-semibold"
@@ -243,12 +244,12 @@ export function RequestLogTable({
                       </span>
                     </span>
 
-                    {/* 首Token */}
+                    {/* 首Token (First Token) */}
                     <span className="font-mono text-[11.5px] text-foreground">
                       {formatDuration(timing.first_token_latency_ms)}
                     </span>
 
-                    {/* Tokens: 入/出 */}
+                    {/* Tokens: 入/出 (in/out) */}
                     <span className="font-mono text-[11px] text-muted-foreground">
                       {formatCount(inputTokens)}/{formatCount(outputTokens)}
                     </span>
@@ -258,7 +259,7 @@ export function RequestLogTable({
                       {cacheHitRate != null ? `${Math.round(cacheHitRate)}%` : "—"}
                     </span>
 
-                    {/* 价格 */}
+                    {/* 价格 (Price) */}
                     <span
                       className="text-right font-mono text-[11px] text-foreground"
                       title={item.response_usage?.estimated ? t("logTable.priceEstimatedHint") : undefined}

@@ -1,5 +1,6 @@
 import { Check, ChevronsUpDown } from "lucide-react"
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -26,9 +27,9 @@ export function Combobox({
   options,
   value,
   onChange,
-  placeholder = "请选择...",
-  searchPlaceholder = "搜索...",
-  emptyText = "未找到匹配项",
+  placeholder,
+  searchPlaceholder,
+  emptyText,
   className,
 }: {
   options: ComboboxOption[]
@@ -39,6 +40,7 @@ export function Combobox({
   emptyText?: string
   className?: string
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
 
@@ -59,19 +61,19 @@ export function Combobox({
             className
           )}
         >
-          <span className="truncate">{displayValue || placeholder}</span>
+          <span className="truncate">{displayValue || placeholder || t("combobox.placeholder")}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-full min-w-[200px] p-0" align="start">
         <Command>
-          <CommandInput 
-            placeholder={searchPlaceholder} 
+          <CommandInput
+            placeholder={searchPlaceholder || t("combobox.searchPlaceholder")}
             value={search}
             onValueChange={setSearch}
           />
           <CommandList>
-            <CommandEmpty>{emptyText}</CommandEmpty>
+            <CommandEmpty>{emptyText || t("combobox.emptyText")}</CommandEmpty>
             <CommandGroup>
               {options.map((option) => (
                 <CommandItem

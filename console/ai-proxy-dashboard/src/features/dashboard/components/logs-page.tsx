@@ -85,7 +85,7 @@ export function LogsPage({
     })()
   }, [selectedId, onUnauthorized])
 
-  // 防抖搜索 300ms
+  // 防抖搜索 300ms (Debounce search by 300ms)
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedSearchQuery(searchQuery)

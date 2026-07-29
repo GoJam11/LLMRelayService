@@ -27,10 +27,12 @@ import { toast } from "@/components/ui/toast"
 import { createKey, deleteKey, fetchKeys, fetchModels, getKey, renameKey, setKeyAllowedModels, setKeyCostQuota } from "@/features/dashboard/api"
 import type { GatewayModel, ManagedApiKey, ManagedApiKeyDetail } from "@/features/dashboard/types"
 import { formatCost } from "@/features/dashboard/utils"
+import i18n from "@/i18n"
 
 function formatDateTime(timestamp: number | null) {
   if (!timestamp) return "--"
-  return new Date(timestamp).toLocaleString("zh-CN", { hour12: false })
+  // Use the active i18n language for locale-aware formatting instead of a hardcoded zh-CN locale.
+  return new Date(timestamp).toLocaleString(i18n.language, { hour12: false })
 }
 
 async function copyText(value: string) {

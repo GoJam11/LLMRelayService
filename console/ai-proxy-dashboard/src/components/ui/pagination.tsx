@@ -7,6 +7,7 @@ import {
   ChevronsRight,
   MoreHorizontal,
 } from "lucide-react"
+import { useTranslation } from "react-i18next"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -35,6 +36,7 @@ export function Pagination({
   onPageChange,
   onLimitChange,
 }: PaginationProps) {
+  const { t } = useTranslation()
   if (total === 0) return null
 
   const totalPages = Math.max(1, Math.ceil(total / limit))
@@ -62,18 +64,18 @@ export function Pagination({
 
   return (
     <div className="flex w-full flex-wrap items-center justify-between gap-3">
-      {/* 左侧：条数信息 + 每页条数选择 */}
+      {/* Left: item count + page size selector */}
       <div className="flex items-center gap-4">
         <p className="text-xs text-muted-foreground">
-          显示{" "}
+          {t("pagination.showing")}{" "}
           <span className="text-xs font-medium text-foreground">{pageStart}</span>
           {" – "}
           <span className="text-xs font-medium text-foreground">{pageEnd}</span>{" "}
-          条，共{" "}
-          <span className="text-xs font-medium text-foreground">{total}</span> 条
+          {t("pagination.of")}{" "}
+          <span className="text-xs font-medium text-foreground">{total}</span> {t("pagination.total")}
         </p>
         <div className="flex items-center gap-1.5">
-          <span className="hidden text-xs text-muted-foreground lg:block">每页</span>
+          <span className="hidden text-xs text-muted-foreground lg:block">{t("pagination.perPage")}</span>
           <Select value={String(limit)} onValueChange={(v) => onLimitChange(parseInt(v, 10))}>
             <SelectTrigger className="h-8 w-[64px] text-xs">
               <SelectValue />
@@ -88,11 +90,11 @@ export function Pagination({
               </SelectGroup>
             </SelectContent>
           </Select>
-          <span className="hidden text-xs text-muted-foreground lg:block">条</span>
+          <span className="hidden text-xs text-muted-foreground lg:block">{t("pagination.perPageUnit")}</span>
         </div>
       </div>
 
-      {/* 右侧：翻页控件 */}
+      {/* Right: page controls */}
       <div className="flex items-center gap-1">
         <Button
           variant="ghost"
@@ -100,7 +102,7 @@ export function Pagination({
           className="hidden h-8 w-8 sm:flex"
           disabled={currentPage <= 1}
           onClick={() => goToPage(1)}
-          aria-label="首页"
+          aria-label={t("pagination.firstPage")}
         >
           <ChevronsLeft className="size-4" />
         </Button>
@@ -111,10 +113,10 @@ export function Pagination({
           className="h-8 gap-1 px-2"
           disabled={currentPage <= 1}
           onClick={() => goToPage(currentPage - 1)}
-          aria-label="上一页"
+          aria-label={t("pagination.prevPage")}
         >
           <ChevronLeft className="size-4" />
-          <span className="hidden sm:inline">上一页</span>
+          <span className="hidden sm:inline">{t("pagination.prevPage")}</span>
         </Button>
 
         {getPageNumbers().map((page, index) =>
@@ -145,9 +147,9 @@ export function Pagination({
           className="h-8 gap-1 px-2"
           disabled={currentPage >= totalPages}
           onClick={() => goToPage(currentPage + 1)}
-          aria-label="下一页"
+          aria-label={t("pagination.nextPage")}
         >
-          <span className="hidden sm:inline">下一页</span>
+          <span className="hidden sm:inline">{t("pagination.nextPage")}</span>
           <ChevronRight className="size-4" />
         </Button>
 
@@ -157,7 +159,7 @@ export function Pagination({
           className="hidden h-8 w-8 sm:flex"
           disabled={currentPage >= totalPages}
           onClick={() => goToPage(totalPages)}
-          aria-label="尾页"
+          aria-label={t("pagination.lastPage")}
         >
           <ChevronsRight className="size-4" />
         </Button>
