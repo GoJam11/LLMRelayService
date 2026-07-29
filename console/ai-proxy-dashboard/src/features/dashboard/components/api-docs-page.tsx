@@ -205,10 +205,10 @@ function EndpointItem({ ep }: { ep: Endpoint }) {
 }
 
 export function ApiDocsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [filter, setFilter] = useState("")
 
-  const endpoints = useMemo(() => getEndpoints(t), [t])
+  const endpoints = useMemo(() => getEndpoints(t), [t, i18n.language])
 
   const filtered = endpoints.filter(
     (ep) =>
