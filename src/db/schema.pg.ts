@@ -54,6 +54,9 @@ export const consoleRequests = pgTable('console_requests', {
   retryAttempt: integer('retry_attempt').notNull().default(0),
   sourceRequestType: text('source_request_type').notNull().default('unknown'),
   tokenUsageEstimated: integer('token_usage_estimated').notNull().default(0),
+  // Metadata-only record of the ZDR (Zero Data Retention) flag active when this
+  // request was handled. Never derived from or correlated with payload content.
+  zdrActive: integer('zdr_active').notNull().default(1),
 }, (table) => ({
   createdAtIdx: index('idx_console_requests_created_at').on(table.createdAt),
   compareIdx: index('idx_console_requests_compare').on(
@@ -100,6 +103,16 @@ export const consoleProviders = pgTable('console_providers', {
   enabled: integer('enabled').notNull().default(1),
   autoSyncModels: integer('auto_sync_models').notNull().default(0),
   claudeCodeCompat: integer('claude_code_compat').notNull().default(0),
+  // ZDR (Zero Data Retention) capability flags for this provider. `zdrCapable`
+  // marks whether the upstream provider has been vetted/confirmed to honor
+  // zero data retention for prompts/completions; `noTrainingCapable` marks
+  // whether the provider guarantees it does not train on submitted data.
+  // `zdrOverride` is the "guardrail/policy group" scope level: null inherits
+  // the global default, 0/1 force ZDR off/on for requests routed through this
+  // provider (subject to the "most restrictive wins" rule).
+  zdrCapable: integer('zdr_capable').notNull().default(0),
+  noTrainingCapable: integer('no_training_capable').notNull().default(0),
+  zdrOverride: integer('zdr_override'),
   modelsSyncedAt: bigint('models_synced_at', { mode: 'number' }),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
@@ -118,6 +131,10 @@ export const modelAliases = pgTable('model_aliases', {
   visible: integer('visible').notNull().default(1),
   enabled: integer('enabled').notNull().default(1),
   returnRealModel: integer('return_real_model').notNull().default(0),
+  // "Model group" scope level ZDR override: null inherits the global default,
+  // 0/1 forces ZDR off/on for requests resolved through this alias (subject to
+  // the "most restrictive wins" rule).
+  zdrOverride: integer('zdr_override'),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
 }, (table) => ({
@@ -150,3 +167,34 @@ export const gatewaySettings = pgTable('gateway_settings', {
   valueJson: text('value_json').notNull().default('{}'),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
 });
+
+// Short-lived, single-use "step-up auth" tokens. Issued only after the admin
+// re-enters their password, and only authorize the one sensitive settings
+// change (disabling ZDR) they were minted for. `consumedAt` is set the first
+// time the token is redeemed; a consumed or expired token is always rejected.
+export const zdrPrivilegedTokens = pgTable('zdr_privileged_tokens', {
+  id: text('id').primaryKey(),
+  tokenHash: text('token_hash').notNull(),
+  purpose: text('purpose').notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+  expiresAt: bigint('expires_at', { mode: 'number' }).notNull(),
+  consumedAt: bigint('consumed_at', { mode: 'number' }),
+}, (table) => ({
+  tokenHashIdx: index('idx_zdr_privileged_tokens_token_hash').on(table.tokenHash),
+  expiresAtIdx: index('idx_zdr_privileged_tokens_expires_at').on(table.expiresAt),
+}));
+
+// Audit trail for ZDR *setting changes* only (who/when/from-where/what-action).
+// Never stores prompt/response content, even when ZDR itself is later disabled.
+export const zdrAuditLog = pgTable('zdr_audit_log', {
+  id: text('id').primaryKey(),
+  action: text('action').notNull(),
+  scope: text('scope').notNull(),
+  scopeId: text('scope_id'),
+  enabled: integer('enabled').notNull(),
+  actorIp: text('actor_ip'),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+}, (table) => ({
+  createdAtIdx: index('idx_zdr_audit_log_created_at').on(table.createdAt),
+}));
+

@@ -1,21 +1,9 @@
-import { Code2, LogOut, Settings } from "lucide-react"
+import { Code2, Languages, LogOut, Settings } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { cn } from "@/lib/utils"
 
 type Page = "monitor" | "usage" | "providers" | "models" | "routes" | "keys" | "logs" | "settings" | "api"
-
-const PAGE_SUBTITLE: Record<Page, string> = {
-  monitor: "实时流量概览",
-  usage: "用量",
-  logs: "请求日志",
-  providers: "渠道管理",
-  models: "模型",
-  keys: "密钥管理",
-  routes: "路由",
-  settings: "配置",
-  api: "API 文档",
-}
 
 export function NavBar({
   activePage,
@@ -28,9 +16,21 @@ export function NavBar({
   logoutPending: boolean
   onLogout: () => void
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
 
-  // Primary horizontal nav — design order: 监控 用量 日志 渠道 模型 密钥 路由
+  const PAGE_SUBTITLE: Record<Page, string> = {
+    monitor: t("nav.subtitleMonitor"),
+    usage: t("nav.usage"),
+    logs: t("nav.logs"),
+    providers: t("nav.providers"),
+    models: t("nav.models"),
+    keys: t("nav.keys"),
+    routes: t("nav.routes"),
+    settings: t("nav.settings"),
+    api: t("nav.apiDocs"),
+  }
+
+  // Primary horizontal nav — design order: monitor / usage / logs / providers / models / keys / routes
   const navItems: { page: Page; label: string }[] = [
     { page: "monitor", label: t("nav.monitor") },
     { page: "usage", label: t("nav.usage") },
@@ -85,6 +85,18 @@ export function NavBar({
           <span className="lrs-pulse h-[7px] w-[7px] rounded-full bg-primary" />
           {t("nav.live")}
         </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            const next = i18n.language.startsWith("zh") ? "en" : "zh"
+            void i18n.changeLanguage(next)
+          }}
+          className={iconBtn}
+          title={t("lang.switch")}
+        >
+          <Languages className="h-[15px] w-[15px]" />
+        </button>
 
         <button
           type="button"

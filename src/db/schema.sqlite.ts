@@ -58,6 +58,7 @@ export const consoleRequests = sqliteTable('console_requests', {
   retryAttempt: integer('retry_attempt').notNull().default(0),
   sourceRequestType: text('source_request_type').notNull().default('unknown'),
   tokenUsageEstimated: integer('token_usage_estimated').notNull().default(0),
+  zdrActive: integer('zdr_active').notNull().default(1),
 }, (table) => ({
   createdAtIdx: index('idx_console_requests_created_at').on(table.createdAt),
   compareIdx: index('idx_console_requests_compare').on(
@@ -104,6 +105,9 @@ export const consoleProviders = sqliteTable('console_providers', {
   enabled: integer('enabled').notNull().default(1),
   autoSyncModels: integer('auto_sync_models').notNull().default(0),
   claudeCodeCompat: integer('claude_code_compat').notNull().default(0),
+  zdrCapable: integer('zdr_capable').notNull().default(0),
+  noTrainingCapable: integer('no_training_capable').notNull().default(0),
+  zdrOverride: integer('zdr_override'),
   modelsSyncedAt: integer('models_synced_at', { mode: 'number' }),
   createdAt: integer('created_at', { mode: 'number' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'number' }).notNull(),
@@ -122,6 +126,7 @@ export const modelAliases = sqliteTable('model_aliases', {
   visible: integer('visible').notNull().default(1),
   enabled: integer('enabled').notNull().default(1),
   returnRealModel: integer('return_real_model').notNull().default(0),
+  zdrOverride: integer('zdr_override'),
   createdAt: integer('created_at', { mode: 'number' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'number' }).notNull(),
 }, (table) => ({
@@ -154,3 +159,27 @@ export const gatewaySettings = sqliteTable('gateway_settings', {
   valueJson: text('value_json').notNull().default('{}'),
   updatedAt: integer('updated_at', { mode: 'number' }).notNull(),
 });
+
+export const zdrPrivilegedTokens = sqliteTable('zdr_privileged_tokens', {
+  id: text('id').primaryKey(),
+  tokenHash: text('token_hash').notNull(),
+  purpose: text('purpose').notNull(),
+  createdAt: integer('created_at', { mode: 'number' }).notNull(),
+  expiresAt: integer('expires_at', { mode: 'number' }).notNull(),
+  consumedAt: integer('consumed_at', { mode: 'number' }),
+}, (table) => ({
+  tokenHashIdx: index('idx_zdr_privileged_tokens_token_hash').on(table.tokenHash),
+  expiresAtIdx: index('idx_zdr_privileged_tokens_expires_at').on(table.expiresAt),
+}));
+
+export const zdrAuditLog = sqliteTable('zdr_audit_log', {
+  id: text('id').primaryKey(),
+  action: text('action').notNull(),
+  scope: text('scope').notNull(),
+  scopeId: text('scope_id'),
+  enabled: integer('enabled').notNull(),
+  actorIp: text('actor_ip'),
+  createdAt: integer('created_at', { mode: 'number' }).notNull(),
+}, (table) => ({
+  createdAtIdx: index('idx_zdr_audit_log_created_at').on(table.createdAt),
+}));

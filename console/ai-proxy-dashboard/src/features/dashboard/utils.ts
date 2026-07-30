@@ -3,10 +3,12 @@ import type {
   RequestSortKey,
   SortDirection,
 } from "@/features/dashboard/types"
+import i18n from "@/i18n"
 
 export function formatTime(timestamp: number | null | undefined): string {
   if (!timestamp) return "--"
-  return new Date(timestamp).toLocaleString("zh-CN", { hour12: false })
+  // Use the active i18n language for locale-aware formatting instead of a hardcoded zh-CN locale.
+  return new Date(timestamp).toLocaleString(i18n.language, { hour12: false })
 }
 
 export function formatBytes(bytes: number | null | undefined): string {
@@ -20,7 +22,8 @@ export function formatBytes(bytes: number | null | undefined): string {
 export function formatCount(value: unknown): string {
   const numeric = Number(value || 0)
   if (!Number.isFinite(numeric)) return "--"
-  return numeric.toLocaleString("zh-CN")
+  // Use the active i18n language for locale-aware formatting instead of a hardcoded zh-CN locale.
+  return numeric.toLocaleString(i18n.language)
 }
 
 export function formatDuration(value: unknown): string {
@@ -134,7 +137,7 @@ export function getUsageMetricRows(
       },
       { label: `completion${estimatedSuffix}`, value: formatCount(usageLike?.output_tokens) },
       { label: `total${estimatedSuffix}`, value: formatCount(getTotalTokens(usageLike, upstreamType)) },
-      { label: "输出速度", value: outputSpeed },
+      { label: i18n.t("costFormula.outputSpeed"), value: outputSpeed },
       {
         label: "cached prompt",
         value: formatCount(usageLike?.cached_input_tokens),
@@ -151,7 +154,7 @@ export function getUsageMetricRows(
     { label: `input${estimatedSuffix}`, value: formatCount(usageLike?.input_tokens) },
     { label: `output${estimatedSuffix}`, value: formatCount(usageLike?.output_tokens) },
     { label: `total${estimatedSuffix}`, value: formatCount(getTotalTokens(usageLike, upstreamType)) },
-    { label: "输出速度", value: outputSpeed },
+    { label: i18n.t("costFormula.outputSpeed"), value: outputSpeed },
     {
       label: "cache create",
       value: formatCount(usageLike?.cache_creation_input_tokens),
@@ -199,31 +202,40 @@ export function getCostMetricRows(
       : 0) ??
     0
   const rows = [
-    { label: "总成本", value: formatCost(usageLike?.cost) },
-    { label: "模型", value: model },
+    { label: i18n.t("costFormula.totalCost"), value: formatCost(usageLike?.cost) },
+    { label: i18n.t("costFormula.model"), value: model },
   ]
 
   if (!pricing || !breakdown) {
     rows.push({
-      label: "计算公式",
-      value: "缺少该模型的定价数据，暂时无法展开计算公式。",
+      label: i18n.t("costFormula.formulaLabel"),
+      value: i18n.t("costFormula.formulaMissing"),
     })
     return rows
   }
 
   if (resolvedUpstreamType === "openai") {
     rows.push({
-      label: "模型单价",
-      value: `输入 ${formatPricePerMillion(pricing.input)} · 输出 ${formatPricePerMillion(pricing.output)} · cached prompt ${formatPricePerMillion(pricing.cache_read ?? 0)}`,
+      label: i18n.t("costFormula.unitPriceLabel"),
+      value: i18n.t("costFormula.unitPriceSimple", {
+        input: formatPricePerMillion(pricing.input),
+        output: formatPricePerMillion(pricing.output),
+        cacheRead: formatPricePerMillion(pricing.cache_read ?? 0),
+      }),
     })
   } else {
     rows.push({
-      label: "模型单价",
-      value: `输入 ${formatPricePerMillion(pricing.input)} · 输出 ${formatPricePerMillion(pricing.output)} · 缓存读 ${formatPricePerMillion(pricing.cache_read ?? 0)} · 缓存写 ${formatPricePerMillion(pricing.cache_write ?? 0)}`,
+      label: i18n.t("costFormula.unitPriceLabel"),
+      value: i18n.t("costFormula.unitPriceFull", {
+        input: formatPricePerMillion(pricing.input),
+        output: formatPricePerMillion(pricing.output),
+        cacheRead: formatPricePerMillion(pricing.cache_read ?? 0),
+        cacheWrite: formatPricePerMillion(pricing.cache_write ?? 0),
+      }),
     })
   }
   rows.push({
-    label: "输入公式",
+    label: i18n.t("costFormula.inputFormulaLabel"),
     value: formatCostFormula(
       uncachedInputTokens,
       pricing.input,
@@ -231,7 +243,7 @@ export function getCostMetricRows(
     ),
   })
   rows.push({
-    label: "输出公式",
+    label: i18n.t("costFormula.outputFormulaLabel"),
     value: formatCostFormula(
       usageLike?.output_tokens,
       pricing.output,
@@ -239,7 +251,10 @@ export function getCostMetricRows(
     ),
   })
   rows.push({
-    label: resolvedUpstreamType === "openai" ? "cached prompt公式" : "缓存读公式",
+    label:
+      resolvedUpstreamType === "openai"
+        ? i18n.t("costFormula.cachedPromptFormulaLabel")
+        : i18n.t("costFormula.cacheReadFormulaLabel"),
     value: formatCostFormula(
       cacheReadTokens,
       pricing.cache_read ?? 0,
@@ -248,7 +263,7 @@ export function getCostMetricRows(
   })
   if (resolvedUpstreamType === "anthropic") {
     rows.push({
-      label: "缓存写公式",
+      label: i18n.t("costFormula.cacheWriteFormulaLabel"),
       value: formatCostFormula(
         cacheWriteTokens,
         pricing.cache_write ?? 0,
@@ -257,7 +272,7 @@ export function getCostMetricRows(
     })
   }
   rows.push({
-    label: "汇总公式",
+    label: i18n.t("costFormula.totalFormulaLabel"),
     value:
       resolvedUpstreamType === "openai"
         ? `${formatCost(breakdown.input_cost)} + ${formatCost(breakdown.output_cost)} + ${formatCost(breakdown.cache_read_cost)} = ${formatCost(breakdown.total_cost)}`
@@ -285,7 +300,7 @@ export function getComparisonBadgeVariant(
 export function getHttpStatusLabel(
   status: number | null | undefined,
 ): string {
-  if (status == null) return "请求中"
+  if (status == null) return i18n.t("costFormula.requestInProgress")
   return String(status)
 }
 
@@ -487,7 +502,7 @@ export function sortRequests(
 
     let result = 0
     if (typeof leftValue === "string" && typeof rightValue === "string") {
-      result = leftValue.localeCompare(rightValue, "zh-CN")
+      result = leftValue.localeCompare(rightValue, i18n.language)
     } else {
       result = Number(leftValue) - Number(rightValue)
     }

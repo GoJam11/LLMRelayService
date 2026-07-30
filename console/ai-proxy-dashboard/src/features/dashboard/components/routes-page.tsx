@@ -82,6 +82,7 @@ const EMPTY_FORM = {
   description: "",
   visible: true,
   returnRealModel: false,
+  zdrOverride: "inherit" as "inherit" | "enabled" | "disabled",
 }
 
 type RouteTargetDraft = {
@@ -471,6 +472,25 @@ function AliasForm({
         <FieldDescription>{t("routes.returnRealModelHint")}</FieldDescription>
       </Field>
       <Field>
+        <FieldLabel>{t("routes.zdrOverrideLabel")}</FieldLabel>
+        <Select
+          value={draft.zdrOverride}
+          onValueChange={(value) => onChange({ zdrOverride: value as "inherit" | "enabled" | "disabled" })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="inherit">{t("routes.zdrOverrideInherit")}</SelectItem>
+              <SelectItem value="enabled">{t("routes.zdrOverrideEnabled")}</SelectItem>
+              <SelectItem value="disabled">{t("routes.zdrOverrideDisabled")}</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <FieldDescription>{t("routes.zdrOverrideHint")}</FieldDescription>
+      </Field>
+      <Field>
         <FieldLabel>{t("routes.notesLabel")}</FieldLabel>
         <Input
           placeholder={t("routes.notesPlaceholder")}
@@ -618,7 +638,7 @@ function GlobalFailoverEditor({
       </div>
 
       <div className="flex-1 overflow-auto px-7 py-6">
-        {/* 匹配顺序说明 */}
+        {/* 匹配顺序说明 / Match order explanation */}
         <div className="mb-6 rounded-lg border border-border/60 bg-accent/20 p-4">
           <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             {t("routes.failoverMatchOrderTitle")}
@@ -736,7 +756,7 @@ function GlobalFailoverEditor({
           </Field>
         </FieldGroup>
 
-        {/* 两种写法 hint */}
+        {/* 两种写法 hint / Two syntax variants hint */}
         <div className="mt-6 rounded-lg border border-border/60 bg-muted/30 p-4">
           <div className="mb-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             {t("routes.failoverChainSyntaxTitle")}
@@ -797,7 +817,7 @@ function CustomFallbackEditor({
     <>
       <div className="flex items-center gap-2.5 border-b border-border px-7 py-4">
         <span className="text-[15px] font-extrabold">{t("routes.failoverCustomRuleTitle")}</span>
-        <span className="font-mono text-[11px] text-muted-foreground">{rule.model || `规则 ${index + 1}`}</span>
+        <span className="font-mono text-[11px] text-muted-foreground">{rule.model || t("routes.failoverRuleFallbackLabel", { index: index + 1 })}</span>
         <Button
           type="button"
           variant="ghost"
@@ -943,6 +963,11 @@ export function RoutesPage({
       description: alias.description ?? "",
       visible: alias.visible,
       returnRealModel: alias.returnRealModel === true,
+      zdrOverride: (() => {
+        if (alias.zdrOverride === true) return "enabled" as const
+        if (alias.zdrOverride === false) return "disabled" as const
+        return "inherit" as const
+      })(),
     })
     setSubmitError("")
     setDialogOpen(false)
@@ -961,6 +986,7 @@ export function RoutesPage({
       description: draft.description.trim() || null,
       visible: draft.visible,
       returnRealModel: draft.returnRealModel,
+      zdrOverride: draft.zdrOverride === "inherit" ? null : draft.zdrOverride === "enabled",
     }
     if (!trimmed.alias || trimmed.targets.length === 0 || trimmed.targets.some((target) => !target.provider || !target.model)) {
       setSubmitError(t("routes.requiredFieldsError"))
@@ -1261,7 +1287,7 @@ export function RoutesPage({
                         >
                           <div className="flex items-center gap-2.5">
                             <span className="font-mono text-[13.5px] font-bold">
-                              {rule.model || `规则 ${index + 1}`}
+                              {rule.model || t("routes.failoverRuleFallbackLabel", { index: index + 1 })}
                             </span>
                             <span className="rounded-md bg-muted px-2 py-0.5 text-[10.5px] font-semibold text-muted-foreground">
                               {t("routes.failoverCustomTitle")}

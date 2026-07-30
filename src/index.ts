@@ -22,6 +22,9 @@ import { initializeTokenEstimator } from './token-estimator';
 import { applyCorsHeaders, createCorsPreflightResponse, withCorsHeaders } from './cors';
 import { getGatewayTimeoutSettings, selectUpstreamFirstByteTimeoutMs } from './gateway-timeouts';
 import { describeFailoverTrigger, getCustomModelFallbackModels, getGatewayFailoverPolicy, shouldTriggerFailover, type FailoverTrigger, type GatewayFailoverPolicy } from './gateway-failover';
+import { getZdrGlobalSettings, parseZdrRequestOverrideHeader, resolveEffectiveZdr, ZDR_REQUEST_OVERRIDE_HEADER } from './zdr-settings';
+import { getModelGroupZdrOverride, getProviderZdrInfo, listAllProviderZdrInfo } from './zdr-runtime';
+import { filterCandidatesForZdr } from './zdr-provider-filter';
 import {
   convertResponsesRequestToChatCompletions,
   createResponsesChatCompatErrorResponse,
@@ -490,9 +493,28 @@ async function handleProxyRequest(c: any): Promise<Response> {
   }
 
   const requestedModel = extractModelFromRequestBody(rawPayloadForLog) ?? '';
-  const routeCandidates = explicitRoute
+  const unfilteredRouteCandidates = explicitRoute
     ? [initialRoute]
     : resolveRoutesByModel(lookupPathname, upstreamSearch, requestedModel, typeForced?.type);
+
+  // --- Zero Data Retention (ZDR) effective-scope resolution -----------------
+  // Most-restrictive-wins across global / model-group / guardrail(provider) /
+  // per-request scope levels. Computed once per request and used both to
+  // restrict route candidates to ZDR-capable providers and to tag the
+  // persisted console log row so it gets content-redacted at write time.
+  const zdrGlobalSettings = await getZdrGlobalSettings();
+  const zdrModelGroupOverride = await getModelGroupZdrOverride(requestedModel || initialRoute.virtualModel || '');
+  const zdrGuardrailOverride = (await getProviderZdrInfo(initialRoute.channelName))?.zdrOverride ?? null;
+  const zdrRequestOverride = parseZdrRequestOverrideHeader(c.req.raw.headers.get(ZDR_REQUEST_OVERRIDE_HEADER));
+  const zdrActive = resolveEffectiveZdr({
+    global: zdrGlobalSettings.settings.enabled,
+    modelGroupOverride: zdrModelGroupOverride,
+    guardrailOverride: zdrGuardrailOverride,
+    requestOverride: zdrRequestOverride,
+  });
+  const routeCandidates = zdrActive
+    ? filterCandidatesForZdr(unfilteredRouteCandidates, true, await listAllProviderZdrInfo())
+    : unfilteredRouteCandidates;
   const timeoutSettings = await getGatewayTimeoutSettings();
   const failoverPolicy = await getGatewayFailoverPolicy();
   const customFallbackModels = explicitRoute ? [] : getCustomModelFallbackModels(failoverPolicy, requestedModel);
@@ -592,6 +614,7 @@ async function handleProxyRequest(c: any): Promise<Response> {
       failover_reason: attempt.failoverReason,
       retry_attempt: attempt.retryAttempt,
       source_request_type: sourceRequestType as any,
+      zdr_active: zdrActive,
     }));
     addPerfPhase(requestPerfPhases, 'queue_console_request_ms', elapsedPerfMs(queueConsoleWriteStart));
   };

@@ -1,6 +1,7 @@
 import { asc, eq } from 'drizzle-orm';
 import { createDbClient } from './db/client';
 import { modelAliases } from './db/schema';
+import { parseZdrOverrideColumn, type ZdrOverride } from './zdr-settings';
 
 export interface ModelAliasEntry {
   id: number;
@@ -12,6 +13,8 @@ export interface ModelAliasEntry {
   visible: boolean;
   enabled: boolean;
   returnRealModel: boolean;
+  /** Model-group scope ZDR override: null inherits the global default. */
+  zdrOverride: ZdrOverride;
   createdAt: number;
   updatedAt: number;
 }
@@ -30,6 +33,7 @@ export interface ModelAliasMutationInput {
   visible?: boolean;
   enabled?: boolean;
   returnRealModel?: boolean;
+  zdrOverride?: ZdrOverride;
 }
 
 const db = createDbClient();
@@ -67,6 +71,11 @@ function parseTargets(row: typeof modelAliases.$inferSelect): ModelAliasTarget[]
   return [{ provider: row.provider, model: row.model }];
 }
 
+function serializeZdrOverride(value: ZdrOverride): number | null {
+  if (value == null) return null;
+  return value ? 1 : 0;
+}
+
 function rowToEntry(row: typeof modelAliases.$inferSelect): ModelAliasEntry {
   return {
     id: row.id,
@@ -78,6 +87,7 @@ function rowToEntry(row: typeof modelAliases.$inferSelect): ModelAliasEntry {
     visible: row.visible !== 0,
     enabled: row.enabled !== 0,
     returnRealModel: row.returnRealModel !== 0,
+    zdrOverride: parseZdrOverrideColumn(row.zdrOverride),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -128,6 +138,7 @@ export async function createModelAlias(input: ModelAliasMutationInput): Promise<
       visible: input.visible !== false ? 1 : 0,
       enabled: input.enabled !== false ? 1 : 0,
       returnRealModel: input.returnRealModel === true ? 1 : 0,
+      zdrOverride: serializeZdrOverride(input.zdrOverride ?? null),
       createdAt: now,
       updatedAt: now,
     })
@@ -174,6 +185,7 @@ export async function updateModelAlias(id: number, input: ModelAliasMutationInpu
       visible: input.visible !== undefined ? (input.visible ? 1 : 0) : (existing.visible ? 1 : 0),
       enabled: input.enabled !== undefined ? (input.enabled ? 1 : 0) : (existing.enabled ? 1 : 0),
       returnRealModel: input.returnRealModel !== undefined ? (input.returnRealModel ? 1 : 0) : (existing.returnRealModel ? 1 : 0),
+      zdrOverride: input.zdrOverride !== undefined ? serializeZdrOverride(input.zdrOverride) : serializeZdrOverride(existing.zdrOverride),
       updatedAt: Date.now(),
     })
     .where(eq(modelAliases.id, id))

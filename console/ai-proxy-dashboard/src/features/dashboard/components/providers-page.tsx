@@ -200,6 +200,9 @@ type ProviderFormState = {
   extraFieldsJson: string
   autoSyncModels: boolean
   claudeCodeCompat: boolean
+  zdrCapable: boolean
+  noTrainingCapable: boolean
+  zdrOverride: "inherit" | "enabled" | "disabled"
   models: ModelRowState[]
 }
 
@@ -256,6 +259,13 @@ function createFormState(provider?: ProviderInfo): ProviderFormState {
     })(),
     autoSyncModels: provider?.autoSyncModels ?? false,
     claudeCodeCompat: provider?.claudeCodeCompat ?? false,
+    zdrCapable: provider?.zdrCapable ?? false,
+    noTrainingCapable: provider?.noTrainingCapable ?? false,
+    zdrOverride: (() => {
+      if (provider?.zdrOverride === true) return "enabled"
+      if (provider?.zdrOverride === false) return "disabled"
+      return "inherit"
+    })(),
     models: provider?.models.length
       ? provider.models.map((model) => createModelRow(model))
       : [createModelRow()],
@@ -312,7 +322,11 @@ function buildProviderPayload(
     extraFields: parseExtraJson(state.extraFieldsJson),
     autoSyncModels: state.autoSyncModels,
     // 服务端对非 anthropic 渠道会强制关掉，这里直接传状态即可。
+    // (Server forces this off for non-anthropic channels; we just pass through the state.)
     claudeCodeCompat: state.claudeCodeCompat,
+    zdrCapable: state.zdrCapable,
+    noTrainingCapable: state.noTrainingCapable,
+    zdrOverride: state.zdrOverride === "inherit" ? null : state.zdrOverride === "enabled",
   }
 
   const explicitHeader = state.authHeader === "auto" ? undefined : state.authHeader
@@ -468,14 +482,14 @@ export function ProvidersPage({
   const [showApiKey, setShowApiKey] = useState(false)
   const [togglingChannels, setTogglingChannels] = useState<Set<string>>(new Set())
 
-  // 同步上游模型弹窗
+  // 同步上游模型弹窗 (Sync upstream models dialog)
   const [syncDialogOpen, setSyncDialogOpen] = useState(false)
   const [syncLoading, setSyncLoading] = useState(false)
   const [syncError, setSyncError] = useState("")
   const [syncModels, setSyncModels] = useState<Array<{ id: string }>>([])
   const [syncSelected, setSyncSelected] = useState<Set<string>>(new Set())
 
-  // 配置导入/导出弹窗
+  // 配置导入/导出弹窗 (Config import/export dialog)
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
   const [configDialogMode, setConfigDialogMode] = useState<"import" | "export">("export")
   const [configJson, setConfigJson] = useState("")
@@ -525,7 +539,7 @@ export function ProvidersPage({
     setTestingAll(true)
     setTestResults(new Map())
 
-    // 并发测试所有provider
+    // 并发测试所有provider (Test all providers concurrently)
     await Promise.all(
       providers.map((provider) => testSingleProvider(provider.channelName))
     )
@@ -660,6 +674,9 @@ export function ProvidersPage({
       let data: { models: Array<{ id: string }> }
       // 新建渠道尚未保存到后台，channelName 查不到 Provider，必须用表单实时值预览。
       // 编辑模式下若填了新密钥也优先用实时值，否则回退到按 channelName 读库内认证信息。
+      // (A new channel hasn't been saved yet, so channelName won't resolve to a Provider —
+      // preview must use live form values. In edit mode, prefer live values when a new key
+      // was entered, otherwise fall back to reading stored auth by channelName.)
       if (dialogMode === "create" || formState.apiKey?.trim()) {
         data = await fetchUpstreamModelsPreview({
           targetBaseUrl: formState.targetBaseUrl.trim(),
@@ -669,13 +686,14 @@ export function ProvidersPage({
         })
       } else if (formState.channelName.trim()) {
         // 已保存的渠道，用 channelName 从数据库读取认证信息
+        // (Saved channel: read auth info from the database by channelName.)
         data = await fetchUpstreamModels(formState.channelName.trim())
       } else {
         throw new Error(t("providers.syncNeedUrl"))
       }
       const existingIds = new Set(formState.models.map((r) => r.model.trim()).filter(Boolean))
       setSyncModels(data.models)
-      // 默认选中不存在的模型
+      // 默认选中不存在的模型 (Select models that don't already exist by default)
       setSyncSelected(new Set(data.models.map((m) => m.id).filter((id) => !existingIds.has(id))))
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : String(err))
@@ -696,7 +714,7 @@ export function ProvidersPage({
       return
     }
     setFormState((current) => {
-      // 过滤掉空白占位行（只有一个空行时）
+      // 过滤掉空白占位行（只有一个空行时）(Filter out the blank placeholder row when it's the only row)
       const nonEmpty = current.models.filter((r) => r.model.trim() !== "")
       const newRows = toAdd.map((id) => createModelRow({ model: id }))
       return {
@@ -1068,6 +1086,65 @@ export function ProvidersPage({
             </Field>
 
             <Field>
+              <FieldLabel>{t("providers.zdrCapableLabel")}</FieldLabel>
+              <div className="flex items-start gap-2 rounded-[10px] border border-input bg-muted/30 px-3 py-2">
+                <Checkbox
+                  id="pane-zdr-capable"
+                  checked={formState.zdrCapable}
+                  onCheckedChange={(checked) =>
+                    setFormState((current) => ({ ...current, zdrCapable: checked === true }))
+                  }
+                  className="mt-0.5"
+                />
+                <label htmlFor="pane-zdr-capable" className="cursor-pointer select-none">
+                  <span className="block text-[13px] font-medium text-foreground">
+                    {t("providers.zdrCapableCheckboxLabel")}
+                  </span>
+                  <span className="mt-0.5 block text-[11.5px] leading-snug text-muted-foreground">
+                    {t("providers.zdrCapableHint")}
+                  </span>
+                </label>
+              </div>
+              <div className="mt-2 flex items-start gap-2 rounded-[10px] border border-input bg-muted/30 px-3 py-2">
+                <Checkbox
+                  id="pane-no-training-capable"
+                  checked={formState.noTrainingCapable}
+                  onCheckedChange={(checked) =>
+                    setFormState((current) => ({ ...current, noTrainingCapable: checked === true }))
+                  }
+                  className="mt-0.5"
+                />
+                <label htmlFor="pane-no-training-capable" className="cursor-pointer select-none">
+                  <span className="block text-[13px] font-medium text-foreground">
+                    {t("providers.noTrainingCapableCheckboxLabel")}
+                  </span>
+                  <span className="mt-0.5 block text-[11.5px] leading-snug text-muted-foreground">
+                    {t("providers.noTrainingCapableHint")}
+                  </span>
+                </label>
+              </div>
+            </Field>
+
+            <Field>
+              <FieldLabel>{t("providers.zdrOverrideLabel")}</FieldLabel>
+              <SegmentedToggle
+                value={formState.zdrOverride}
+                onChange={(value) =>
+                  setFormState((current) => ({
+                    ...current,
+                    zdrOverride: value as "inherit" | "enabled" | "disabled",
+                  }))
+                }
+                options={[
+                  { value: "inherit", label: t("providers.zdrOverrideInherit") },
+                  { value: "enabled", label: t("providers.zdrOverrideEnabled") },
+                  { value: "disabled", label: t("providers.zdrOverrideDisabled") },
+                ]}
+              />
+              <FieldDescription>{t("providers.zdrOverrideHint")}</FieldDescription>
+            </Field>
+
+            <Field>
               <FieldLabel htmlFor="pane-system-prompt">{t("providers.systemPromptLabel")}</FieldLabel>
               <Textarea
                 id="pane-system-prompt"
@@ -1151,7 +1228,7 @@ export function ProvidersPage({
             <div className="flex min-h-0 flex-col border-b border-border lg:border-b-0 lg:border-r">
               <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-3">
                 <span className="text-[13px] text-muted-foreground">
-                  共 <b className="font-mono font-semibold text-foreground">{displayedProviders.length}</b> 个渠道 · {providerStats.enabledCount} {t("common.enabled")}
+                  {t("providersExtra.channelCount", { count: displayedProviders.length })} · {providerStats.enabledCount} {t("common.enabled")}
                 </span>
                 <div className="flex items-center gap-1.5">
                   <Button
@@ -1182,14 +1259,14 @@ export function ProvidersPage({
                   <Input
                     value={searchQuery}
                     onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="搜索渠道、URL、模型..."
+                    placeholder={t("providersExtra.searchPlaceholder")}
                     className="h-8 bg-card pl-8 text-xs"
                   />
                 </div>
                 <Select value={typeFilter} onValueChange={setTypeFilter}>
                   <SelectTrigger className="h-8 w-[5.5rem] bg-card text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectGroup>
-                    <SelectItem value="all">全部类型</SelectItem>
+                    <SelectItem value="all">{t("providersExtra.allTypes")}</SelectItem>
                     <SelectItem value="openai">OpenAI</SelectItem>
                     <SelectItem value="anthropic">Anthropic</SelectItem>
                   </SelectGroup></SelectContent>
@@ -1197,7 +1274,7 @@ export function ProvidersPage({
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger className="h-8 w-[5.5rem] bg-card text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectGroup>
-                    <SelectItem value="all">全部状态</SelectItem>
+                    <SelectItem value="all">{t("providersExtra.allStatus")}</SelectItem>
                     <SelectItem value="enabled">{t("common.enabled")}</SelectItem>
                     <SelectItem value="disabled">{t("common.disabled")}</SelectItem>
                   </SelectGroup></SelectContent>
@@ -1275,7 +1352,7 @@ export function ProvidersPage({
         )}
       </div>
 
-      {/* 新增渠道弹窗 — Design: LRS Clear 风格五 */}
+      {/* 新增渠道弹窗 — Design: LRS Clear 风格五 (Add channel dialog) */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[600px]">
           <DialogHeader className="flex-row items-center gap-3 space-y-0 border-b border-border px-7 py-5">
@@ -1487,7 +1564,7 @@ export function ProvidersPage({
         </DialogContent>
       </Dialog>
 
-      {/* 测试弹窗 */}
+      {/* 测试弹窗 (Test dialog) */}
       <Dialog open={testDialogOpen} onOpenChange={setTestDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -1574,7 +1651,7 @@ export function ProvidersPage({
         </DialogContent>
       </Dialog>
 
-      {/* 删除确认对话框 */}
+      {/* 删除确认对话框 (Delete confirmation dialog) */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -1599,7 +1676,7 @@ export function ProvidersPage({
         </DialogContent>
       </Dialog>
 
-      {/* 同步上游模型弹窗 */}
+      {/* 同步上游模型弹窗 (Sync upstream models dialog) */}
       <Dialog open={syncDialogOpen} onOpenChange={setSyncDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -1693,7 +1770,7 @@ export function ProvidersPage({
         </DialogContent>
       </Dialog>
 
-      {/* 配置导入/导出弹窗 */}
+      {/* 配置导入/导出弹窗 (Config import/export dialog) */}
       <Dialog open={configDialogOpen} onOpenChange={setConfigDialogOpen}>
         <DialogContent className="grid max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden sm:max-w-2xl">
           <DialogHeader>
@@ -1748,7 +1825,7 @@ export function ProvidersPage({
                     if (!Array.isArray(parsed.providers)) {
                       throw new Error(t("providers.importConfigInvalid"))
                     }
-                    // 逐个创建 provider
+                    // 逐个创建 provider (Create providers one by one)
                     for (const p of parsed.providers) {
                       const payload: ProviderMutationPayload = {
                         channelName: p.channelName,

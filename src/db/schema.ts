@@ -17,3 +17,5 @@ export const modelAliases = active.modelAliases as unknown as typeof pgSchema.mo
 export const modelCatalogCache = active.modelCatalogCache as unknown as typeof pgSchema.modelCatalogCache;
 export const modelMetadataOverrides = active.modelMetadataOverrides as unknown as typeof pgSchema.modelMetadataOverrides;
 export const gatewaySettings = active.gatewaySettings as unknown as typeof pgSchema.gatewaySettings;
+export const zdrPrivilegedTokens = active.zdrPrivilegedTokens as unknown as typeof pgSchema.zdrPrivilegedTokens;
+export const zdrAuditLog = active.zdrAuditLog as unknown as typeof pgSchema.zdrAuditLog;

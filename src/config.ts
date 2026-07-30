@@ -1,6 +1,7 @@
 import { createConsoleProviderEntry, deleteConsoleProviderEntry, listConsoleProviderEntries, toggleConsoleProviderEntry, updateConsoleProviderEntry, updateConsoleProviderModels } from './console-provider-store';
 import { listModelAliases } from './console-model-alias-store';
 import { fetchUpstreamModelIds } from './upstream-models';
+import type { ZdrOverride } from './zdr-settings';
 
 export type UpstreamType = 'anthropic' | 'openai';
 export type RouteAuthHeader = 'x-api-key' | 'authorization';
@@ -49,6 +50,12 @@ export interface ConfigEntry {
    * 内容能原样抵达模型（cloak 只动 system，不碰 messages）。
    */
   claudeCodeCompat?: boolean;
+  /** Whether this provider has been vetted as ZDR-capable (honors zero data retention). */
+  zdrCapable?: boolean;
+  /** Whether this provider guarantees it does not train on submitted data. */
+  noTrainingCapable?: boolean;
+  /** Guardrail/policy-group scope ZDR override: undefined/null inherits the global default. */
+  zdrOverride?: ZdrOverride;
 }
 
 export interface RouteResult {
@@ -94,6 +101,9 @@ export interface ProviderInfo {
   providerUuid: string;
   autoSyncModels: boolean;
   claudeCodeCompat: boolean;
+  zdrCapable: boolean;
+  noTrainingCapable: boolean;
+  zdrOverride: ZdrOverride;
 }
 
 export interface ProviderMutationAuthInput {
@@ -114,6 +124,9 @@ export interface ProviderMutationInput {
   extraFields?: Record<string, unknown> | null;
   autoSyncModels?: boolean | null;
   claudeCodeCompat?: boolean | null;
+  zdrCapable?: boolean | null;
+  noTrainingCapable?: boolean | null;
+  zdrOverride?: ZdrOverride;
 }
 
 type RawConfigEntry = ConfigEntry & {
@@ -214,6 +227,9 @@ export function validateConfigEntries(entries: Record<string, RawConfigEntry>): 
       ...(providerUuid ? { providerUuid } : {}),
       ...(entry.autoSyncModels === true ? { autoSyncModels: true } : {}),
       ...(type === 'anthropic' && entry.claudeCodeCompat === true ? { claudeCodeCompat: true } : {}),
+      ...(entry.zdrCapable === true ? { zdrCapable: true } : {}),
+      ...(entry.noTrainingCapable === true ? { noTrainingCapable: true } : {}),
+      ...(entry.zdrOverride != null ? { zdrOverride: entry.zdrOverride } : {}),
     };
   }
 
@@ -458,6 +474,9 @@ function buildProviderInfo(
     providerUuid: entry.providerUuid ?? '',
     autoSyncModels: entry.autoSyncModels === true,
     claudeCodeCompat: entry.claudeCodeCompat === true,
+    zdrCapable: entry.zdrCapable === true,
+    noTrainingCapable: entry.noTrainingCapable === true,
+    zdrOverride: entry.zdrOverride ?? null,
   };
 }
 
@@ -679,6 +698,15 @@ function buildNormalizedEntry(payload: ProviderMutationInput, existingEntry?: Co
   const claudeCodeCompat = type === 'anthropic' && (payload.claudeCodeCompat === undefined
     ? (existingEntry?.claudeCodeCompat ?? false)
     : payload.claudeCodeCompat === true);
+  const zdrCapable = payload.zdrCapable === undefined
+    ? (existingEntry?.zdrCapable ?? false)
+    : payload.zdrCapable === true;
+  const noTrainingCapable = payload.noTrainingCapable === undefined
+    ? (existingEntry?.noTrainingCapable ?? false)
+    : payload.noTrainingCapable === true;
+  const zdrOverride = payload.zdrOverride === undefined
+    ? (existingEntry?.zdrOverride ?? null)
+    : payload.zdrOverride;
 
   const normalized: ConfigEntry = {
     type,
@@ -694,6 +722,9 @@ function buildNormalizedEntry(payload: ProviderMutationInput, existingEntry?: Co
   if (extraFields && Object.keys(extraFields).length > 0) normalized.extraFields = extraFields;
   if (autoSyncModels) normalized.autoSyncModels = true;
   if (claudeCodeCompat) normalized.claudeCodeCompat = true;
+  if (zdrCapable) normalized.zdrCapable = true;
+  if (noTrainingCapable) normalized.noTrainingCapable = true;
+  if (zdrOverride != null) normalized.zdrOverride = zdrOverride;
 
   return normalized;
 }

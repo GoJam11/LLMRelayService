@@ -179,6 +179,7 @@ export function DetailView({
         ) : null}
 
         {/* 4×2 metric grid — 首包/首Token/总耗时/生成 + 输入/输出/cache_read/cache_creation */}
+        {/* (First byte / First token / Total time / Generation + Input / Output / cache_read / cache_creation) */}
         <div
           className="mt-4 grid overflow-hidden rounded-lg border border-border bg-border"
           style={{ gridTemplateColumns: "repeat(4, 1fr)", gap: 1 }}
@@ -220,6 +221,7 @@ export function DetailView({
       </div>
 
       {/* Tabs: 原始请求 / 转发请求 / 响应 — Design: LRS Clear 风格五 */}
+      {/* (Raw request / Forwarded request / Response) */}
       <Tabs defaultValue="request" className="flex min-h-0 flex-1 flex-col">
         <TabsList
           variant="line"

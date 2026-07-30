@@ -20,7 +20,10 @@ import type {
   ProviderInfo,
   ProviderMutationPayload,
   UpdateModelMetadataPayload,
+  ZdrReauthResult,
+  ZdrSettingsPayload,
 } from "@/features/dashboard/types"
+import i18n from "@/i18n"
 
 export const DEFAULT_REQUEST_LIMIT = 50
 export const DEFAULT_REQUEST_OFFSET = 0
@@ -116,7 +119,7 @@ export async function login(password: string): Promise<void> {
     const payload = (await response.json().catch(() => ({}))) as {
       error?: unknown
     }
-    throw new Error(String(payload.error ?? "登录失败"))
+    throw new Error(String(payload.error ?? i18n.t("session.loginFailed")))
   }
 }
 
@@ -352,5 +355,30 @@ export function updateGatewayFailoverPolicy(
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  })
+}
+
+// ── Zero Data Retention (ZDR) ──────────────────────────────────────────────
+
+export function fetchZdrSettings(): Promise<ZdrSettingsPayload> {
+  return requestJson("/__console/api/settings/zdr")
+}
+
+export function reauthForZdr(password: string): Promise<ZdrReauthResult> {
+  return requestJson("/__console/api/settings/zdr/reauth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  })
+}
+
+export function updateZdrSettings(
+  enabled: boolean,
+  privilegedToken?: string,
+): Promise<ZdrSettingsPayload> {
+  return requestJson("/__console/api/settings/zdr", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled, ...(privilegedToken ? { privilegedToken } : {}) }),
   })
 }

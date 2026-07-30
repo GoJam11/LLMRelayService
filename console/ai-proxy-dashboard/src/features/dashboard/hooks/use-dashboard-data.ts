@@ -39,6 +39,7 @@ export function useDashboardData(onUnauthorized: () => void) {
   const loadIdRef = useRef(0)
 
   // Refs 保存最新的可变值，供稳定回调读取，避免闭包捕获旧值
+  // (Refs hold the latest mutable values so stable callbacks can read them without stale closures)
   const limitRef = useRef(DEFAULT_REQUEST_LIMIT)
   const offsetRef = useRef(DEFAULT_REQUEST_OFFSET)
   const sortByRef = useRef<RequestSortKey>('created_at')
@@ -46,14 +47,14 @@ export function useDashboardData(onUnauthorized: () => void) {
   const latestFiltersRef = useRef<RequestFilters>({})
   const onUnauthorizedRef = useRef(onUnauthorized)
 
-  // 每次渲染同步 refs
+  // 每次渲染同步 refs (Sync refs on every render)
   limitRef.current = limit
   offsetRef.current = offset
   sortByRef.current = sortBy
   sortOrderRef.current = sortOrder
   onUnauthorizedRef.current = onUnauthorized
 
-  // 加载筛选选项（稳定引用）
+  // 加载筛选选项（稳定引用）(Load filter options — stable reference)
   const loadFilterOptions = useCallback(async () => {
     try {
       const data = await fetchFilterOptions()
@@ -70,13 +71,15 @@ export function useDashboardData(onUnauthorized: () => void) {
     }
   }, [])
 
-  // 初始加载筛选选项
+  // 初始加载筛选选项 (Initial load of filter options)
   useEffect(() => {
     void loadFilterOptions()
   }, [loadFilterOptions])
 
   // refreshDashboard 为稳定引用（空依赖数组），通过 refs 读取最新状态
   // 避免 state 变化导致函数重建进而引发 useEffect 二次触发
+  // (refreshDashboard is a stable reference (empty dep array) that reads the latest
+  // state via refs, avoiding function re-creation and duplicate useEffect triggers.)
   const refreshDashboard = useCallback(
     async (options: {
       silent?: boolean;
@@ -92,6 +95,7 @@ export function useDashboardData(onUnauthorized: () => void) {
       const requestLimit = options.limit ?? limitRef.current
       const requestOffset = options.offset ?? offsetRef.current
       // 显式传入 filters 时更新 ref；否则沿用上次的 filters
+      // (Update the ref when filters are explicitly passed; otherwise reuse the previous filters.)
       const requestFilters = 'filters' in options ? (options.filters ?? {}) : latestFiltersRef.current
       const requestSortBy = options.sortBy ?? sortByRef.current
       const requestSortOrder = options.sortOrder ?? sortOrderRef.current
@@ -133,7 +137,7 @@ export function useDashboardData(onUnauthorized: () => void) {
         }
       }
     },
-    [], // 稳定引用，不依赖任何 state
+    [], // 稳定引用，不依赖任何 state (stable reference, no state dependencies)
   )
 
   return {
