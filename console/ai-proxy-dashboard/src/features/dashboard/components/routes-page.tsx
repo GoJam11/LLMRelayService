@@ -82,6 +82,7 @@ const EMPTY_FORM = {
   description: "",
   visible: true,
   returnRealModel: false,
+  zdrOverride: "inherit" as "inherit" | "enabled" | "disabled",
 }
 
 type RouteTargetDraft = {
@@ -469,6 +470,25 @@ function AliasForm({
           {t("routes.returnRealModel")}
         </label>
         <FieldDescription>{t("routes.returnRealModelHint")}</FieldDescription>
+      </Field>
+      <Field>
+        <FieldLabel>{t("routes.zdrOverrideLabel")}</FieldLabel>
+        <Select
+          value={draft.zdrOverride}
+          onValueChange={(value) => onChange({ zdrOverride: value as "inherit" | "enabled" | "disabled" })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="inherit">{t("routes.zdrOverrideInherit")}</SelectItem>
+              <SelectItem value="enabled">{t("routes.zdrOverrideEnabled")}</SelectItem>
+              <SelectItem value="disabled">{t("routes.zdrOverrideDisabled")}</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+        <FieldDescription>{t("routes.zdrOverrideHint")}</FieldDescription>
       </Field>
       <Field>
         <FieldLabel>{t("routes.notesLabel")}</FieldLabel>
@@ -943,6 +963,11 @@ export function RoutesPage({
       description: alias.description ?? "",
       visible: alias.visible,
       returnRealModel: alias.returnRealModel === true,
+      zdrOverride: (() => {
+        if (alias.zdrOverride === true) return "enabled" as const
+        if (alias.zdrOverride === false) return "disabled" as const
+        return "inherit" as const
+      })(),
     })
     setSubmitError("")
     setDialogOpen(false)
@@ -961,6 +986,7 @@ export function RoutesPage({
       description: draft.description.trim() || null,
       visible: draft.visible,
       returnRealModel: draft.returnRealModel,
+      zdrOverride: draft.zdrOverride === "inherit" ? null : draft.zdrOverride === "enabled",
     }
     if (!trimmed.alias || trimmed.targets.length === 0 || trimmed.targets.some((target) => !target.provider || !target.model)) {
       setSubmitError(t("routes.requiredFieldsError"))

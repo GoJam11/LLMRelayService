@@ -229,6 +229,8 @@ export type ProviderAuthInfo = {
 
 export type OpenAiResponsesMode = "native" | "chat_compat" | "disabled"
 export type RoutingVisibility = "direct" | "explicit_only"
+/** Guardrail/model-group scope ZDR override: null/undefined inherits the global default. */
+export type ZdrOverride = boolean | null
 
 export type ProviderInfo = {
   channelName: string
@@ -245,6 +247,9 @@ export type ProviderInfo = {
   providerUuid: string
   autoSyncModels?: boolean
   claudeCodeCompat?: boolean
+  zdrCapable?: boolean
+  noTrainingCapable?: boolean
+  zdrOverride?: ZdrOverride
   healthStatus?: "healthy" | "degraded" | "down" | "no-data"
 }
 
@@ -268,6 +273,9 @@ export type ProviderMutationPayload = {
   extraFields?: Record<string, unknown> | null
   autoSyncModels?: boolean
   claudeCodeCompat?: boolean
+  zdrCapable?: boolean
+  noTrainingCapable?: boolean
+  zdrOverride?: ZdrOverride
 }
 
 export type ManagedApiKey = {
@@ -329,6 +337,7 @@ export type ModelAlias = {
   visible: boolean
   enabled: boolean
   returnRealModel: boolean
+  zdrOverride?: ZdrOverride
   createdAt: number
   updatedAt: number
 }
@@ -346,6 +355,7 @@ export type ModelAliasMutationPayload = {
   visible?: boolean
   enabled?: boolean
   returnRealModel?: boolean
+  zdrOverride?: ZdrOverride
 }
 
 export type TimeoutLimit = {
