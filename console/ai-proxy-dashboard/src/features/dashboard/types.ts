@@ -408,3 +408,16 @@ export type GatewayFailoverPolicyPayload = GatewayFailoverPolicy & {
   }
   updatedAt: number | null
 }
+
+export interface ZdrSettingsPayload {
+  ok: boolean
+  enabled: boolean
+  updatedAt: number | null
+}
+
+export interface ZdrReauthResult {
+  ok: boolean
+  privilegedToken: string
+  expiresAt: number
+}
+
