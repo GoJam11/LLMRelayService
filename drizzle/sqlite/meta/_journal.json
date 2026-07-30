@@ -15,6 +15,13 @@
       "when": 1785166858266,
       "tag": "0001_steady_whiplash",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785388698669,
+      "tag": "0002_spicy_cable",
+      "breakpoints": true
     }
   ]
 }

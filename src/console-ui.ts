@@ -14,6 +14,11 @@ import { getModelOverrideKey, listModelMetadataOverrides, upsertModelMetadataOve
 import { fetchUpstreamModelIds } from './upstream-models';
 import { getGatewayTimeoutSettings, updateGatewayTimeoutSettings } from './gateway-timeouts';
 import { getGatewayFailoverPolicy, updateGatewayFailoverPolicy } from './gateway-failover';
+import { getZdrGlobalSettings, setZdrGlobalEnabled } from './zdr-settings';
+import { consumeZdrPrivilegedToken, issueZdrPrivilegedToken } from './zdr-privileged-token';
+import { recordZdrAuditEvent } from './zdr-audit';
+
+const ZDR_DISABLE_TOKEN_PURPOSE = 'zdr.disable';
 
 const CONSOLE_COOKIE_NAME = 'CONSOLE_COOKIE_NAME';
 const CONSOLE_UI_DIST_DIR = resolve(import.meta.dir, '..', 'dist', 'frontend');
@@ -1194,6 +1199,56 @@ export function registerConsoleRoutes(app: Hono<any>): void {
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }
+  });
+
+  // ── Zero Data Retention (ZDR) privacy settings ─────────────────────────────
+  // Enabling ZDR (or leaving it enabled) never requires the privileged-token
+  // gate; only *disabling* it does, since that is the action that loosens
+  // privacy guarantees. See zdr-privileged-token.ts / zdr-settings.ts.
+
+  app.get('/__console/api/settings/zdr', async (c) => {
+    if (!isPasswordConfigured()) return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
+    if (!isAuthenticated(c)) return c.json({ error: '未授权' }, 401);
+    const { settings, updatedAt } = await getZdrGlobalSettings();
+    return c.json({ ok: true, enabled: settings.enabled, updatedAt });
+  });
+
+  app.post('/__console/api/settings/zdr/reauth', async (c) => {
+    if (!isPasswordConfigured()) return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
+    if (!isAuthenticated(c)) return c.json({ error: '未授权' }, 401);
+    const password = await readPassword(c);
+    if (password !== getConsolePassword()) {
+      return c.json({ error: '密码不正确' }, 401);
+    }
+    const issued = await issueZdrPrivilegedToken(ZDR_DISABLE_TOKEN_PURPOSE);
+    return c.json({ ok: true, privilegedToken: issued.token, expiresAt: issued.expiresAt });
+  });
+
+  app.patch('/__console/api/settings/zdr', async (c) => {
+    if (!isPasswordConfigured()) return c.json({ error: 'GATEWAY_API_KEY 未设置' }, 503);
+    if (!isAuthenticated(c)) return c.json({ error: '未授权' }, 401);
+    const payload = await c.req.json().catch(() => ({} as Record<string, unknown>));
+    const enabled = (payload as { enabled?: unknown }).enabled;
+    if (typeof enabled !== 'boolean') {
+      return c.json({ error: 'enabled 必须是布尔值' }, 400);
+    }
+
+    if (!enabled) {
+      const privilegedToken = String((payload as { privilegedToken?: unknown }).privilegedToken ?? '');
+      const valid = await consumeZdrPrivilegedToken(privilegedToken, ZDR_DISABLE_TOKEN_PURPOSE);
+      if (!valid) {
+        return c.json({ error: '关闭 ZDR 需要有效的一次性授权令牌，请重新输入密码确认' }, 403);
+      }
+    }
+
+    const result = await setZdrGlobalEnabled(enabled);
+    await recordZdrAuditEvent({
+      action: enabled ? 'zdr.enable' : 'zdr.disable',
+      scope: 'global',
+      enabled,
+      actorIp: c.req.header('x-forwarded-for') ?? null,
+    });
+    return c.json({ ok: true, enabled: result.settings.enabled, updatedAt: result.updatedAt });
   });
 
   app.use('*', maybeServeFrontend);
