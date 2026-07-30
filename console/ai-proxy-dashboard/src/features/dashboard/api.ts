@@ -20,6 +20,8 @@ import type {
   ProviderInfo,
   ProviderMutationPayload,
   UpdateModelMetadataPayload,
+  ZdrReauthResult,
+  ZdrSettingsPayload,
 } from "@/features/dashboard/types"
 import i18n from "@/i18n"
 
@@ -353,5 +355,30 @@ export function updateGatewayFailoverPolicy(
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  })
+}
+
+// ── Zero Data Retention (ZDR) ──────────────────────────────────────────────
+
+export function fetchZdrSettings(): Promise<ZdrSettingsPayload> {
+  return requestJson("/__console/api/settings/zdr")
+}
+
+export function reauthForZdr(password: string): Promise<ZdrReauthResult> {
+  return requestJson("/__console/api/settings/zdr/reauth", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  })
+}
+
+export function updateZdrSettings(
+  enabled: boolean,
+  privilegedToken?: string,
+): Promise<ZdrSettingsPayload> {
+  return requestJson("/__console/api/settings/zdr", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled, ...(privilegedToken ? { privilegedToken } : {}) }),
   })
 }

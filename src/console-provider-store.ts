@@ -2,6 +2,7 @@ import { asc, eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { createDbClient } from './db/client';
 import { consoleProviders } from './db/schema';
+import { parseZdrOverrideColumn, type ZdrOverride } from './zdr-settings';
 
 type UpstreamType = 'anthropic' | 'openai';
 type RouteAuthHeader = 'x-api-key' | 'authorization';
@@ -31,6 +32,12 @@ interface ConfigEntry {
   providerUuid?: string;
   autoSyncModels?: boolean;
   claudeCodeCompat?: boolean;
+  /** Whether this provider has been vetted as ZDR-capable (honors zero data retention). */
+  zdrCapable?: boolean;
+  /** Whether this provider guarantees it does not train on submitted data. */
+  noTrainingCapable?: boolean;
+  /** Guardrail/policy-group scope ZDR override: undefined/null inherits the global default. */
+  zdrOverride?: ZdrOverride;
 }
 
 const db = createDbClient();
@@ -69,6 +76,11 @@ function parseJsonArray<T>(value: string, fieldName: string): T[] {
   return parsed as T[];
 }
 
+function serializeZdrOverride(value: ZdrOverride): number | null {
+  if (value == null) return null;
+  return value ? 1 : 0;
+}
+
 function rowToConfigEntry(row: typeof consoleProviders.$inferSelect): ConfigEntry {
   if (row.authValue != null && row.authValue.length === 0) {
     throw new Error(`Provider "${row.channelName}" has invalid empty auth configuration in database.`);
@@ -98,6 +110,9 @@ function rowToConfigEntry(row: typeof consoleProviders.$inferSelect): ConfigEntr
     providerUuid: row.providerUuid || '',
     ...(row.autoSyncModels === 1 ? { autoSyncModels: true } : {}),
     ...(row.claudeCodeCompat === 1 ? { claudeCodeCompat: true } : {}),
+    zdrCapable: row.zdrCapable === 1,
+    noTrainingCapable: row.noTrainingCapable === 1,
+    zdrOverride: parseZdrOverrideColumn(row.zdrOverride),
   };
 }
 
@@ -119,6 +134,9 @@ function serializeEntry(channelName: string, entry: ConfigEntry, now = Date.now(
     enabled: entry.enabled !== false ? 1 : 0,
     autoSyncModels: entry.autoSyncModels ? 1 : 0,
     claudeCodeCompat: entry.claudeCodeCompat ? 1 : 0,
+    zdrCapable: entry.zdrCapable ? 1 : 0,
+    noTrainingCapable: entry.noTrainingCapable ? 1 : 0,
+    zdrOverride: serializeZdrOverride(entry.zdrOverride ?? null),
     createdAt: now,
     updatedAt: now,
   };
@@ -175,6 +193,9 @@ export async function upsertConsoleProviderEntry(channelName: string, entry: Con
         enabled: entry.enabled !== false ? 1 : 0,
         autoSyncModels: entry.autoSyncModels ? 1 : 0,
         claudeCodeCompat: entry.claudeCodeCompat ? 1 : 0,
+        zdrCapable: entry.zdrCapable ? 1 : 0,
+        noTrainingCapable: entry.noTrainingCapable ? 1 : 0,
+        zdrOverride: serializeZdrOverride(entry.zdrOverride ?? null),
         updatedAt: now,
       },
     });
@@ -205,6 +226,9 @@ export async function updateConsoleProviderEntry(currentChannelName: string, nex
       enabled: entry.enabled !== false ? 1 : 0,
       autoSyncModels: entry.autoSyncModels ? 1 : 0,
       claudeCodeCompat: entry.claudeCodeCompat ? 1 : 0,
+      zdrCapable: entry.zdrCapable ? 1 : 0,
+      noTrainingCapable: entry.noTrainingCapable ? 1 : 0,
+      zdrOverride: serializeZdrOverride(entry.zdrOverride ?? null),
       updatedAt: now,
     })
     .where(eq(consoleProviders.channelName, currentChannelName))

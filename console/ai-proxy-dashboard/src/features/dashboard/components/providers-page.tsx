@@ -200,6 +200,9 @@ type ProviderFormState = {
   extraFieldsJson: string
   autoSyncModels: boolean
   claudeCodeCompat: boolean
+  zdrCapable: boolean
+  noTrainingCapable: boolean
+  zdrOverride: "inherit" | "enabled" | "disabled"
   models: ModelRowState[]
 }
 
@@ -256,6 +259,13 @@ function createFormState(provider?: ProviderInfo): ProviderFormState {
     })(),
     autoSyncModels: provider?.autoSyncModels ?? false,
     claudeCodeCompat: provider?.claudeCodeCompat ?? false,
+    zdrCapable: provider?.zdrCapable ?? false,
+    noTrainingCapable: provider?.noTrainingCapable ?? false,
+    zdrOverride: (() => {
+      if (provider?.zdrOverride === true) return "enabled"
+      if (provider?.zdrOverride === false) return "disabled"
+      return "inherit"
+    })(),
     models: provider?.models.length
       ? provider.models.map((model) => createModelRow(model))
       : [createModelRow()],
@@ -314,6 +324,9 @@ function buildProviderPayload(
     // 服务端对非 anthropic 渠道会强制关掉，这里直接传状态即可。
     // (Server forces this off for non-anthropic channels; we just pass through the state.)
     claudeCodeCompat: state.claudeCodeCompat,
+    zdrCapable: state.zdrCapable,
+    noTrainingCapable: state.noTrainingCapable,
+    zdrOverride: state.zdrOverride === "inherit" ? null : state.zdrOverride === "enabled",
   }
 
   const explicitHeader = state.authHeader === "auto" ? undefined : state.authHeader
@@ -1070,6 +1083,65 @@ export function ProvidersPage({
                 ]}
               />
               <FieldDescription>{t("providers.routingVisibilityHint")}</FieldDescription>
+            </Field>
+
+            <Field>
+              <FieldLabel>{t("providers.zdrCapableLabel")}</FieldLabel>
+              <div className="flex items-start gap-2 rounded-[10px] border border-input bg-muted/30 px-3 py-2">
+                <Checkbox
+                  id="pane-zdr-capable"
+                  checked={formState.zdrCapable}
+                  onCheckedChange={(checked) =>
+                    setFormState((current) => ({ ...current, zdrCapable: checked === true }))
+                  }
+                  className="mt-0.5"
+                />
+                <label htmlFor="pane-zdr-capable" className="cursor-pointer select-none">
+                  <span className="block text-[13px] font-medium text-foreground">
+                    {t("providers.zdrCapableCheckboxLabel")}
+                  </span>
+                  <span className="mt-0.5 block text-[11.5px] leading-snug text-muted-foreground">
+                    {t("providers.zdrCapableHint")}
+                  </span>
+                </label>
+              </div>
+              <div className="mt-2 flex items-start gap-2 rounded-[10px] border border-input bg-muted/30 px-3 py-2">
+                <Checkbox
+                  id="pane-no-training-capable"
+                  checked={formState.noTrainingCapable}
+                  onCheckedChange={(checked) =>
+                    setFormState((current) => ({ ...current, noTrainingCapable: checked === true }))
+                  }
+                  className="mt-0.5"
+                />
+                <label htmlFor="pane-no-training-capable" className="cursor-pointer select-none">
+                  <span className="block text-[13px] font-medium text-foreground">
+                    {t("providers.noTrainingCapableCheckboxLabel")}
+                  </span>
+                  <span className="mt-0.5 block text-[11.5px] leading-snug text-muted-foreground">
+                    {t("providers.noTrainingCapableHint")}
+                  </span>
+                </label>
+              </div>
+            </Field>
+
+            <Field>
+              <FieldLabel>{t("providers.zdrOverrideLabel")}</FieldLabel>
+              <SegmentedToggle
+                value={formState.zdrOverride}
+                onChange={(value) =>
+                  setFormState((current) => ({
+                    ...current,
+                    zdrOverride: value as "inherit" | "enabled" | "disabled",
+                  }))
+                }
+                options={[
+                  { value: "inherit", label: t("providers.zdrOverrideInherit") },
+                  { value: "enabled", label: t("providers.zdrOverrideEnabled") },
+                  { value: "disabled", label: t("providers.zdrOverrideDisabled") },
+                ]}
+              />
+              <FieldDescription>{t("providers.zdrOverrideHint")}</FieldDescription>
             </Field>
 
             <Field>

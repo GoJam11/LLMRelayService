@@ -11,6 +11,7 @@ import { elapsedPerfMs, getMaxPerfPhase, nowPerfMs, shouldLogBackgroundPerf } fr
 import { recordBackgroundPerfSample } from './perf-monitor';
 import { getModelOverrideKey, listModelMetadataOverrides, type ModelMetadataOverride } from './model-metadata-overrides';
 import { usdCostToChargeMicrousd } from './api-key-quota';
+import { redactRequestFieldsForZdr, redactResponseFieldsForZdr } from './zdr-log-redaction';
 
 export type UpstreamTypeForConsole = 'anthropic' | 'openai';
 
@@ -98,6 +99,8 @@ export interface ConsoleRequestSnapshotInput {
   failover_reason: string | null;
   retry_attempt?: number;
   source_request_type?: string;
+  /** ZDR flag effectively active for this request; when true, payload/header fields are redacted before persistence. */
+  zdr_active?: boolean;
 }
 
 export interface ConsoleResponseSnapshotInput {
@@ -1390,12 +1393,13 @@ function normalizeOffset(offset: number): number {
 async function resolveRequestPricing(
   requestId: string,
   responseUsage: ResponseUsageForConsole,
-): Promise<{ pricing: ModelPricing | null; upstreamType: UpstreamTypeForConsole } | null> {
+): Promise<{ pricing: ModelPricing | null; upstreamType: UpstreamTypeForConsole; zdrActive: boolean } | null> {
   const [request] = await db.select({
     routePrefix: consoleRequests.routePrefix,
     upstreamType: consoleRequests.upstreamType,
     requestModel: consoleRequests.requestModel,
     responseModel: consoleRequests.responseModel,
+    zdrActive: consoleRequests.zdrActive,
   }).from(consoleRequests)
     .where(eq(consoleRequests.requestId, requestId))
     .limit(1);
@@ -1413,6 +1417,7 @@ async function resolveRequestPricing(
   return {
     pricing: getEffectivePricing(request.routePrefix, model, overrides),
     upstreamType: request.upstreamType === 'openai' ? 'openai' : 'anthropic',
+    zdrActive: Boolean(request.zdrActive),
   };
 }
 
@@ -1497,6 +1502,13 @@ export async function saveConsoleRequest(record: ConsoleRequestSnapshotInput): P
         )
     ) as DetectedRequestKind;
 
+    // ZDR: strip payload/header content from the persisted record before it
+    // ever reaches the DB. Classification above intentionally runs on the raw
+    // in-memory `record`, not on this redacted copy, since only the persisted
+    // copy must never retain content.
+    const zdrActive = record.zdr_active ?? true;
+    const persisted = zdrActive ? redactRequestFieldsForZdr(record) : record;
+
     const txStart = nowPerfMs();
     await db.insert(consoleRequests).values({
       requestId: record.request_id,
@@ -1509,14 +1521,14 @@ export async function saveConsoleRequest(record: ConsoleRequestSnapshotInput): P
       requestModel: record.request_model,
       apiKeyId: record.api_key_id ?? null,
       apiKeyName: record.api_key_name ?? null,
-      originalPayload: record.original_payload,
-      originalPayloadTruncated: record.original_payload_truncated ? 1 : 0,
-      originalSummaryJson: serializeJson(record.original_summary),
-      forwardedPayload: record.forwarded_payload,
-      forwardedPayloadTruncated: record.forwarded_payload_truncated ? 1 : 0,
-      forwardedSummaryJson: serializeJson(record.forwarded_summary),
-      originalHeadersJson: serializeJson(record.original_headers),
-      forwardHeadersJson: serializeJson(record.forward_headers),
+      originalPayload: persisted.original_payload,
+      originalPayloadTruncated: persisted.original_payload_truncated ? 1 : 0,
+      originalSummaryJson: serializeJson(persisted.original_summary),
+      forwardedPayload: persisted.forwarded_payload,
+      forwardedPayloadTruncated: persisted.forwarded_payload_truncated ? 1 : 0,
+      forwardedSummaryJson: serializeJson(persisted.forwarded_summary),
+      originalHeadersJson: serializeJson(persisted.original_headers),
+      forwardHeadersJson: serializeJson(persisted.forward_headers),
       responseHeadersJson: null,
       failoverFrom: record.failover_from ?? null,
       failoverChainJson: serializeJson(record.failover_chain.length > 0 ? record.failover_chain : null),
@@ -1525,6 +1537,7 @@ export async function saveConsoleRequest(record: ConsoleRequestSnapshotInput): P
       failoverReason: record.failover_reason ?? null,
       retryAttempt: record.retry_attempt ?? 0,
       sourceRequestType,
+      zdrActive: zdrActive ? 1 : 0,
     }).onConflictDoUpdate({
       target: consoleRequests.requestId,
       set: {
@@ -1534,14 +1547,14 @@ export async function saveConsoleRequest(record: ConsoleRequestSnapshotInput): P
         path: record.path,
         targetUrl: record.target_url,
         requestModel: record.request_model,
-        originalPayload: record.original_payload,
-        originalPayloadTruncated: record.original_payload_truncated ? 1 : 0,
-        originalSummaryJson: serializeJson(record.original_summary),
-        forwardedPayload: record.forwarded_payload,
-        forwardedPayloadTruncated: record.forwarded_payload_truncated ? 1 : 0,
-        forwardedSummaryJson: serializeJson(record.forwarded_summary),
-        originalHeadersJson: serializeJson(record.original_headers),
-        forwardHeadersJson: serializeJson(record.forward_headers),
+        originalPayload: persisted.original_payload,
+        originalPayloadTruncated: persisted.original_payload_truncated ? 1 : 0,
+        originalSummaryJson: serializeJson(persisted.original_summary),
+        forwardedPayload: persisted.forwarded_payload,
+        forwardedPayloadTruncated: persisted.forwarded_payload_truncated ? 1 : 0,
+        forwardedSummaryJson: serializeJson(persisted.forwarded_summary),
+        originalHeadersJson: serializeJson(persisted.original_headers),
+        forwardHeadersJson: serializeJson(persisted.forward_headers),
         failoverFrom: record.failover_from ?? null,
         failoverChainJson: serializeJson(record.failover_chain.length > 0 ? record.failover_chain : null),
         originalRoutePrefix: record.original_route_prefix ?? null,
@@ -1549,6 +1562,7 @@ export async function saveConsoleRequest(record: ConsoleRequestSnapshotInput): P
         failoverReason: record.failover_reason ?? null,
         retryAttempt: record.retry_attempt ?? 0,
         sourceRequestType,
+        zdrActive: zdrActive ? 1 : 0,
       },
     });
     phaseDurations.db_tx_ms = elapsedPerfMs(txStart);
@@ -1580,6 +1594,8 @@ export async function saveConsoleResponse(record: ConsoleResponseSnapshotInput):
     // Snapshot the pricing effective right now so the recorded cost is frozen against
     // later price edits (logs + usage read this column back via resolveRowPricing).
     const pricingResult = await resolveRequestPricing(record.request_id, record.response_usage);
+    const zdrActive = pricingResult?.zdrActive ?? true;
+    const persisted = zdrActive ? redactResponseFieldsForZdr(record) : record;
 
     const txStart = nowPerfMs();
     await db.update(consoleRequests)
@@ -1587,10 +1603,10 @@ export async function saveConsoleResponse(record: ConsoleResponseSnapshotInput):
         costPricingJson: serializeJson(pricingResult?.pricing ?? null),
         responseStatus: record.response_status,
         responseStatusText: record.response_status_text,
-        responseHeadersJson: serializeJson(record.response_headers ?? null),
-        responsePayload: record.response_payload,
-        responsePayloadTruncated: record.response_payload_truncated ? 1 : 0,
-        responsePayloadTruncationReason: record.response_payload_truncation_reason ?? null,
+        responseHeadersJson: serializeJson(persisted.response_headers ?? null),
+        responsePayload: persisted.response_payload,
+        responsePayloadTruncated: persisted.response_payload_truncated ? 1 : 0,
+        responsePayloadTruncationReason: persisted.response_payload_truncation_reason ?? null,
         responseBodyBytes: timing.response_body_bytes ?? 0,
         firstChunkAt: timing.first_chunk_at ?? null,
         firstTokenAt: timing.first_token_at ?? null,

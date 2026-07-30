@@ -1,14 +1,29 @@
 import { useEffect, useRef, useState } from "react"
-import { Clock, Database, Globe, Loader2, RefreshCw, Save } from "lucide-react"
+import { Clock, Database, Globe, Loader2, RefreshCw, Save, ShieldCheck } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
-import { fetchGatewayTimeoutSettings, updateGatewayTimeoutSettings } from "@/features/dashboard/api"
-import type { GatewayTimeoutSettingsPayload, TimeoutLimit } from "@/features/dashboard/types"
+import {
+  fetchGatewayTimeoutSettings,
+  fetchZdrSettings,
+  reauthForZdr,
+  updateGatewayTimeoutSettings,
+  updateZdrSettings,
+} from "@/features/dashboard/api"
+import type { GatewayTimeoutSettingsPayload, TimeoutLimit, ZdrSettingsPayload } from "@/features/dashboard/types"
 
 type TimeoutFormState = {
   defaultFirstByteTimeoutSeconds: string
@@ -17,7 +32,7 @@ type TimeoutFormState = {
   responseIdleTimeoutSeconds: string
 }
 
-type SectionId = "upstream" | "records" | "cors"
+type SectionId = "upstream" | "records" | "cors" | "privacy"
 
 function secondsText(ms: number): string {
   const seconds = ms / 1000
@@ -182,11 +197,23 @@ export function SettingsPage({ onUnauthorized }: { onUnauthorized: () => void })
   const [saving, setSaving] = useState(false)
   const [activeSection, setActiveSection] = useState<SectionId>("upstream")
 
+  const [zdrSettings, setZdrSettings] = useState<ZdrSettingsPayload | null>(null)
+  const [zdrLoading, setZdrLoading] = useState(false)
+  const [zdrSaving, setZdrSaving] = useState(false)
+  const [zdrError, setZdrError] = useState("")
+  const [zdrFeedback, setZdrFeedback] = useState("")
+  const [zdrConfirmOpen, setZdrConfirmOpen] = useState(false)
+  const [zdrReauthOpen, setZdrReauthOpen] = useState(false)
+  const [zdrPassword, setZdrPassword] = useState("")
+  const [zdrReauthError, setZdrReauthError] = useState("")
+  const [zdrReauthSubmitting, setZdrReauthSubmitting] = useState(false)
+
   const scrollRef = useRef<HTMLDivElement>(null)
   const sectionRefs = useRef<Record<SectionId, HTMLDivElement | null>>({
     upstream: null,
     records: null,
     cors: null,
+    privacy: null,
   })
 
   const goToSection = (id: SectionId) => {
@@ -221,6 +248,75 @@ export function SettingsPage({ onUnauthorized }: { onUnauthorized: () => void })
   useEffect(() => {
     void loadSettings()
   }, [])
+
+  const loadZdrSettings = async () => {
+    setZdrLoading(true)
+    try {
+      const data = await fetchZdrSettings()
+      setZdrSettings(data)
+      setZdrError("")
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (handleUnauthorized(message)) return
+      setZdrError(message)
+    } finally {
+      setZdrLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadZdrSettings()
+  }, [])
+
+  const handleZdrToggle = (checked: boolean) => {
+    if (checked) {
+      void applyZdrChange(true)
+      return
+    }
+    setZdrConfirmOpen(true)
+  }
+
+  const applyZdrChange = async (enabled: boolean, privilegedToken?: string) => {
+    try {
+      setZdrSaving(true)
+      const next = await updateZdrSettings(enabled, privilegedToken)
+      setZdrSettings(next)
+      setZdrError("")
+      setZdrFeedback(t("settings.zdrUpdated"))
+      window.setTimeout(() => setZdrFeedback(""), 1800)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (handleUnauthorized(message)) return
+      setZdrError(message)
+      throw err
+    } finally {
+      setZdrSaving(false)
+    }
+  }
+
+  const handleZdrConfirmProceed = () => {
+    setZdrConfirmOpen(false)
+    setZdrPassword("")
+    setZdrReauthError("")
+    setZdrReauthOpen(true)
+  }
+
+  const handleZdrReauthSubmit = async () => {
+    setZdrReauthSubmitting(true)
+    setZdrReauthError("")
+    try {
+      const result = await reauthForZdr(zdrPassword)
+      await applyZdrChange(false, result.privilegedToken)
+      setZdrReauthOpen(false)
+      setZdrPassword("")
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (handleUnauthorized(message)) return
+      setZdrReauthError(message || t("settings.zdrReauthFailed"))
+    } finally {
+      setZdrReauthSubmitting(false)
+    }
+  }
 
   const canSubmit = settings !== null && !saving
 
@@ -320,6 +416,13 @@ export function SettingsPage({ onUnauthorized }: { onUnauthorized: () => void })
               count={t("settings.itemCount", { count: 2 })}
               active={activeSection === "cors"}
               onClick={() => goToSection("cors")}
+            />
+            <SectionNavItem
+              icon={<ShieldCheck className="h-4 w-4" />}
+              label={t("settings.navPrivacy")}
+              count={t("settings.itemCount", { count: 1 })}
+              active={activeSection === "privacy"}
+              onClick={() => goToSection("privacy")}
             />
             <div className="mt-auto rounded-xl border border-border bg-muted/40 p-4">
               <div className="text-[11.5px] font-bold text-foreground">{t("settings.applyTitle")}</div>
@@ -431,6 +534,41 @@ export function SettingsPage({ onUnauthorized }: { onUnauthorized: () => void })
                 </div>
                 <p className="mt-2 text-[11.5px] text-muted-foreground">{t("settings.readOnlyHint")}</p>
               </div>
+
+              {/* Privacy / ZDR */}
+              <div
+                ref={(el) => {
+                  sectionRefs.current.privacy = el
+                }}
+                className="scroll-mt-4"
+              >
+                <SectionTitle>{t("settings.privacyTitle")}</SectionTitle>
+                <div className="mt-4">
+                  {zdrError ? (
+                    <Alert variant="destructive" className="mb-3.5">
+                      <AlertTitle>{t("settings.zdrLoadFailed")}</AlertTitle>
+                      <AlertDescription>{zdrError}</AlertDescription>
+                    </Alert>
+                  ) : null}
+                  {zdrFeedback ? (
+                    <Alert className="mb-3.5">
+                      <AlertTitle>{t("common.done")}</AlertTitle>
+                      <AlertDescription>{zdrFeedback}</AlertDescription>
+                    </Alert>
+                  ) : null}
+                  <ReadOnlyRow label={t("settings.zdrEnabledLabel")} desc={t("settings.zdrEnabledDesc")}>
+                    {zdrLoading || zdrSettings === null ? (
+                      <Skeleton className="h-6 w-[42px] rounded-full" />
+                    ) : (
+                      <Switch
+                        checked={zdrSettings.enabled}
+                        disabled={zdrSaving}
+                        onCheckedChange={handleZdrToggle}
+                      />
+                    )}
+                  </ReadOnlyRow>
+                </div>
+              </div>
             </div>
 
             {/* Footer save bar */}
@@ -446,6 +584,70 @@ export function SettingsPage({ onUnauthorized }: { onUnauthorized: () => void })
           </div>
         </div>
       )}
+
+      {/* ZDR disable confirmation dialog */}
+      <Dialog open={zdrConfirmOpen} onOpenChange={setZdrConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("settings.zdrDisableConfirmTitle")}</DialogTitle>
+            <DialogDescription>{t("settings.zdrDisableConfirmDesc")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setZdrConfirmOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button type="button" variant="destructive" onClick={handleZdrConfirmProceed}>
+              {t("settings.zdrDisableConfirmProceed")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ZDR password re-auth dialog */}
+      <Dialog
+        open={zdrReauthOpen}
+        onOpenChange={(open) => {
+          setZdrReauthOpen(open)
+          if (!open) {
+            setZdrPassword("")
+            setZdrReauthError("")
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("settings.zdrReauthTitle")}</DialogTitle>
+            <DialogDescription>{t("settings.zdrReauthDesc")}</DialogDescription>
+          </DialogHeader>
+          <Input
+            type="password"
+            value={zdrPassword}
+            onChange={(event) => setZdrPassword(event.target.value)}
+            autoComplete="current-password"
+          />
+          {zdrReauthError ? (
+            <Alert variant="destructive">
+              <AlertDescription>{zdrReauthError}</AlertDescription>
+            </Alert>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setZdrReauthOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!zdrPassword || zdrReauthSubmitting}
+              onClick={() => void handleZdrReauthSubmit()}
+            >
+              {zdrReauthSubmitting ? (
+                <Loader2 data-icon="inline-start" className="animate-spin" />
+              ) : null}
+              {t("settings.zdrReauthSubmit")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
