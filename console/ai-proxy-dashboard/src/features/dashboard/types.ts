@@ -43,11 +43,18 @@ export type ConsoleCostBreakdown = {
   uncached_input_tokens: number
   cache_read_tokens: number
   cache_write_tokens: number
+  cache_write_5m_tokens?: number
+  cache_write_1h_tokens?: number
   input_cost: number
   output_cost: number
   cache_read_cost: number
   cache_write_cost: number
   total_cost: number
+  /** 实际计费用的缓存单价；上游未提供缓存价时是按 input 推导的兜底价。 */
+  cache_read_price?: number
+  cache_write_5m_price?: number
+  cache_write_1h_price?: number
+  cache_pricing_derived?: boolean
 }
 
 export type ConsoleResponseUsage = {

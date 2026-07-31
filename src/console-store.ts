@@ -444,6 +444,8 @@ type ConsoleUsageRow = {
   cache_read_input_tokens: number;
   cached_input_tokens: number;
   reasoning_output_tokens: number;
+  ephemeral_5m_input_tokens: number;
+  ephemeral_1h_input_tokens: number;
   first_chunk_at: number | null;
   first_token_at: number | null;
   completed_at: number | null;
@@ -605,6 +607,8 @@ function updateUsageAccumulator(
       cache_creation_input_tokens: row.cache_creation_input_tokens,
       cache_read_input_tokens: row.cache_read_input_tokens,
       cached_input_tokens: row.cached_input_tokens,
+      ephemeral_5m_input_tokens: row.ephemeral_5m_input_tokens,
+      ephemeral_1h_input_tokens: row.ephemeral_1h_input_tokens,
     }, resolveRowPricing(row.cost_pricing_json, row.route_prefix, model, overrides), row.upstream_type);
 
     accumulator.total_cost += cost.total_cost;
@@ -740,6 +744,8 @@ async function listUsageRows(filters?: ConsoleQueryFilters): Promise<ConsoleUsag
     cache_read_input_tokens: consoleRequests.cacheReadInputTokens,
     cached_input_tokens: consoleRequests.cachedInputTokens,
     reasoning_output_tokens: consoleRequests.reasoningOutputTokens,
+    ephemeral_5m_input_tokens: consoleRequests.ephemeral5mInputTokens,
+    ephemeral_1h_input_tokens: consoleRequests.ephemeral1hInputTokens,
     first_chunk_at: consoleRequests.firstChunkAt,
     first_token_at: consoleRequests.firstTokenAt,
     completed_at: consoleRequests.completedAt,
@@ -767,6 +773,8 @@ async function listUsageRows(filters?: ConsoleQueryFilters): Promise<ConsoleUsag
     cache_read_input_tokens: normalizeNumber(row.cache_read_input_tokens),
     cached_input_tokens: normalizeNumber(row.cached_input_tokens),
     reasoning_output_tokens: normalizeNumber(row.reasoning_output_tokens),
+    ephemeral_5m_input_tokens: normalizeNumber(row.ephemeral_5m_input_tokens),
+    ephemeral_1h_input_tokens: normalizeNumber(row.ephemeral_1h_input_tokens),
     first_chunk_at: normalizeNullableNumber(row.first_chunk_at),
     first_token_at: normalizeNullableNumber(row.first_token_at),
     completed_at: normalizeNullableNumber(row.completed_at),
@@ -836,6 +844,8 @@ async function buildUsageStats(filters?: ConsoleQueryFilters): Promise<ConsoleUs
         cache_creation_input_tokens: row.cache_creation_input_tokens,
         cache_read_input_tokens: row.cache_read_input_tokens,
         cached_input_tokens: row.cached_input_tokens,
+        ephemeral_5m_input_tokens: row.ephemeral_5m_input_tokens,
+        ephemeral_1h_input_tokens: row.ephemeral_1h_input_tokens,
       }, resolveRowPricing(row.cost_pricing_json, row.route_prefix, model, overrides), row.upstream_type);
       point.total_cost += cost.total_cost;
     }

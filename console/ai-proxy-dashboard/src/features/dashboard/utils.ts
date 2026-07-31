@@ -198,6 +198,8 @@ export function getCostMetricRows(
       ? usageLike?.cache_creation_input_tokens
       : 0) ??
     0
+  const cacheWrite1hTokens = breakdown?.cache_write_1h_tokens ?? 0
+  const cacheWrite5mTokens = breakdown?.cache_write_5m_tokens ?? cacheWriteTokens - cacheWrite1hTokens
   const rows = [
     { label: "总成本", value: formatCost(usageLike?.cost) },
     { label: "模型", value: model },
@@ -211,15 +213,22 @@ export function getCostMetricRows(
     return rows
   }
 
+  // 上游没给缓存价时后端会按 input 单价推导兜底价，这里展示实际计费用的单价，
+  // 保证「单价 × token 数 = 成本」在页面上自洽。
+  const cacheReadPrice = breakdown.cache_read_price ?? pricing.cache_read ?? 0
+  const cacheWrite5mPrice = breakdown.cache_write_5m_price ?? pricing.cache_write ?? 0
+  const cacheWrite1hPrice = breakdown.cache_write_1h_price ?? cacheWrite5mPrice
+  const derivedSuffix = breakdown.cache_pricing_derived ? "（推导）" : ""
+
   if (resolvedUpstreamType === "openai") {
     rows.push({
       label: "模型单价",
-      value: `输入 ${formatPricePerMillion(pricing.input)} · 输出 ${formatPricePerMillion(pricing.output)} · cached prompt ${formatPricePerMillion(pricing.cache_read ?? 0)}`,
+      value: `输入 ${formatPricePerMillion(pricing.input)} · 输出 ${formatPricePerMillion(pricing.output)} · cached prompt ${formatPricePerMillion(cacheReadPrice)}${derivedSuffix}`,
     })
   } else {
     rows.push({
       label: "模型单价",
-      value: `输入 ${formatPricePerMillion(pricing.input)} · 输出 ${formatPricePerMillion(pricing.output)} · 缓存读 ${formatPricePerMillion(pricing.cache_read ?? 0)} · 缓存写 ${formatPricePerMillion(pricing.cache_write ?? 0)}`,
+      value: `输入 ${formatPricePerMillion(pricing.input)} · 输出 ${formatPricePerMillion(pricing.output)} · 缓存读 ${formatPricePerMillion(cacheReadPrice)} · 缓存写 ${formatPricePerMillion(cacheWrite5mPrice)}${derivedSuffix}`,
     })
   }
   rows.push({
@@ -242,19 +251,39 @@ export function getCostMetricRows(
     label: resolvedUpstreamType === "openai" ? "cached prompt公式" : "缓存读公式",
     value: formatCostFormula(
       cacheReadTokens,
-      pricing.cache_read ?? 0,
+      cacheReadPrice,
       breakdown.cache_read_cost,
     ),
   })
   if (resolvedUpstreamType === "anthropic") {
-    rows.push({
-      label: "缓存写公式",
-      value: formatCostFormula(
-        cacheWriteTokens,
-        pricing.cache_write ?? 0,
-        breakdown.cache_write_cost,
-      ),
-    })
+    if (cacheWrite1hTokens > 0) {
+      // 1h TTL 缓存写入单价是 5m 的 1.6 倍，分档展示才对得上总成本。
+      rows.push({
+        label: "缓存写公式 (5m)",
+        value: formatCostFormula(
+          cacheWrite5mTokens,
+          cacheWrite5mPrice,
+          (cacheWrite5mTokens / 1_000_000) * cacheWrite5mPrice,
+        ),
+      })
+      rows.push({
+        label: "缓存写公式 (1h)",
+        value: formatCostFormula(
+          cacheWrite1hTokens,
+          cacheWrite1hPrice,
+          (cacheWrite1hTokens / 1_000_000) * cacheWrite1hPrice,
+        ),
+      })
+    } else {
+      rows.push({
+        label: "缓存写公式",
+        value: formatCostFormula(
+          cacheWriteTokens,
+          cacheWrite5mPrice,
+          breakdown.cache_write_cost,
+        ),
+      })
+    }
   }
   rows.push({
     label: "汇总公式",
