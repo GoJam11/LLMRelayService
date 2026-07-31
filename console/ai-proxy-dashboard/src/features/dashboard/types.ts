@@ -275,6 +275,7 @@ export type ProviderMutationPayload = {
   extraFields?: Record<string, unknown> | null
   autoSyncModels?: boolean
   claudeCodeCompat?: boolean
+  enabled?: boolean
 }
 
 export type ManagedApiKey = {

@@ -13,6 +13,7 @@ import {
 import {
   getConsoleRequest,
   getConsoleUsageStats,
+  getProviderHealthStatuses,
   listConsoleRequests,
   type RequestSortKey,
   type SortDirection,
@@ -34,6 +35,17 @@ import {
   toggleModelAlias,
   updateModelAlias,
 } from './console-model-alias-store';
+import {
+  listChannelModelsWithMetadata,
+  listUpstreamModelsForChannel,
+  previewUpstreamModels,
+  setChannelModelMetadata,
+  testProviderConnectivity,
+  type AdminResult,
+  type UpstreamModelsPreviewInput,
+} from './provider-admin';
+import { getGatewayTimeoutSettings, updateGatewayTimeoutSettings } from './gateway-timeouts';
+import { getGatewayFailoverPolicy, updateGatewayFailoverPolicy } from './gateway-failover';
 
 function getGatewayKey(): string {
   return process.env.GATEWAY_API_KEY ?? '';
@@ -73,10 +85,20 @@ function resolveMutationStatus(error: unknown): 400 | 403 | 404 {
   if (message.includes('禁止在线修改') || message.includes('read-only')) {
     return 403;
   }
-  if (message.includes('不存在')) {
+  // 「不存在」来自 config 层，「does not exist」来自 store 层，两种都得认，
+  // 否则删除/禁用一个不存在的渠道会返回 400。
+  if (message.includes('不存在') || /does not exist/i.test(message)) {
     return 404;
   }
   return 400;
+}
+
+/** provider-admin 的 { status, body } 转成 v1 的响应外壳：成功包 data，失败原样返回 { error }。 */
+function jsonFromAdminResult(c: Context, result: AdminResult) {
+  if (result.status >= 400) {
+    return c.json(result.body as object, result.status);
+  }
+  return c.json({ data: result.body });
 }
 
 function parseFilters(c: Context) {
@@ -146,7 +168,13 @@ export function registerOpenApiRoutes(app: Hono<any>): void {
   v1.get('/providers', async (c) => {
     await ensureProviderConfigsLoaded();
     const providers = getProviders();
-    return c.json({ data: providers });
+    const healthStatuses = await getProviderHealthStatuses();
+    return c.json({
+      data: providers.map((provider) => ({
+        ...provider,
+        healthStatus: healthStatuses[provider.channelName] ?? 'no-data',
+      })),
+    });
   });
 
   v1.get('/providers/:channelName', async (c) => {
@@ -211,6 +239,62 @@ export function registerOpenApiRoutes(app: Hono<any>): void {
         { error: error instanceof Error ? error.message : String(error) },
         resolveMutationStatus(error),
       );
+    }
+  });
+
+  v1.post('/providers/:channelName/test', async (c) => {
+    // 请求体可选，只用来指定测试哪个模型
+    const body = await c.req.json<{ model?: string }>().catch(() => ({} as { model?: string }));
+    const result = await testProviderConnectivity(c.req.param('channelName'), body.model);
+    return jsonFromAdminResult(c, result);
+  });
+
+  v1.get('/providers/:channelName/upstream-models', async (c) => {
+    const result = await listUpstreamModelsForChannel(c.req.param('channelName'));
+    return jsonFromAdminResult(c, result);
+  });
+
+  v1.post('/upstream-models-preview', async (c) => {
+    const body = await c.req.json<UpstreamModelsPreviewInput>().catch(() => ({} as UpstreamModelsPreviewInput));
+    const result = await previewUpstreamModels(body);
+    return jsonFromAdminResult(c, result);
+  });
+
+  // ── Channel models ───────────────────────────────────────────────────────
+  v1.get('/models', async (c) => {
+    return c.json({ data: await listChannelModelsWithMetadata() });
+  });
+
+  v1.patch('/models/:channelName/:modelId/metadata', async (c) => {
+    const payload = await c.req.json().catch(() => ({}));
+    const result = await setChannelModelMetadata(c.req.param('channelName'), c.req.param('modelId'), payload);
+    return jsonFromAdminResult(c, result);
+  });
+
+  // ── Gateway settings ─────────────────────────────────────────────────────
+  v1.get('/settings/timeouts', async (c) => {
+    return c.json({ data: await getGatewayTimeoutSettings() });
+  });
+
+  v1.patch('/settings/timeouts', async (c) => {
+    const payload = await c.req.json().catch(() => ({}));
+    try {
+      return c.json({ data: await updateGatewayTimeoutSettings(payload as any) });
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    }
+  });
+
+  v1.get('/settings/failover', async (c) => {
+    return c.json({ data: await getGatewayFailoverPolicy() });
+  });
+
+  v1.patch('/settings/failover', async (c) => {
+    const payload = await c.req.json().catch(() => ({}));
+    try {
+      return c.json({ data: await updateGatewayFailoverPolicy(payload as any) });
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }
   });
 
@@ -398,6 +482,12 @@ export function registerOpenApiRoutes(app: Hono<any>): void {
       );
     }
   });
+
+  // /api/v1 是纯管理面，中转流量走的是 /v1/*、/openai/*、/anthropic/* 和
+  // /providers/{channel}/*。没有兜底的话，写错的路径会掉进全局 app.all('*')：
+  // GET 被 SPA 接走返回 200 的 HTML，POST 被网关当成中转请求返回 400，
+  // 两种都让人以为接口存在。这里直接给 404 JSON。
+  v1.all('*', (c) => c.json({ error: `No such endpoint: ${c.req.method} ${new URL(c.req.url).pathname}` }, 404));
 
   app.route('/api/v1', v1);
 }

@@ -3,15 +3,19 @@ import type { Hono } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { existsSync, statSync } from 'node:fs';
 import { extname, resolve } from 'node:path';
-import { createProvider, deleteProvider, ensureProviderConfigsLoaded, getChannelModels, getProviderConfig, getProviderInfo, getProviders, refreshRoutingConfigCache, resolveRoute, toggleProvider, updateProvider } from './config';
+import { createProvider, deleteProvider, ensureProviderConfigsLoaded, getProviderInfo, getProviders, refreshRoutingConfigCache, resolveRoute, toggleProvider, updateProvider } from './config';
 import { getConsoleRequest, listConsoleRequests, getProviderHealthStatuses, getConsoleUsageStats, getConsoleFilterOptions, getMaxDebugRecords, type RequestSortKey, type SortDirection } from './console-store';
 import { createManagedApiKey, deleteManagedApiKey, getManagedApiKey, listManagedApiKeys, renameManagedApiKey, setApiKeyAllowedModels, setApiKeyCostQuota } from './api-keys';
 import { parseApiKeyCostQuotaLimit } from './api-key-quota';
 import { createModelAlias, deleteModelAlias, listModelAliases, toggleModelAlias, updateModelAlias } from './console-model-alias-store';
-import { ensureModelCatalogLoaded, lookupModelContext } from './model-catalog';
-import { ensurePricingLoaded, getModelPricing } from './pricing';
-import { getModelOverrideKey, listModelMetadataOverrides, upsertModelMetadataOverride } from './model-metadata-overrides';
-import { fetchUpstreamModelIds } from './upstream-models';
+import {
+  listChannelModelsWithMetadata,
+  listUpstreamModelsForChannel,
+  previewUpstreamModels,
+  setChannelModelMetadata,
+  testProviderConnectivity,
+  type UpstreamModelsPreviewInput,
+} from './provider-admin';
 import { getGatewayTimeoutSettings, updateGatewayTimeoutSettings } from './gateway-timeouts';
 import { getGatewayFailoverPolicy, updateGatewayFailoverPolicy } from './gateway-failover';
 
@@ -37,7 +41,9 @@ function resolveProviderMutationStatus(error: unknown): 400 | 403 | 404 {
   if (message.includes('禁止在线修改') || message.includes('read-only')) {
     return 403;
   }
-  if (message.includes('不存在')) {
+  // 「不存在」来自 config 层，「does not exist」来自 store 层，两种都得认，
+  // 否则删除/禁用一个不存在的渠道会返回 400。
+  if (message.includes('不存在') || /does not exist/i.test(message)) {
     return 404;
   }
   return 400;
@@ -536,35 +542,7 @@ export function registerConsoleRoutes(app: Hono<any>): void {
       return c.json({ error: '未授权' }, 401);
     }
 
-    await ensureProviderConfigsLoaded();
-    await Promise.all([ensureModelCatalogLoaded(), ensurePricingLoaded()]);
-
-    const rawModels = getChannelModels();
-    const overrides = await listModelMetadataOverrides();
-    const enrich = (m: (typeof rawModels)[number]) => {
-      const override = overrides.get(getModelOverrideKey(m.channelName, m.id));
-      const pricing = override?.pricing ?? getModelPricing(m.id);
-      const context = override?.context ?? m.context ?? lookupModelContext(m.id);
-      return {
-        ...m,
-        context,
-        ...(pricing ? { pricing } : {}),
-        ...(override
-          ? {
-              override: {
-                ...(override.context != null ? { context: override.context } : {}),
-                ...(override.pricing ? { pricing: override.pricing } : {}),
-                updatedAt: override.updatedAt,
-              },
-            }
-          : {}),
-      };
-    };
-
-    return c.json({
-      openai: rawModels.filter((m) => m.type === 'openai').map(enrich),
-      anthropic: rawModels.filter((m) => m.type === 'anthropic').map(enrich),
-    });
+    return c.json(await listChannelModelsWithMetadata());
   });
 
   app.patch('/__console/api/models/:channelName/:modelId/metadata', async (c) => {
@@ -575,38 +553,9 @@ export function registerConsoleRoutes(app: Hono<any>): void {
       return c.json({ error: '未授权' }, 401);
     }
 
-    await ensureProviderConfigsLoaded();
-    const channelName = c.req.param('channelName');
-    const modelId = c.req.param('modelId');
-    const model = getChannelModels().find((item) => item.channelName === channelName && item.id === modelId);
-    if (!model) {
-      return c.json({ error: '模型不存在' }, 404);
-    }
-
     const payload = await c.req.json().catch(() => ({}));
-    try {
-      const override = await upsertModelMetadataOverride(channelName, modelId, payload as any);
-      await Promise.all([ensureModelCatalogLoaded(), ensurePricingLoaded()]);
-      const pricing = override?.pricing ?? getModelPricing(model.id);
-      const context = override?.context ?? model.context ?? lookupModelContext(model.id);
-
-      return c.json({
-        ...model,
-        context,
-        ...(pricing ? { pricing } : {}),
-        ...(override
-          ? {
-              override: {
-                ...(override.context != null ? { context: override.context } : {}),
-                ...(override.pricing ? { pricing: override.pricing } : {}),
-                updatedAt: override.updatedAt,
-              },
-            }
-          : {}),
-      });
-    } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : String(error) }, 400);
-    }
+    const result = await setChannelModelMetadata(c.req.param('channelName'), c.req.param('modelId'), payload);
+    return c.json(result.body as object, result.status);
   });
 
   app.post('/__console/api/providers', async (c) => {
@@ -690,30 +639,8 @@ export function registerConsoleRoutes(app: Hono<any>): void {
       return c.json({ error: '未授权' }, 401);
     }
 
-    const channelName = c.req.param('channelName');
-    await ensureProviderConfigsLoaded();
-
-    const provider = getProviderConfig(channelName);
-    if (!provider) {
-      return c.json({ error: 'Provider 不存在' }, 404);
-    }
-
-    const auth = provider.auth;
-    if (!auth?.value) {
-      return c.json({ error: '该渠道未配置认证信息，无法请求上游 models 接口' }, 400);
-    }
-
-    try {
-      const ids = await fetchUpstreamModelIds({
-        targetBaseUrl: provider.targetBaseUrl,
-        type: provider.type === 'anthropic' ? 'anthropic' : 'openai',
-        authHeader: auth.header,
-        authValue: auth.value,
-      });
-      return c.json({ models: ids.map((id) => ({ id })) });
-    } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
-    }
+    const result = await listUpstreamModelsForChannel(c.req.param('channelName'));
+    return c.json(result.body as object, result.status);
   });
 
   // 临时拉取：用表单里的参数（不需要先保存）
@@ -725,36 +652,9 @@ export function registerConsoleRoutes(app: Hono<any>): void {
       return c.json({ error: '未授权' }, 401);
     }
 
-    const body = await c.req.json<{
-      targetBaseUrl: string;
-      type: 'openai' | 'anthropic';
-      authHeader?: string;
-      authValue?: string;
-    }>();
-
-    const baseUrl = (body.targetBaseUrl ?? '').replace(/\/$/, '');
-    if (!baseUrl) {
-      return c.json({ error: 'targetBaseUrl 不能为空' }, 400);
-    }
-    if (!body.authValue) {
-      return c.json({ error: '未填写认证信息（Credential），无法请求上游 models 接口' }, 400);
-    }
-
-    const headerName = body.authHeader && body.authHeader !== 'auto'
-      ? (body.authHeader as 'x-api-key' | 'authorization')
-      : body.type === 'anthropic' ? 'x-api-key' : 'authorization';
-
-    try {
-      const ids = await fetchUpstreamModelIds({
-        targetBaseUrl: baseUrl,
-        type: body.type === 'anthropic' ? 'anthropic' : 'openai',
-        authHeader: headerName,
-        authValue: body.authValue,
-      });
-      return c.json({ models: ids.map((id) => ({ id })) });
-    } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
-    }
+    const body = await c.req.json<UpstreamModelsPreviewInput>().catch(() => ({} as UpstreamModelsPreviewInput));
+    const result = await previewUpstreamModels(body);
+    return c.json(result.body as object, result.status);
   });
 
   app.post('/__console/api/providers/:channelName/test', async (c) => {
@@ -767,234 +667,10 @@ export function registerConsoleRoutes(app: Hono<any>): void {
       return c.json({ error: '未授权' }, 401);
     }
 
-    const channelName = c.req.param('channelName');
-    await ensureProviderConfigsLoaded();
-
-    // 使用 getProviderConfig 获取包含 auth value 的配置
-    const provider = getProviderConfig(channelName);
-    if (!provider) {
-      console.log(`[ProviderTest] ${channelName}: Provider 不存在`)
-      return c.json({ error: 'Provider 不存在' }, 404);
-    }
-
-    const auth = provider.auth;
-    if (!auth?.value) {
-      console.log(`[ProviderTest] ${channelName}: 认证未配置`)
-      return c.json({ error: '认证未配置' }, 400);
-    }
-
-    // 解析请求体，获取指定的模型（可选）
-    let requestedModel: string | undefined;
-    try {
-      const body = await c.req.json();
-      requestedModel = body.model;
-    } catch {
-      // 忽略解析错误
-    }
-
-    // 使用请求中指定的模型，或第一个配置的模型
-    const testModel = requestedModel || provider.models?.[0]?.model;
-    if (!testModel) {
-      console.log(`[ProviderTest] ${channelName}: 未配置模型`)
-      return c.json({ error: '未配置模型' }, 400);
-    }
-
-    console.log(`[ProviderTest] ${channelName}: 开始测试 model=${testModel} url=${provider.targetBaseUrl}`)
-
-    const startTime = Date.now();
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-      let testUrl: string
-      let headers: Record<string, string>
-      let body: object
-      const authHeaders: Record<string, string> = {}
-      if (auth.header === 'authorization') {
-        authHeaders.Authorization = auth.value
-      } else {
-        authHeaders['x-api-key'] = auth.value
-      }
-
-      // 路径拼接规则：
-      // - OpenAI 类型：不补 /v1，用户必须在 targetBaseUrl 中包含 /v1
-      // - Anthropic 类型：如果不包含 /v1 则补，这是行业惯例
-      const baseUrl = provider.targetBaseUrl.replace(/\/$/, '')
-
-      if (provider.type === 'anthropic') {
-        // Anthropic：检测是否需要补 /v1
-        const v1Prefix = baseUrl.endsWith('/v1') ? '' : '/v1'
-        testUrl = baseUrl + v1Prefix + '/messages'
-        headers = {
-          ...authHeaders,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        }
-        body = {
-          model: testModel,
-          messages: [{ role: 'user', content: 'Reply with exactly "OK"' }],
-          max_tokens: 1024,
-        }
-      } else {
-        // OpenAI：不补 /v1，用户必须填写完整路径
-        testUrl = baseUrl + '/chat/completions'
-        headers = {
-          ...authHeaders,
-          'content-type': 'application/json',
-        }
-        body = {
-          model: testModel,
-          messages: [{ role: 'user', content: 'Reply with exactly "OK"' }],
-          max_tokens: 1024,
-        }
-      }
-
-      const response = await fetch(testUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      })
-
-      clearTimeout(timeoutId)
-      const latencyMs = Date.now() - startTime
-
-      // 打印原始响应信息用于调试
-      console.log(`[ProviderTest] ${channelName}: HTTP ${response.status} bodySize=${response.headers.get('content-length')}`)
-
-      const data = await response.json().catch(() => ({}))
-      console.log(`[ProviderTest] ${channelName}: 响应数据 ${JSON.stringify(data).slice(0, 1000)}`)
-
-      if (response.ok) {
-        // 检查响应内容是否包含 OK（需要处理 thinking 类型的 content）
-        let content = ''
-        let hasThinking = false
-        let stopReason = ''
-        if (provider.type === 'anthropic') {
-          // 遍历所有 content 块，优先查找 text 类型，其次是 thinking
-          const contents = data.content ?? []
-          console.log(`[ProviderTest] ${channelName}: content块数量=${contents.length}`)
-          for (let i = 0; i < contents.length; i++) {
-            const block = contents[i]
-            console.log(`[ProviderTest] ${channelName}: content[${i}] type=${block.type}`)
-            if (block.type === 'text') {
-              content = block.text ?? ''
-            } else if (block.type === 'thinking') {
-              hasThinking = true
-              if (!content) {
-                content = block.thinking ?? ''
-              }
-            }
-          }
-          stopReason = data.stop_reason ?? ''
-        } else {
-          content = data.choices?.[0]?.message?.content ?? ''
-          stopReason = data.choices?.[0]?.finish_reason ?? ''
-          // OpenAI 兼容的思考模型：content 可能在 reasoning_content 或类似字段
-          if (!content && data.choices?.[0]?.message?.reasoning_content) {
-            hasThinking = true
-            content = data.choices?.[0]?.message?.reasoning_content
-          }
-        }
-
-        console.log(`[ProviderTest] ${channelName}: 提取的content="${content.slice(0, 200)}" stopReason="${stopReason}" hasThinking=${hasThinking}`)
-
-        if (content.toUpperCase().includes('OK')) {
-          console.log(`[ProviderTest] ${channelName}: 成功 latencyMs=${latencyMs}`)
-          return c.json({
-            status: 'ok',
-            statusCode: response.status,
-            message: '模型响应正常',
-            latencyMs,
-            model: testModel,
-            rawResponse: data,
-          })
-        } else if (hasThinking || stopReason === 'max_tokens' || stopReason === 'stop') {
-          // 思考模型可能只有 thinking 没有 text（max_tokens 不足），但连通性正常
-          console.log(`[ProviderTest] ${channelName}: 思考模型连通正常 latencyMs=${latencyMs}`)
-          return c.json({
-            status: 'ok',
-            statusCode: response.status,
-            message: '模型连通正常（思考模型，输出被截断）',
-            latencyMs,
-            model: testModel,
-            rawResponse: data,
-          })
-        } else {
-          console.log(`[ProviderTest] ${channelName}: 响应内容异常`)
-          return c.json({
-            status: 'error',
-            statusCode: response.status,
-            message: `HTTP ${response.status} - 响应内容为空或不含OK`,
-            latencyMs,
-            model: testModel,
-            rawResponse: data,
-          })
-        }
-      } else {
-        const errorText = await response.text().catch(() => '')
-        console.log(`[ProviderTest] ${channelName}: HTTP ${response.status} error="${errorText.slice(0, 200)}"`)
-
-        // 尝试解析上游返回的错误信息
-        let errorDetail = ''
-        try {
-          const errorJson = JSON.parse(errorText)
-          errorDetail = errorJson.error?.message || errorJson.message || errorJson.error?.type || ''
-        } catch {
-          errorDetail = errorText.slice(0, 200)
-        }
-
-        // 针对常见错误码提供更友好的提示
-        let friendlyMessage = `HTTP ${response.status}`
-        if (errorDetail) {
-          friendlyMessage += `: ${errorDetail}`
-        } else if (response.status === 401) {
-          friendlyMessage = 'API Key 无效或已过期'
-        } else if (response.status === 403) {
-          friendlyMessage = '无访问权限，请检查 API Key 权限设置'
-        } else if (response.status === 429) {
-          friendlyMessage = '请求频率超限，请稍后重试'
-        } else if (response.status === 400) {
-          friendlyMessage = '请求参数错误，请检查模型名称是否正确'
-        }
-
-        return c.json({
-          status: 'error',
-          statusCode: response.status,
-          message: friendlyMessage,
-          latencyMs,
-          model: testModel,
-          rawResponse: errorText ? (() => {
-            try {
-              return JSON.parse(errorText);
-            } catch {
-              return errorText.slice(0, 1000);
-            }
-          })() : null,
-        })
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.log(`[ProviderTest] ${channelName}: 异常 ${message}`)
-
-      if (message.includes('aborted')) {
-        return c.json({
-          status: 'error',
-          statusCode: 0,
-          message: '请求超时（30秒）',
-          latencyMs: 30000,
-          model: testModel,
-        })
-      }
-      return c.json({
-        status: 'error',
-        statusCode: 0,
-        message: `连接失败: ${message}`,
-        latencyMs: Date.now() - startTime,
-        model: testModel,
-      })
-    }
+    // 请求体可选，只用来指定测试哪个模型
+    const body = await c.req.json<{ model?: string }>().catch(() => ({} as { model?: string }));
+    const result = await testProviderConnectivity(c.req.param('channelName'), body.model);
+    return c.json(result.body as object, result.status);
   });
 
   app.get('/__console/api/keys', async (c) => {

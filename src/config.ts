@@ -114,6 +114,7 @@ export interface ProviderMutationInput {
   extraFields?: Record<string, unknown> | null;
   autoSyncModels?: boolean | null;
   claudeCodeCompat?: boolean | null;
+  enabled?: boolean | null;
 }
 
 type RawConfigEntry = ConfigEntry & {
@@ -679,6 +680,11 @@ function buildNormalizedEntry(payload: ProviderMutationInput, existingEntry?: Co
   const claudeCodeCompat = type === 'anthropic' && (payload.claudeCodeCompat === undefined
     ? (existingEntry?.claudeCodeCompat ?? false)
     : payload.claudeCodeCompat === true);
+  // 启用状态由独立的 toggle 接口维护，编辑保存不带 enabled 时必须沿用原值，
+  // 否则保存一次就会把已禁用的渠道重新打开。
+  const enabled = payload.enabled === undefined || payload.enabled === null
+    ? (existingEntry?.enabled !== false)
+    : payload.enabled === true;
 
   const normalized: ConfigEntry = {
     type,
@@ -694,6 +700,7 @@ function buildNormalizedEntry(payload: ProviderMutationInput, existingEntry?: Co
   if (extraFields && Object.keys(extraFields).length > 0) normalized.extraFields = extraFields;
   if (autoSyncModels) normalized.autoSyncModels = true;
   if (claudeCodeCompat) normalized.claudeCodeCompat = true;
+  if (!enabled) normalized.enabled = false;
 
   return normalized;
 }

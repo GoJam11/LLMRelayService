@@ -834,13 +834,41 @@ export function ProvidersPage({
           </span>
           <span className="font-mono text-[11px] text-muted-foreground">{activeProvider?.channelName}</span>
           {activeProvider ? (
-            <button
-              type="button"
-              className="ml-auto text-[11.5px] font-semibold text-destructive"
-              onClick={() => openDeleteDialog(activeProvider)}
-            >
-              {t("common.delete")}
-            </button>
+            <>
+              {/* 启用状态是最常用的开关，放在标题栏最显眼的位置，改动即时生效。 */}
+              <button
+                type="button"
+                className={cn(
+                  "ml-auto flex items-center gap-2 rounded-full border px-3 py-1.5 text-[12.5px] font-semibold transition-colors disabled:opacity-50",
+                  activeProvider.enabled
+                    ? "border-lrs-success/40 bg-lrs-success-bg text-lrs-success"
+                    : "border-border bg-muted text-muted-foreground",
+                )}
+                disabled={togglingChannels.has(activeProvider.channelName)}
+                onClick={() => toggleSingleProvider(activeProvider.channelName, !activeProvider.enabled)}
+                aria-pressed={activeProvider.enabled}
+                aria-label={activeProvider.enabled ? t("providers.disableChannel") : t("providers.enableChannel")}
+                title={activeProvider.enabled ? t("providers.disableChannel") : t("providers.enableChannel")}
+              >
+                <span
+                  className="relative h-[18px] w-8 rounded-full transition-colors"
+                  style={{ background: activeProvider.enabled ? "var(--lrs-success)" : "var(--lrs-faint)" }}
+                >
+                  <span
+                    className="absolute top-[3px] h-3 w-3 rounded-full bg-white transition-all"
+                    style={{ [activeProvider.enabled ? "right" : "left"]: "3px" } as React.CSSProperties}
+                  />
+                </span>
+                {activeProvider.enabled ? t("common.enabled") : t("common.disabled")}
+              </button>
+              <button
+                type="button"
+                className="text-[11.5px] font-semibold text-destructive"
+                onClick={() => openDeleteDialog(activeProvider)}
+              >
+                {t("common.delete")}
+              </button>
+            </>
           ) : null}
         </div>
         <div className="flex flex-col gap-5 px-6 py-5">
@@ -1092,30 +1120,9 @@ export function ProvidersPage({
             </Field>
           </FieldGroup>
 
-          {/* Bottom: enable toggle + save */}
-          <div className="flex items-center gap-3 border-t border-border pt-4">
-            {dialogMode === "edit" && activeProvider ? (
-              <>
-                <button
-                  type="button"
-                  className="relative h-6 w-[42px] rounded-full transition-colors disabled:opacity-50"
-                  style={{ background: activeProvider.enabled ? "var(--primary)" : "var(--muted)" }}
-                  disabled={togglingChannels.has(activeProvider.channelName)}
-                  onClick={() => toggleSingleProvider(activeProvider.channelName, !activeProvider.enabled)}
-                  aria-label={activeProvider.enabled ? t("providers.disableChannel") : t("providers.enableChannel")}
-                >
-                  <span
-                    className="absolute top-[3px] h-[18px] w-[18px] rounded-full bg-white transition-all"
-                    style={{ [activeProvider.enabled ? "right" : "left"]: "3px" } as React.CSSProperties}
-                  />
-                </button>
-                <span className="text-[13px] text-muted-foreground">
-                  {activeProvider.enabled ? t("providers.enableChannel") : t("providers.disableChannel")}
-                </span>
-              </>
-            ) : null}
-            <Button type="button" variant="outline" size="sm" onClick={() => setDialogOpen(false)}>{t("common.cancel")}</Button>
-            <Button type="submit" size="sm" className="ml-auto" disabled={submitPending}>
+          {/* Bottom: save */}
+          <div className="flex items-center justify-end border-t border-border pt-4">
+            <Button type="submit" size="sm" disabled={submitPending}>
               {submitPending ? t("common.saving") : t("common.save")}
             </Button>
           </div>
@@ -1760,6 +1767,8 @@ export function ProvidersPage({
                         responsesMode: p.type === "openai" ? (p.responsesMode ?? "native") : null,
                         extraFields: p.extraFields ?? null,
                         auth: p.auth ?? null,
+                        // 导出里带了启用状态，导入时别把禁用渠道又打开。
+                        enabled: p.enabled !== false,
                       }
                       await createProvider(payload)
                     }

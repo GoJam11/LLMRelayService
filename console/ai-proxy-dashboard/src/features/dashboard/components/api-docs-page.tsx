@@ -19,20 +19,24 @@ interface BodyExample {
 }
 
 const PROVIDER_BODY: BodyExample = {
-  description: "创建/更新渠道",
+  description: "创建/更新渠道（PATCH 只传要改的字段，未传的保持原值）",
   json: {
     channelName: "my-openai",
     type: "openai",
     targetBaseUrl: "https://api.openai.com/v1",
     systemPrompt: null,
-    models: ["gpt-4o", "gpt-4o-mini"],
+    models: ["gpt-4o", { model: "gpt-4o-mini", context: 128000 }],
     priority: 100,
+    routingVisibility: "direct",
     auth: {
       header: "authorization",
       value: "sk-xxxx"
     },
     responsesMode: "native",
-    extraFields: null
+    extraFields: null,
+    autoSyncModels: false,
+    claudeCodeCompat: false,
+    enabled: true
   }
 }
 
@@ -43,8 +47,65 @@ const PROVIDER_ENABLED_BODY: BodyExample = {
   }
 }
 
+const PROVIDER_TEST_BODY: BodyExample = {
+  description: "连通性测试，model 可省略（默认用渠道的第一个模型）",
+  json: {
+    model: "gpt-4o"
+  }
+}
+
+const UPSTREAM_PREVIEW_BODY: BodyExample = {
+  description: "用未保存的连接参数试拉上游模型列表",
+  json: {
+    targetBaseUrl: "https://api.openai.com/v1",
+    type: "openai",
+    authHeader: "authorization",
+    authValue: "sk-xxxx"
+  }
+}
+
+const KEY_QUOTA_BODY: BodyExample = {
+  description: "设置 API Key 费用额度（美元，null 为不限）",
+  json: {
+    cost_quota: 20
+  }
+}
+
+const TIMEOUTS_BODY: BodyExample = {
+  description: "网关超时设置（毫秒，只传要改的字段）",
+  json: {
+    defaultFirstByteTimeoutMs: 60000,
+    streamFirstByteTimeoutMs: 60000,
+    imageFirstByteTimeoutMs: 120000,
+    responseIdleTimeoutMs: 300000
+  }
+}
+
+const FAILOVER_BODY: BodyExample = {
+  description: "故障转移策略（只传要改的字段）",
+  json: {
+    enabled: true,
+    retryAttempts: 1,
+    modelFallbackMode: "same_model",
+    maxFallbackAttempts: 2,
+    retryOnTimeout: true,
+    retryOnNetworkError: true,
+    retryOnStatusCodes: [429],
+    retryOnStatusRanges: ["5xx"],
+    customModelFallbacks: [{ model: "gpt-4o", fallbacks: ["gpt-4o-mini"] }]
+  }
+}
+
+const KEY_CREATE_BODY: BodyExample = {
+  description: "创建 API Key（cost_quota 单位美元，可省略或传 null 表示不限）",
+  json: {
+    name: "my-key",
+    cost_quota: 20
+  }
+}
+
 const KEY_NAME_BODY: BodyExample = {
-  description: "创建/重命名 API Key",
+  description: "重命名 API Key",
   json: {
     name: "my-key"
   }
@@ -96,16 +157,25 @@ const ENDPOINTS: Endpoint[] = [
   { method: "PATCH", path: "/api/v1/providers/:channelName", description: "更新渠道", auth: true, body: PROVIDER_BODY },
   { method: "DELETE", path: "/api/v1/providers/:channelName", description: "删除渠道", auth: true },
   { method: "PATCH", path: "/api/v1/providers/:channelName/enabled", description: "启用/禁用渠道", auth: true, body: PROVIDER_ENABLED_BODY },
+  { method: "POST", path: "/api/v1/providers/:channelName/test", description: "渠道连通性测试", auth: true, body: PROVIDER_TEST_BODY },
+  { method: "GET", path: "/api/v1/providers/:channelName/upstream-models", description: "拉取该渠道上游的模型列表", auth: true },
+  { method: "POST", path: "/api/v1/upstream-models-preview", description: "用未保存的连接参数试拉上游模型", auth: true, body: UPSTREAM_PREVIEW_BODY },
+  { method: "GET", path: "/api/v1/models", description: "获取所有启用渠道的模型（含价格/上下文）", auth: true },
+  { method: "PATCH", path: "/api/v1/models/:channelName/:modelId/metadata", description: "设置模型手动价格和上下文", auth: true, body: MODEL_METADATA_BODY },
+  { method: "GET", path: "/api/v1/settings/timeouts", description: "获取网关超时设置", auth: true },
+  { method: "PATCH", path: "/api/v1/settings/timeouts", description: "修改网关超时设置", auth: true, body: TIMEOUTS_BODY },
+  { method: "GET", path: "/api/v1/settings/failover", description: "获取故障转移策略", auth: true },
+  { method: "PATCH", path: "/api/v1/settings/failover", description: "修改故障转移策略", auth: true, body: FAILOVER_BODY },
   { method: "GET", path: "/api/v1/requests", description: "获取请求日志列表", auth: true },
   { method: "GET", path: "/api/v1/requests/:requestId", description: "获取单个请求详情", auth: true },
   { method: "GET", path: "/api/v1/stats", description: "获取统计数据", auth: true },
   { method: "GET", path: "/api/v1/keys", description: "获取所有 API Keys", auth: true },
   { method: "GET", path: "/api/v1/keys/:id", description: "获取单个 API Key", auth: true },
-  { method: "POST", path: "/api/v1/keys", description: "创建 API Key", auth: true, body: KEY_NAME_BODY },
+  { method: "POST", path: "/api/v1/keys", description: "创建 API Key", auth: true, body: KEY_CREATE_BODY },
   { method: "PATCH", path: "/api/v1/keys/:id", description: "重命名 API Key", auth: true, body: KEY_NAME_BODY },
   { method: "DELETE", path: "/api/v1/keys/:id", description: "删除 API Key", auth: true },
   { method: "PATCH", path: "/api/v1/keys/:id/allowed-models", description: "设置 API Key 允许模型", auth: true, body: KEY_MODELS_BODY },
-  { method: "PATCH", path: "/__console/api/models/:channelName/:modelId/metadata", description: "设置模型手动价格和上下文", auth: true, body: MODEL_METADATA_BODY },
+  { method: "PATCH", path: "/api/v1/keys/:id/quota", description: "设置 API Key 费用额度", auth: true, body: KEY_QUOTA_BODY },
   { method: "GET", path: "/api/v1/aliases", description: "获取所有模型别名", auth: true },
   { method: "POST", path: "/api/v1/aliases", description: "创建模型别名", auth: true, body: ALIAS_BODY },
   { method: "PATCH", path: "/api/v1/aliases/:id", description: "更新模型别名", auth: true, body: ALIAS_BODY },
