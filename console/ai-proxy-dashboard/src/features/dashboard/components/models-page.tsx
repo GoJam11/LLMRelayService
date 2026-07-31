@@ -51,7 +51,9 @@ function formatContext(context?: number) {
 
 function formatPrice(price?: number) {
   if (price === undefined || price === null) return "--"
-  // models.dev stores prices in USD per million tokens
+  // models.dev stores prices in USD per million tokens。缓存读单价常见 0.03 ~ 0.3，
+  // 固定两位小数会被抹成 $0.03/$0.00，这里对小于 1 的价格保留更多有效位。
+  if (price > 0 && price < 1) return `$${Number(price.toFixed(4))}`
   return `$${price.toFixed(2)}`
 }
 
@@ -86,6 +88,8 @@ function ModelTable({
           <TableHead>{t("models.contextLength")}</TableHead>
           <TableHead>{t("models.inputPrice")}</TableHead>
           <TableHead>{t("models.outputPrice")}</TableHead>
+          <TableHead>{t("models.cacheReadPrice")}</TableHead>
+          <TableHead>{t("models.cacheWritePrice")}</TableHead>
           <TableHead>{t("models.channel")}</TableHead>
           <TableHead />
         </TableRow>
@@ -103,6 +107,8 @@ function ModelTable({
               {model.override?.pricing && <Badge variant="secondary" className="ml-2 text-xs">{t("models.manualBadge")}</Badge>}
             </TableCell>
             <TableCell className="text-muted-foreground tabular-nums">{formatPrice(model.pricing?.output)}</TableCell>
+            <TableCell className="text-muted-foreground tabular-nums">{formatPrice(model.pricing?.cache_read)}</TableCell>
+            <TableCell className="text-muted-foreground tabular-nums">{formatPrice(model.pricing?.cache_write)}</TableCell>
             <TableCell>
               <Badge variant="outline" className="font-normal">
                 {model.channelName}

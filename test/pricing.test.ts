@@ -96,5 +96,84 @@ describe('pricing', () => {
     expect(cost.cache_read_cost).toBeCloseTo(0.00072, 12);
     expect(cost.cache_write_cost).toBeCloseTo(0.0018, 12);
     expect(cost.total_cost).toBeCloseTo(0.0048, 12);
+    expect(cost.cache_pricing_derived).toBe(false);
+  });
+
+  it('derives anthropic cache prices from the input price when the catalog has none', async () => {
+    pricingModule = await import('../src/pricing');
+    pricingModule.__setPricingCacheForTests(new Map([
+      // 二级经销商条目：只有 input/output，没有缓存价格
+      ['claude-opus-4-6', { input: 5, output: 25 }],
+    ]));
+
+    const cost = pricingModule.calculateCost({
+      input_tokens: 2,
+      output_tokens: 15,
+      cache_creation_input_tokens: 838,
+      cache_read_input_tokens: 54773,
+    }, 'claude-opus-4-6', 'anthropic');
+
+    expect(cost.cache_pricing_derived).toBe(true);
+    // cache read = 0.1x input = 0.5, cache write(5m) = 1.25x input = 6.25
+    expect(cost.cache_read_price).toBeCloseTo(0.5, 12);
+    expect(cost.cache_write_5m_price).toBeCloseTo(6.25, 12);
+    expect(cost.cache_read_cost).toBeCloseTo(0.0273865, 12);
+    expect(cost.cache_write_cost).toBeCloseTo(0.0052375, 12);
+    expect(cost.total_cost).toBeCloseTo(0.000010 + 0.000375 + 0.0273865 + 0.0052375, 12);
+  });
+
+  it('bills 1h ephemeral cache creation at the higher TTL rate', async () => {
+    pricingModule = await import('../src/pricing');
+    pricingModule.__setPricingCacheForTests(new Map([
+      ['claude-opus-4-6', { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 }],
+    ]));
+
+    const cost = pricingModule.calculateCost({
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_creation_input_tokens: 1_000_000,
+      ephemeral_5m_input_tokens: 400_000,
+      ephemeral_1h_input_tokens: 600_000,
+    }, 'claude-opus-4-6', 'anthropic');
+
+    expect(cost.cache_write_tokens).toBe(1_000_000);
+    expect(cost.cache_write_5m_tokens).toBe(400_000);
+    expect(cost.cache_write_1h_tokens).toBe(600_000);
+    // 1h = 2x input = 10 / 1M
+    expect(cost.cache_write_1h_price).toBeCloseTo(10, 12);
+    expect(cost.cache_write_cost).toBeCloseTo(0.4 * 6.25 + 0.6 * 10, 12);
+  });
+
+  it('treats cache creation without a TTL breakdown as 5m', async () => {
+    pricingModule = await import('../src/pricing');
+    pricingModule.__setPricingCacheForTests(new Map([
+      ['claude-opus-4-6', { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 }],
+    ]));
+
+    const cost = pricingModule.calculateCost({
+      cache_creation_input_tokens: 1_000_000,
+    }, 'claude-opus-4-6', 'anthropic');
+
+    expect(cost.cache_write_5m_tokens).toBe(1_000_000);
+    expect(cost.cache_write_1h_tokens).toBe(0);
+    expect(cost.cache_write_cost).toBeCloseTo(6.25, 12);
+  });
+
+  it('derives openai cached prompt price but never charges for cache writes', async () => {
+    pricingModule = await import('../src/pricing');
+    pricingModule.__setPricingCacheForTests(new Map([
+      ['gpt-5.2-pro', { input: 21, output: 168 }],
+    ]));
+
+    const cost = pricingModule.calculateCost({
+      input_tokens: 1_000_000,
+      output_tokens: 0,
+      cached_input_tokens: 900_000,
+    }, 'gpt-5.2-pro', 'openai');
+
+    expect(cost.uncached_input_tokens).toBe(100_000);
+    expect(cost.cache_read_price).toBeCloseTo(2.1, 12);
+    expect(cost.cache_write_cost).toBe(0);
+    expect(cost.cache_read_cost).toBeCloseTo(0.9 * 2.1, 12);
   });
 });

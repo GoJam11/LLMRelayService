@@ -3,6 +3,7 @@
  * Stores context window and pricing info per model, keyed by modelId.
  */
 
+import { sql } from 'drizzle-orm';
 import { createDbClient } from './db/client';
 import { modelCatalogCache } from './db/schema';
 
@@ -85,10 +86,12 @@ export async function saveCatalogToDb(
         .values(chunk)
         .onConflictDoUpdate({
           target: modelCatalogCache.modelId,
+          // 必须引用 `excluded.*`（本次插入的新值）。直接写 modelCatalogCache.xxx 会编译成
+          // 已存在行的列引用，等于把旧值写回自己——刷新永远不会生效，坏价格会被永久缓存。
           set: {
-            contextWindow: modelCatalogCache.contextWindow,
-            pricingJson: modelCatalogCache.pricingJson,
-            fetchedAt: modelCatalogCache.fetchedAt,
+            contextWindow: sql`excluded.context_window`,
+            pricingJson: sql`excluded.pricing_json`,
+            fetchedAt: sql`excluded.fetched_at`,
           },
         });
     }
