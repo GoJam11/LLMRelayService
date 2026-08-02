@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/toast"
+import { DetailMetricTable } from "@/features/dashboard/components/detail-metric-table"
 import { PayloadPanel } from "@/features/dashboard/components/payload-panel"
 import type { ConsoleRequestDetail } from "@/features/dashboard/types"
 import {
@@ -30,6 +31,7 @@ import {
   formatCount,
   formatDuration,
   formatTime,
+  getCostMetricRows,
   shortText,
 } from "@/features/dashboard/utils"
 
@@ -151,6 +153,7 @@ export function DetailView({
   const cacheCreationTokens = record.upstream_type === "openai"
     ? 0
     : Number(usage.cache_creation_input_tokens ?? usage.total_cache_creation_tokens ?? 0)
+  const costRows = getCostMetricRows(usage, record.request_model, record.upstream_type)
 
   return (
     <div className="flex h-full flex-col bg-[#fdffff]">
@@ -253,6 +256,16 @@ export function DetailView({
             {/* Request Tab */}
             <TabsContent value="request" className="mt-0">
               <div className="space-y-3">
+                {/* 成本明细放在默认 tab 最上面：定位「这条为什么这么贵 / 为什么是 0」是看日志最常见的诉求 */}
+                <Card size="sm">
+                  <CardHeader className="border-b border-border/60">
+                    <CardTitle>{t("detail.costTitle")}</CardTitle>
+                    <CardDescription>{t("detail.costDesc")}</CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-3">
+                    <DetailMetricTable rows={costRows} />
+                  </CardContent>
+                </Card>
                 <PayloadPanel
                   title={t("detail.originalPayload")}
                   payload={record.original_payload}

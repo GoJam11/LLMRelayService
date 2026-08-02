@@ -75,6 +75,8 @@ export type ConsoleResponseUsage = {
   cost?: number
   cost_breakdown?: ConsoleCostBreakdown
   cost_pricing?: ConsoleModelPricing
+  /** 实际取价用的模型 ID，响应模型没有价格时会回退到请求模型。 */
+  cost_pricing_model?: string
   estimated?: boolean
 }
 

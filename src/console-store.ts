@@ -54,6 +54,8 @@ export interface ResponseUsageForConsole {
   cost?: number;
   cost_breakdown?: CostBreakdown;
   cost_pricing?: ModelPricing;
+  /** 实际用于取价的模型 ID（上游返回的模型名对不上价目表时会回退到请求模型）。 */
+  cost_pricing_model?: string;
   estimated?: boolean;
 }
 
@@ -468,12 +470,61 @@ function getEffectiveModel(row: Pick<ConsoleUsageRow, 'response_model' | 'reques
     : row.request_model;
 }
 
-function getEffectivePricing(
+/**
+ * 价目表是 pricing 模块的进程内缓存，只有显式加载过才有内容。日志、用量这些**读**路径
+ * 也要取价（行上没有 cost_pricing_json 快照时按当前价现算），漏了这一步的话，冷启动后
+ * 一直到有人打开「模型」页之前，所有价格都查不到，成本一律显示 0。
+ */
+async function ensurePricingLoadedSafely(context: Record<string, unknown> = {}): Promise<void> {
+  try {
+    await ensurePricingLoaded();
+  } catch (error) {
+    console.warn('[CONSOLE_PRICING_LOAD_ERR]', { ...context, error });
+  }
+}
+
+export interface ResolvedPricing {
+  pricing: ModelPricing;
+  /** 命中价格的那个模型 ID，用于在日志里说明这条请求按谁的价计费。 */
+  model: string;
+}
+
+/**
+ * 取价用的候选模型 ID：上游返回的模型名优先，其次是客户端请求的模型名。
+ *
+ * 有些中转上游会在响应里返回自己的代号而不是真实模型（实测 cliproxyapi 会返回
+ * `openclaw` / `code`），只按响应模型取价就会一个都对不上，整条请求按 0 计费 ——
+ * 缓存 token 占大头的会话看起来就像"没计缓存"。回退到请求模型才能拿到价格。
+ */
+export function getPricingModelCandidates(...models: Array<string | null | undefined>): string[] {
+  const candidates: string[] = [];
+  for (const model of models) {
+    const normalized = model?.trim();
+    if (normalized && !candidates.includes(normalized)) {
+      candidates.push(normalized);
+    }
+  }
+  return candidates;
+}
+
+/**
+ * 按候选模型依次取价。手动覆盖价先于价目表整体优先，避免"响应模型恰好在价目表里、
+ * 请求模型上配的自定义价反而被忽略"。
+ */
+export function getEffectivePricing(
   routePrefix: string,
-  model: string,
+  models: string[],
   overrides?: Map<string, ModelMetadataOverride>,
-): ModelPricing | null {
-  return overrides?.get(getModelOverrideKey(routePrefix, model))?.pricing ?? getModelPricing(model);
+): ResolvedPricing | null {
+  for (const model of models) {
+    const pricing = overrides?.get(getModelOverrideKey(routePrefix, model))?.pricing;
+    if (pricing) return { pricing, model };
+  }
+  for (const model of models) {
+    const pricing = getModelPricing(model);
+    if (pricing) return { pricing, model };
+  }
+  return null;
 }
 
 // Cost is computed from the price effective when the request ran. Prefer the snapshot
@@ -482,14 +533,17 @@ function getEffectivePricing(
 function resolveRowPricing(
   costPricingJson: string | null | undefined,
   routePrefix: string,
-  model: string,
+  models: string[],
   overrides?: Map<string, ModelMetadataOverride>,
-): ModelPricing | null {
+): ResolvedPricing | null {
+  const resolved = getEffectivePricing(routePrefix, models, overrides);
   const snapshot = parseJson<ModelPricing>(costPricingJson ?? null);
   if (snapshot && typeof snapshot.input === 'number' && typeof snapshot.output === 'number') {
-    return snapshot;
+    // 价格用落库的快照（写入时生效的价，不受后来改价影响）；模型 ID 只是给页面标注
+    // "这条按谁的价算"，快照没存模型名，按同一套候选顺序推一个出来即可。
+    return { pricing: snapshot, model: resolved?.model ?? models[0] ?? '' };
   }
-  return getEffectivePricing(routePrefix, model, overrides);
+  return resolved;
 }
 
 function getClientLabel(kind: string): string {
@@ -609,7 +663,12 @@ function updateUsageAccumulator(
       cached_input_tokens: row.cached_input_tokens,
       ephemeral_5m_input_tokens: row.ephemeral_5m_input_tokens,
       ephemeral_1h_input_tokens: row.ephemeral_1h_input_tokens,
-    }, resolveRowPricing(row.cost_pricing_json, row.route_prefix, model, overrides), row.upstream_type);
+    }, resolveRowPricing(
+      row.cost_pricing_json,
+      row.route_prefix,
+      getPricingModelCandidates(row.response_model, row.request_model),
+      overrides,
+    )?.pricing, row.upstream_type);
 
     accumulator.total_cost += cost.total_cost;
     accumulator.total_input_cost += cost.input_cost;
@@ -787,6 +846,7 @@ async function buildUsageStats(filters?: ConsoleQueryFilters): Promise<ConsoleUs
   const [rows, overrides] = await Promise.all([
     listUsageRows(filters),
     listModelMetadataOverrides(),
+    ensurePricingLoadedSafely({ scope: 'usage_stats' }),
   ]);
 
   const overviewAccumulator = createUsageAccumulator();
@@ -846,7 +906,12 @@ async function buildUsageStats(filters?: ConsoleQueryFilters): Promise<ConsoleUs
         cached_input_tokens: row.cached_input_tokens,
         ephemeral_5m_input_tokens: row.ephemeral_5m_input_tokens,
         ephemeral_1h_input_tokens: row.ephemeral_1h_input_tokens,
-      }, resolveRowPricing(row.cost_pricing_json, row.route_prefix, model, overrides), row.upstream_type);
+      }, resolveRowPricing(
+        row.cost_pricing_json,
+        row.route_prefix,
+        getPricingModelCandidates(row.response_model, row.request_model),
+        overrides,
+      )?.pricing, row.upstream_type);
       point.total_cost += cost.total_cost;
     }
     timeSeriesMap.set(bucketStart, point);
@@ -1230,16 +1295,21 @@ function withCalculatedUsage(
   overrides?: Map<string, ModelMetadataOverride>,
   costPricingJson?: string | null,
 ): ResponseUsageForConsole {
-  const model = responseUsage.model || requestModel;
-  const pricing = resolveRowPricing(costPricingJson, routePrefix, model, overrides);
-  const cost = calculateCostWithPricing(responseUsage, pricing, upstreamType);
+  const resolved = resolveRowPricing(
+    costPricingJson,
+    routePrefix,
+    getPricingModelCandidates(responseUsage.model, requestModel),
+    overrides,
+  );
+  const cost = calculateCostWithPricing(responseUsage, resolved?.pricing, upstreamType);
 
   return {
     ...responseUsage,
     uncached_input_tokens: cost.uncached_input_tokens,
     cost: cost.total_cost,
     cost_breakdown: cost,
-    cost_pricing: pricing ?? undefined,
+    cost_pricing: resolved?.pricing,
+    cost_pricing_model: resolved?.model,
   };
 }
 
@@ -1324,7 +1394,10 @@ function mapListRow(
 async function mapRow(row: ConsoleRequestRow): Promise<StoredConsoleRequest> {
   const requestId = row.request_id;
   const upstreamType = row.upstream_type === 'openai' ? 'openai' : 'anthropic';
-  const overrides = await listModelMetadataOverrides();
+  const [overrides] = await Promise.all([
+    listModelMetadataOverrides(),
+    ensurePricingLoadedSafely({ request_id: requestId }),
+  ]);
   const responseUsage = withCalculatedUsage(row.request_model, toUsage(row), upstreamType, row.route_prefix, overrides, row.cost_pricing_json);
 
   return {
@@ -1412,16 +1485,12 @@ async function resolveRequestPricing(
 
   if (!request) return null;
 
-  try {
-    await ensurePricingLoaded();
-  } catch (error) {
-    console.warn('[QUOTA_PRICING_LOAD_ERR]', { request_id: requestId, error });
-  }
+  await ensurePricingLoadedSafely({ request_id: requestId });
 
-  const model = responseUsage.model || request.responseModel || request.requestModel;
+  const models = getPricingModelCandidates(responseUsage.model, request.responseModel, request.requestModel);
   const overrides = await listModelMetadataOverrides();
   return {
-    pricing: getEffectivePricing(request.routePrefix, model, overrides),
+    pricing: getEffectivePricing(request.routePrefix, models, overrides)?.pricing ?? null,
     upstreamType: request.upstreamType === 'openai' ? 'openai' : 'anthropic',
   };
 }
@@ -1725,7 +1794,10 @@ export async function listConsoleRequests(
 
   const total = Number(countResult[0]?.count) || 0;
 
-  const overrides = await listModelMetadataOverrides();
+  const [overrides] = await Promise.all([
+    listModelMetadataOverrides(),
+    ensurePricingLoadedSafely({ scope: 'request_list' }),
+  ]);
 
   return {
     requests: rows.map((row) => mapListRow(row, overrides)),

@@ -47,6 +47,16 @@ export function formatCost(value: unknown): string {
   return `$${numeric.toFixed(2)}`
 }
 
+/**
+ * 成本明细里的金额。列表里的 $0.07 够用，但明细面板要让「单价 × token 数 = 成本」
+ * 逐项对得上，两位小数会把 $0.011214 抹成 $0.01、加总看起来对不上，这里统一保留 6 位。
+ */
+export function formatCostDetailed(value: unknown): string {
+  const numeric = Number(value || 0)
+  if (!Number.isFinite(numeric) || numeric < 0) return "--"
+  return `$${numeric.toFixed(6)}`
+}
+
 export function formatPricePerMillion(value: unknown): string {
   const numeric = Number(value || 0)
   if (!Number.isFinite(numeric) || numeric < 0) return "--"
@@ -169,7 +179,7 @@ function formatCostFormula(
   unitPrice: unknown,
   cost: unknown,
 ): string {
-  return `${formatCount(tokens)} × ${formatCost(unitPrice)} / 1,000,000 = ${formatCost(cost)}`
+  return `${formatCount(tokens)} × ${formatPricePerMillion(unitPrice)} = ${formatCostDetailed(cost)}`
 }
 
 export function getCostMetricRows(
@@ -200,15 +210,22 @@ export function getCostMetricRows(
     0
   const cacheWrite1hTokens = breakdown?.cache_write_1h_tokens ?? 0
   const cacheWrite5mTokens = breakdown?.cache_write_5m_tokens ?? cacheWriteTokens - cacheWrite1hTokens
+  const pricingModel = usageLike?.cost_pricing_model
   const rows = [
-    { label: "总成本", value: formatCost(usageLike?.cost) },
+    { label: "总成本", value: formatCostDetailed(usageLike?.cost) },
     { label: "模型", value: model },
   ]
+
+  // 中转上游有时把响应模型写成自己的代号（openclaw / code 之类），这时价格是按请求模型取的，
+  // 把实际计价的模型 ID 标出来，否则「模型」一行和单价对不上。
+  if (pricingModel && pricingModel !== model) {
+    rows.push({ label: "计价模型", value: pricingModel })
+  }
 
   if (!pricing || !breakdown) {
     rows.push({
       label: "计算公式",
-      value: "缺少该模型的定价数据，暂时无法展开计算公式。",
+      value: `缺少「${model}」的定价数据，可在「模型」页给该渠道模型配置价格后重新计算。`,
     })
     return rows
   }
@@ -289,8 +306,8 @@ export function getCostMetricRows(
     label: "汇总公式",
     value:
       resolvedUpstreamType === "openai"
-        ? `${formatCost(breakdown.input_cost)} + ${formatCost(breakdown.output_cost)} + ${formatCost(breakdown.cache_read_cost)} = ${formatCost(breakdown.total_cost)}`
-        : `${formatCost(breakdown.input_cost)} + ${formatCost(breakdown.output_cost)} + ${formatCost(breakdown.cache_read_cost)} + ${formatCost(breakdown.cache_write_cost)} = ${formatCost(breakdown.total_cost)}`,
+        ? `${formatCostDetailed(breakdown.input_cost)} + ${formatCostDetailed(breakdown.output_cost)} + ${formatCostDetailed(breakdown.cache_read_cost)} = ${formatCostDetailed(breakdown.total_cost)}`
+        : `${formatCostDetailed(breakdown.input_cost)} + ${formatCostDetailed(breakdown.output_cost)} + ${formatCostDetailed(breakdown.cache_read_cost)} + ${formatCostDetailed(breakdown.cache_write_cost)} = ${formatCostDetailed(breakdown.total_cost)}`,
   })
   return rows
 }
