@@ -249,6 +249,13 @@ export function DetailView({
           >
             {t("detail.tabResponse")}
           </TabsTrigger>
+          <TabsTrigger
+            value="cost"
+            className="mr-6 h-auto flex-none px-0.5 py-[11px] text-[13px] font-medium text-muted-foreground after:bottom-0 data-[state=active]:font-bold data-[state=active]:text-foreground"
+            style={{ '--tabs-line-color': 'var(--primary)', '--tabs-line-bottom': '0px' } as React.CSSProperties}
+          >
+            {t("detail.tabCost")}
+          </TabsTrigger>
         </TabsList>
 
         <ScrollArea className="min-h-0 flex-1">
@@ -256,16 +263,6 @@ export function DetailView({
             {/* Request Tab */}
             <TabsContent value="request" className="mt-0">
               <div className="space-y-3">
-                {/* 成本明细放在默认 tab 最上面：定位「这条为什么这么贵 / 为什么是 0」是看日志最常见的诉求 */}
-                <Card size="sm">
-                  <CardHeader className="border-b border-border/60">
-                    <CardTitle>{t("detail.costTitle")}</CardTitle>
-                    <CardDescription>{t("detail.costDesc")}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-3">
-                    <DetailMetricTable rows={costRows} />
-                  </CardContent>
-                </Card>
                 <PayloadPanel
                   title={t("detail.originalPayload")}
                   payload={record.original_payload}
@@ -353,6 +350,19 @@ export function DetailView({
                   emptyDescription={t("detail.noResponseHeadersDesc")}
                 />
               </div>
+            </TabsContent>
+
+            {/* Cost Tab */}
+            <TabsContent value="cost" className="mt-0">
+              <Card size="sm">
+                <CardHeader className="border-b border-border/60">
+                  <CardTitle>{t("detail.costTitle")}</CardTitle>
+                  <CardDescription>{t("detail.costDesc")}</CardDescription>
+                </CardHeader>
+                <CardContent className="pt-3">
+                  <DetailMetricTable rows={costRows} />
+                </CardContent>
+              </Card>
             </TabsContent>
           </div>
         </ScrollArea>

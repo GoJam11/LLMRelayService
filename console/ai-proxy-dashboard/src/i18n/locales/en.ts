@@ -399,6 +399,7 @@ export default {
     tabRequest: "Original Request",
     tabForward: "Forwarded Request",
     tabResponse: "Response",
+    tabCost: "Cost",
     bottomHint: "Verbatim payload retained for cross-checking",
     copy: "Copy",
     overviewTitle: "Request Overview",

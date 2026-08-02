@@ -399,6 +399,7 @@ export default {
     tabRequest: "原始请求",
     tabForward: "转发请求",
     tabResponse: "响应",
+    tabCost: "成本明细",
     bottomHint: "原文逐字保存，可对照定位问题",
     copy: "复制",
     overviewTitle: "请求概况",
