@@ -62,54 +62,81 @@ Use `data-icon="inline-start"` on Lucide icons inside buttons (not `className="h
 
 ---
 
-## Test Button States
+## Composite Business Patterns (`@/components/patterns`)
 
-The test button in table rows follows a 3-state pattern:
+Always prefer using pre-built composite pattern components over hand-crafting inline JSX blocks.
+
+### 1. Test Status Button (`<TestStatusButton>`)
+Do **NOT** write 30-line inline IIFEs for test buttons. Use `<TestStatusButton>` from `@/components/patterns`:
 
 ```tsx
-{(() => {
-  const result = testResults.get(item.id)
-  if (result === "loading") {
-    return (
-      <Button type="button" variant="outline" size="xs" disabled>
-        <Loader2 data-icon="inline-start" className="animate-spin" />
-        测试中
-      </Button>
-    )
-  }
-  if (result) {
-    return (
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              className={result.status === "ok"
-                ? "text-green-600 border-green-500/50 hover:text-green-700"
-                : "text-destructive border-destructive/50 hover:text-destructive"}
-              onClick={() => handleTest(item)}
-            >
-              {result.status === "ok" ? <CheckCircle data-icon="inline-start" /> : <XCircle data-icon="inline-start" />}
-              测试
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent className="max-w-xs">
-            <p className="text-xs">{result.message}</p>
-            {result.latencyMs != null && <p className="text-xs text-muted-foreground">{result.latencyMs}ms</p>}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    )
-  }
-  return (
-    <Button type="button" variant="outline" size="xs" onClick={() => handleTest(item)}>
-      <Wifi data-icon="inline-start" />
-      测试
-    </Button>
-  )
-})()}
+import { TestStatusButton } from "@/components/patterns"
+
+<TestStatusButton
+  result={testResults.get(item.id)} // "loading" | { status: "ok" | "error", latencyMs, message } | null
+  onTest={() => handleTest(item)}
+/>
+```
+
+It automatically encapsulates:
+- Idle: `<Wifi data-icon="inline-start" /> 测试`
+- Loading: `<Loader2 className="animate-spin" data-icon="inline-start" /> 测试中`
+- Success: green border/text, `<CheckCircle />`, and tooltip showing latency (`{latencyMs}ms`) and message.
+- Error: red border/text, `<XCircle />`, and tooltip showing error message.
+
+### 2. Table Row Actions (`<TableRowActions>`)
+Wrap action columns in `<TableRowActions>`:
+
+```tsx
+import { TableRowActions } from "@/components/patterns"
+
+<TableCell className="text-right">
+  <TableRowActions>
+    <TableRowActions.Test
+      result={testResults.get(item.id)}
+      onTest={() => handleTest(item)}
+    />
+    <TableRowActions.Edit onClick={() => openEdit(item)} />
+    <TableRowActions.Delete onClick={() => setDeleteTarget(item)} />
+  </TableRowActions>
+</TableCell>
+```
+
+### 3. Status Badges (`<StatusBadge>`)
+```tsx
+import { StatusBadge } from "@/components/patterns"
+
+// Dot mode (inline indicators)
+<StatusBadge mode="dot" variant="success" pulse>健康连通</StatusBadge>
+<StatusBadge mode="dot" variant="warning">降级</StatusBadge>
+<StatusBadge mode="dot" variant="destructive">异常</StatusBadge>
+<StatusBadge mode="dot" variant="muted">已禁用</StatusBadge>
+
+// Badge mode (outlines)
+<StatusBadge variant="success">ACTIVE</StatusBadge>
+```
+
+### 4. Filter Card (`<FilterCard>`)
+```tsx
+import { FilterCard } from "@/components/patterns"
+
+<FilterCard title="筛选" onReset={handleReset}>
+  {/* Filter fields */}
+</FilterCard>
+```
+
+### 5. Confirm Dialog (`<ConfirmDialog>`)
+```tsx
+import { ConfirmDialog } from "@/components/patterns"
+
+<ConfirmDialog
+  open={deleteOpen}
+  onOpenChange={setDeleteOpen}
+  title="确认删除该渠道？"
+  description="删除后不可撤销，关联路由将自动降级。"
+  onConfirm={confirmDelete}
+  loading={deletePending}
+/>
 ```
 
 ---

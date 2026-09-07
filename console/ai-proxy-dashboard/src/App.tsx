@@ -12,6 +12,7 @@ import { ModelsPage } from "@/features/dashboard/components/models-page"
 import { RoutesPage } from "@/features/dashboard/components/routes-page"
 import { SettingsPage } from "@/features/dashboard/components/settings-page"
 import { UsagePage } from "@/features/dashboard/components/usage-page"
+import { DesignShowcasePage } from "@/features/dashboard/components/design-showcase-page"
 import {
   DisabledView,
   LoadingView,
@@ -140,6 +141,8 @@ export function App() {
         )
       case "api":
         return <ApiDocsPage />
+      case "design":
+        return <DesignShowcasePage />
       case "logs":
       default:
         return <LogsPage onUnauthorized={handleUnauthorized} />

@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { ArrowRight, CheckCircle, GitFork, Loader2, MapIcon, Plus, RefreshCw, RotateCcw, Save, Trash2, TriangleAlert, Wifi, X, XCircle } from "lucide-react"
+import { ArrowRight, GitFork, Loader2, MapIcon, Plus, RefreshCw, RotateCcw, Save, Trash2, TriangleAlert, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { StatusBadge, TestStatusButton } from "@/components/patterns"
 
 import { Checkbox } from "@/components/ui/checkbox"
 
@@ -1447,10 +1448,7 @@ export function RoutesPage({
                           )}
                         >
                           <div className="flex items-center gap-2.5">
-                            <span
-                              className="h-2 w-2 shrink-0 rounded-full"
-                              style={{ background: alias.enabled ? "var(--lrs-success)" : "var(--lrs-faint)" }}
-                            />
+                            <StatusBadge mode="dot" variant={alias.enabled ? "success" : "muted"} />
                             <span className="text-[14px] font-bold">{alias.alias}</span>
                             <span className="rounded-md bg-accent px-2 py-0.5 text-[10.5px] font-semibold text-accent-foreground">
                               alias
@@ -1522,40 +1520,10 @@ export function RoutesPage({
                       <div className="ml-auto flex items-center gap-1.5">
                         {editTarget ? (
                           <>
-                            {(() => {
-                              const result = testResults.get(editTarget.id)
-                              if (result === "loading") {
-                                return (
-                                  <Button type="button" variant="outline" size="xs" disabled>
-                                    <Loader2 data-icon="inline-start" className="animate-spin" />
-                                    {t("common.testing")}
-                                  </Button>
-                                )
-                              }
-                              if (result) {
-                                return (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="xs"
-                                    className={result.status === "ok" ? "text-green-600 border-green-500/50 hover:text-green-700" : "text-destructive border-destructive/50 hover:text-destructive"}
-                                    onClick={() => handleTest(editTarget)}
-                                  >
-                                    {result.status === "ok"
-                                      ? <CheckCircle data-icon="inline-start" />
-                                      : <XCircle data-icon="inline-start" />
-                                    }
-                                    {t("common.test")}
-                                  </Button>
-                                )
-                              }
-                              return (
-                                <Button type="button" variant="outline" size="xs" onClick={() => handleTest(editTarget)}>
-                                  <Wifi data-icon="inline-start" />
-                                  {t("common.test")}
-                                </Button>
-                              )
-                            })()}
+                            <TestStatusButton
+                              result={testResults.get(editTarget.id)}
+                              onTest={() => handleTest(editTarget)}
+                            />
                             <Button
                               type="button"
                               variant="ghost"

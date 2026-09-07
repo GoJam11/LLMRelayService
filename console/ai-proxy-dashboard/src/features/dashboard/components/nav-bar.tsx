@@ -1,9 +1,9 @@
-import { Code2, LogOut, Settings } from "lucide-react"
+import { Code2, LogOut, Palette, Settings } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { cn } from "@/lib/utils"
 
-type Page = "monitor" | "usage" | "providers" | "models" | "routes" | "keys" | "logs" | "settings" | "api"
+type Page = "monitor" | "usage" | "providers" | "models" | "routes" | "keys" | "logs" | "settings" | "api" | "design"
 
 const PAGE_SUBTITLE: Record<Page, string> = {
   monitor: "实时流量概览",
@@ -15,6 +15,7 @@ const PAGE_SUBTITLE: Record<Page, string> = {
   routes: "路由",
   settings: "配置",
   api: "API 文档",
+  design: "设计规范展厅",
 }
 
 export function NavBar({
@@ -93,6 +94,15 @@ export function NavBar({
           title="API"
         >
           <Code2 className="h-[15px] w-[15px]" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onNavigate("design")}
+          className={cn(iconBtn, activePage === "design" && "border-primary bg-primary text-primary-foreground")}
+          title="组件与设计规范展厅"
+        >
+          <Palette className="h-[15px] w-[15px]" />
         </button>
 
         <button

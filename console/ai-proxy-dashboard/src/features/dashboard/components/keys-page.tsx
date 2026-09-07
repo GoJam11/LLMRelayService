@@ -24,6 +24,8 @@ import { Input } from "@/components/ui/input"
 import { Combobox } from "@/components/ui/combobox"
 import { Skeleton } from "@/components/ui/skeleton"
 import { toast } from "@/components/ui/toast"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { StatusBadge } from "@/components/patterns"
 import { createKey, deleteKey, fetchKeys, fetchModels, getKey, renameKey, setKeyAllowedModels, setKeyCostQuota } from "@/features/dashboard/api"
 import type { GatewayModel, ManagedApiKey, ManagedApiKeyDetail } from "@/features/dashboard/types"
 import { formatCost } from "@/features/dashboard/utils"
@@ -442,30 +444,62 @@ export function KeysPage({
                   {formatDateTime(key.last_used_at)}
                 </div>
                 <div>
-                  <span
-                    className="rounded-md px-2 py-1 text-[11px] font-semibold"
-                    style={{ color: status.fg, background: status.bg }}
+                  <StatusBadge
+                    variant={
+                      key.quota_exhausted
+                        ? "destructive"
+                        : hasQuota && pct >= 90
+                          ? "warning"
+                          : "success"
+                    }
                   >
                     {status.txt}
-                  </span>
+                  </StatusBadge>
                 </div>
-                <div className="flex justify-end gap-0.5">
-                  <Button type="button" size="icon-sm" variant="ghost" title={t("keys.viewUsage")} onClick={() => onViewUsage(key.name)}>
-                    <BarChart3 />
-                  </Button>
-                  <Button type="button" size="icon-sm" variant="ghost" title={t("keys.rename")} onClick={() => { setRenameTarget(key); setRenameDraft(key.name); setRenameOpen(true) }}>
-                    <Pencil />
-                  </Button>
-                  <Button type="button" size="icon-sm" variant="ghost" title={t("keys.manageModels")} onClick={() => openModelsDialog(key)}>
-                    <Filter />
-                  </Button>
-                  <Button type="button" size="icon-sm" variant="ghost" title={t("keys.manageQuota")} onClick={() => openQuotaDialog(key)}>
-                    <Gauge />
-                  </Button>
-                  <Button type="button" size="icon-sm" variant="ghost" title={t("common.delete")} disabled={deletingId === key.id} onClick={() => void handleDelete(key)}>
-                    <Trash2 />
-                  </Button>
-                </div>
+                <TooltipProvider>
+                  <div className="flex justify-end gap-0.5">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button type="button" size="icon-sm" variant="ghost" onClick={() => onViewUsage(key.name)}>
+                          <BarChart3 />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t("keys.viewUsage")}</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button type="button" size="icon-sm" variant="ghost" onClick={() => { setRenameTarget(key); setRenameDraft(key.name); setRenameOpen(true) }}>
+                          <Pencil />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t("keys.rename")}</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button type="button" size="icon-sm" variant="ghost" onClick={() => openModelsDialog(key)}>
+                          <Filter />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t("keys.manageModels")}</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button type="button" size="icon-sm" variant="ghost" onClick={() => openQuotaDialog(key)}>
+                          <Gauge />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t("keys.manageQuota")}</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button type="button" size="icon-sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={deletingId === key.id} onClick={() => void handleDelete(key)}>
+                          <Trash2 />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t("common.delete")}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                </TooltipProvider>
               </div>
             )
           })}

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react"
-import { Pencil, RefreshCw, Terminal, Wifi } from "lucide-react"
+import { BookOpen, RefreshCw, Terminal, Wifi } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { PageHeader } from "@/components/ui/page-header"
+import { TableRowActions } from "@/components/patterns"
 import {
   Card,
   CardContent,
@@ -115,26 +117,14 @@ function ModelTable({
               </Badge>
             </TableCell>
             <TableCell className="text-right">
-              <div className="flex justify-end gap-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
+              <TableRowActions>
+                <TableRowActions.Action
+                  icon={<Wifi data-icon="inline-start" />}
+                  label={t("common.test")}
                   onClick={() => onTest(model)}
-                >
-                  <Wifi data-icon="inline-start" />
-                  {t("common.test")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="xs"
-                  onClick={() => onEdit(model)}
-                >
-                  <Pencil data-icon="inline-start" />
-                  {t("common.edit")}
-                </Button>
-              </div>
+                />
+                <TableRowActions.Edit onClick={() => onEdit(model)} />
+              </TableRowActions>
             </TableCell>
           </TableRow>
         ))}
@@ -361,23 +351,27 @@ export function ModelsPage({
   return (
     <div className="flex flex-col gap-6">
       {!embedded ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="text-xs text-muted-foreground">
-            {openaiModels !== null && anthropicModels !== null
+        <PageHeader
+          icon={BookOpen}
+          title={t("models.title", "可用模型")}
+          description={
+            openaiModels !== null && anthropicModels !== null
               ? t("models.totalCount", { count: totalCount })
-              : ""}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={loading}
-            onClick={() => void loadModels()}
-          >
-            <RefreshCw className={loading ? "animate-spin" : ""} />
-            {t("common.refresh")}
-          </Button>
-        </div>
+              : undefined
+          }
+          actions={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={loading}
+              onClick={() => void loadModels()}
+            >
+              <RefreshCw data-icon="inline-start" className={loading ? "animate-spin" : ""} />
+              {t("common.refresh")}
+            </Button>
+          }
+        />
       ) : (
         <div className="flex justify-end">
           <Button
@@ -387,7 +381,7 @@ export function ModelsPage({
             disabled={loading}
             onClick={() => void loadModels()}
           >
-            <RefreshCw className={loading ? "animate-spin" : ""} />
+            <RefreshCw data-icon="inline-start" className={loading ? "animate-spin" : ""} />
             {t("common.refresh")}
           </Button>
         </div>

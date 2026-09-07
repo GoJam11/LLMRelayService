@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Clock, Database, Globe, Loader2, RefreshCw, Save } from "lucide-react"
+import { Clock, Database, Globe, Loader2, Palette, RefreshCw, Save } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -430,6 +430,27 @@ export function SettingsPage({ onUnauthorized }: { onUnauthorized: () => void })
                   </ReadOnlyRow>
                 </div>
                 <p className="mt-2 text-[11.5px] text-muted-foreground">{t("settings.readOnlyHint")}</p>
+              </div>
+
+              {/* Design System & Guidelines link */}
+              <div className="border-t border-border pt-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h4 className="text-[13.5px] font-semibold text-foreground">设计系统与组件模式规范</h4>
+                    <p className="mt-0.5 text-[11.5px] text-muted-foreground">
+                      查看控制台标准按钮、状态徽章、3 态测试按钮、表格操作列与通用对话框设计规范。
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { window.location.hash = "#/design" }}
+                  >
+                    <Palette data-icon="inline-start" />
+                    查看设计规范
+                  </Button>
+                </div>
               </div>
             </div>
 
