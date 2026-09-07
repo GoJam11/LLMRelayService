@@ -13,6 +13,7 @@
   "private": true,
   "scripts": {
     "dev": "bun run scripts/dev.ts",
+    "dev:online": "bun --env-file=.env.online run scripts/dev.ts",
     "dev:server": "bun --watch src/server.ts",
     "dev:client": "bun run --cwd ./console/ai-proxy-dashboard dev",
     "build": "bun run --cwd ./console/ai-proxy-dashboard build",
