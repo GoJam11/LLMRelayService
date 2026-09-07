@@ -6,7 +6,7 @@ import { getDatabaseUrl, getDbDriver } from './db/config';
 import { isTrustedTestDatabaseUrl } from './db/test-database';
 
 import { consoleRequests, consoleApiKeys } from './db/schema';
-import { eq, desc, asc, and, or, sql, count, gte, isNotNull, isNull, like, notInArray, type SQL } from 'drizzle-orm';
+import { eq, desc, asc, and, or, sql, count, gte, lte, isNotNull, isNull, like, notInArray, type SQL } from 'drizzle-orm';
 import { elapsedPerfMs, getMaxPerfPhase, nowPerfMs, shouldLogBackgroundPerf } from './perf-detail';
 import { recordBackgroundPerfSample } from './perf-monitor';
 import { getModelOverrideKey, listModelMetadataOverrides, type ModelMetadataOverride } from './model-metadata-overrides';
@@ -298,10 +298,12 @@ export interface ConsoleOverview {
   total_reasoning_output_tokens: number;
   total_tokens: number;
   total_cost: number;
+  total_cost_savings?: number;
   total_input_cost: number;
   total_output_cost: number;
   total_cache_read_cost: number;
   total_cache_write_cost: number;
+  estimated_savings?: number;
   avg_first_chunk_ms: number | null;
   avg_first_token_ms: number | null;
   avg_duration_ms: number | null;
@@ -325,6 +327,7 @@ export interface ConsoleStatsBucket {
   total_reasoning_output_tokens: number;
   total_tokens: number;
   total_cost: number;
+  total_cost_savings?: number;
   avg_first_chunk_ms: number | null;
   avg_first_token_ms: number | null;
   avg_duration_ms: number | null;
@@ -349,6 +352,8 @@ export interface ConsoleUsageTimeSeriesPoint {
   requests: number;
   total_tokens: number;
   total_cost: number;
+  cost_savings?: number;
+  cache_hits?: number;
   errors: number;
 }
 
@@ -395,6 +400,7 @@ interface ConsoleQueryFilters {
   client?: string; // DetectedRequestKind 或 API key 名称
   api_key_name?: string;         // 用于 logs 按 API Key 名称筛选
   created_after?: number;
+  created_before?: number;
   search?: string;
   status?: "success" | "error";
   cache_state?: "hit" | "create" | "miss" | "bypass" | "error";
@@ -413,6 +419,7 @@ type UsageAccumulator = {
   total_reasoning_output_tokens: number;
   total_tokens: number;
   total_cost: number;
+  total_cost_savings: number;
   total_input_cost: number;
   total_output_cost: number;
   total_cache_read_cost: number;
@@ -564,6 +571,7 @@ function createUsageAccumulator(): UsageAccumulator {
     total_reasoning_output_tokens: 0,
     total_tokens: 0,
     total_cost: 0,
+    total_cost_savings: 0,
     total_input_cost: 0,
     total_output_cost: 0,
     total_cache_read_cost: 0,
@@ -655,6 +663,12 @@ function updateUsageAccumulator(
   accumulator.last_seen_at = Math.max(accumulator.last_seen_at, row.created_at);
 
   if (model) {
+    const pricingInfo = resolveRowPricing(
+      row.cost_pricing_json,
+      row.route_prefix,
+      getPricingModelCandidates(row.response_model, row.request_model),
+      overrides,
+    );
     const cost = calculateCostWithPricing({
       input_tokens: row.input_tokens,
       output_tokens: row.output_tokens,
@@ -663,18 +677,22 @@ function updateUsageAccumulator(
       cached_input_tokens: row.cached_input_tokens,
       ephemeral_5m_input_tokens: row.ephemeral_5m_input_tokens,
       ephemeral_1h_input_tokens: row.ephemeral_1h_input_tokens,
-    }, resolveRowPricing(
-      row.cost_pricing_json,
-      row.route_prefix,
-      getPricingModelCandidates(row.response_model, row.request_model),
-      overrides,
-    )?.pricing, row.upstream_type);
+    }, pricingInfo?.pricing, row.upstream_type);
 
     accumulator.total_cost += cost.total_cost;
     accumulator.total_input_cost += cost.input_cost;
     accumulator.total_output_cost += cost.output_cost;
     accumulator.total_cache_read_cost += cost.cache_read_cost;
     accumulator.total_cache_write_cost += cost.cache_write_cost;
+
+    if (pricingInfo?.pricing && pricingInfo.pricing.input != null) {
+      const readTokens = (row.cache_read_input_tokens || 0) + (row.cached_input_tokens || 0);
+      const cacheReadRate = pricingInfo.pricing.cache_read ?? 0;
+      if (readTokens > 0 && pricingInfo.pricing.input > cacheReadRate) {
+        const savings = (readTokens / 1_000_000) * (pricingInfo.pricing.input - cacheReadRate);
+        accumulator.total_cost_savings += savings;
+      }
+    }
   }
 
   const firstChunkLatency = row.first_chunk_at == null ? null : row.first_chunk_at - row.created_at;
@@ -707,6 +725,8 @@ function usageAccumulatorToOverview(accumulator: UsageAccumulator): ConsoleOverv
     total_reasoning_output_tokens: accumulator.total_reasoning_output_tokens,
     total_tokens: accumulator.total_tokens,
     total_cost: accumulator.total_cost,
+    total_cost_savings: accumulator.total_cost_savings,
+    estimated_savings: accumulator.total_cost_savings,
     total_input_cost: accumulator.total_input_cost,
     total_output_cost: accumulator.total_output_cost,
     total_cache_read_cost: accumulator.total_cache_read_cost,
@@ -736,6 +756,7 @@ function usageAccumulatorToBucket(key: string, label: string, accumulator: Usage
     total_reasoning_output_tokens: accumulator.total_reasoning_output_tokens,
     total_tokens: accumulator.total_tokens,
     total_cost: accumulator.total_cost,
+    total_cost_savings: accumulator.total_cost_savings,
     avg_first_chunk_ms: roundAverage(accumulator.first_chunk_latency_total, accumulator.first_chunk_latency_count),
     avg_first_token_ms: roundAverage(accumulator.first_token_latency_total, accumulator.first_token_latency_count),
     avg_duration_ms: roundAverage(accumulator.duration_total, accumulator.duration_count),
@@ -755,13 +776,16 @@ function sortUsageBuckets(buckets: ConsoleStatsBucket[]): ConsoleStatsBucket[] {
 }
 
 function getUsageTimeBucketSizeMs(filters?: ConsoleQueryFilters): number {
-  if (filters?.created_after == null) return 24 * 60 * 60 * 1000;
+  const start = filters?.created_after;
+  const end = filters?.created_before ?? Date.now();
+  if (start == null) return 24 * 60 * 60 * 1000;
 
-  const rangeMs = Math.max(Date.now() - filters.created_after, 0);
+  const rangeMs = Math.max(end - start, 0);
   if (rangeMs <= 2 * 60 * 60 * 1000) return 5 * 60 * 1000;
   if (rangeMs <= 24 * 60 * 60 * 1000) return 60 * 60 * 1000;
   if (rangeMs <= 3 * 24 * 60 * 60 * 1000) return 6 * 60 * 60 * 1000;
   if (rangeMs <= 14 * 24 * 60 * 60 * 1000) return 24 * 60 * 60 * 1000;
+  if (rangeMs <= 60 * 24 * 60 * 60 * 1000) return 24 * 60 * 60 * 1000;
   return 7 * 24 * 60 * 60 * 1000;
 }
 
@@ -857,7 +881,23 @@ async function buildUsageStats(filters?: ConsoleQueryFilters): Promise<ConsoleUs
   const modelOptions = new Map<string, string>();
   const clientOptions = new Set<string>();
   const bucketSizeMs = getUsageTimeBucketSizeMs(filters);
-  const timeSeriesMap = new Map<number, { requests: number; total_tokens: number; total_cost: number; errors: number }>();
+  const timeSeriesMap = new Map<number, { requests: number; total_tokens: number; total_cost: number; cost_savings: number; cache_hits: number; errors: number }>();
+
+  if (filters?.created_after != null) {
+    const startTime = filters.created_after;
+    const endTime = Math.min(filters.created_before ?? Date.now(), Date.now());
+    if (endTime > startTime) {
+      const startBucket = floorToUsageBucket(startTime, bucketSizeMs);
+      const endBucket = floorToUsageBucket(endTime, bucketSizeMs);
+      const estimatedBuckets = Math.floor((endBucket - startBucket) / bucketSizeMs);
+      if (estimatedBuckets >= 0 && estimatedBuckets <= 200) {
+        for (let t = startBucket; t <= endBucket; t += bucketSizeMs) {
+          timeSeriesMap.set(t, { requests: 0, total_tokens: 0, total_cost: 0, cost_savings: 0, cache_hits: 0, errors: 0 });
+        }
+      }
+    }
+  }
+
   let failovers = 0;
 
   for (const row of rows) {
@@ -891,13 +931,22 @@ async function buildUsageStats(filters?: ConsoleQueryFilters): Promise<ConsoleUs
     clientMap.set(clientBucketKey, clientAccumulator);
 
     const bucketStart = floorToUsageBucket(row.created_at, bucketSizeMs);
-    const point = timeSeriesMap.get(bucketStart) ?? { requests: 0, total_tokens: 0, total_cost: 0, errors: 0 };
+    const point = timeSeriesMap.get(bucketStart) ?? { requests: 0, total_tokens: 0, total_cost: 0, cost_savings: 0, cache_hits: 0, errors: 0 };
     point.requests += 1;
     point.total_tokens += row.total_tokens;
     if (row.response_status != null && row.response_status >= 400) {
       point.errors += 1;
     }
+    if (isUsageCacheHit(row.upstream_type, row)) {
+      point.cache_hits += 1;
+    }
     if (model) {
+      const pricingInfo = resolveRowPricing(
+        row.cost_pricing_json,
+        row.route_prefix,
+        getPricingModelCandidates(row.response_model, row.request_model),
+        overrides,
+      );
       const cost = calculateCostWithPricing({
         input_tokens: row.input_tokens,
         output_tokens: row.output_tokens,
@@ -906,13 +955,17 @@ async function buildUsageStats(filters?: ConsoleQueryFilters): Promise<ConsoleUs
         cached_input_tokens: row.cached_input_tokens,
         ephemeral_5m_input_tokens: row.ephemeral_5m_input_tokens,
         ephemeral_1h_input_tokens: row.ephemeral_1h_input_tokens,
-      }, resolveRowPricing(
-        row.cost_pricing_json,
-        row.route_prefix,
-        getPricingModelCandidates(row.response_model, row.request_model),
-        overrides,
-      )?.pricing, row.upstream_type);
+      }, pricingInfo?.pricing, row.upstream_type);
       point.total_cost += cost.total_cost;
+
+      if (pricingInfo?.pricing && pricingInfo.pricing.input != null) {
+        const readTokens = (row.cache_read_input_tokens || 0) + (row.cached_input_tokens || 0);
+        const cacheReadRate = pricingInfo.pricing.cache_read ?? 0;
+        if (readTokens > 0 && pricingInfo.pricing.input > cacheReadRate) {
+          const savings = (readTokens / 1_000_000) * (pricingInfo.pricing.input - cacheReadRate);
+          point.cost_savings += savings;
+        }
+      }
     }
     timeSeriesMap.set(bucketStart, point);
   }
@@ -946,13 +999,15 @@ async function buildUsageStats(filters?: ConsoleQueryFilters): Promise<ConsoleUs
         requests: point.requests,
         total_tokens: point.total_tokens,
         total_cost: point.total_cost,
+        cost_savings: point.cost_savings,
+        cache_hits: point.cache_hits,
         errors: point.errors,
       })),
   };
 }
 
 function buildRequestWhere(filters?: ConsoleQueryFilters, options?: { requireCompletedResponse?: boolean }): SQL | undefined {
-  const conditions: SQL[] = [];
+  const conditions: (SQL | undefined)[] = [];
 
   if (options?.requireCompletedResponse) {
     conditions.push(isNotNull(consoleRequests.responseStatus));
@@ -965,6 +1020,9 @@ function buildRequestWhere(filters?: ConsoleQueryFilters, options?: { requireCom
   }
   if (filters?.created_after != null) {
     conditions.push(gte(consoleRequests.createdAt, filters.created_after));
+  }
+  if (filters?.created_before != null) {
+    conditions.push(lte(consoleRequests.createdAt, filters.created_before));
   }
 
   // 状态筛选
@@ -1018,7 +1076,8 @@ function buildRequestWhere(filters?: ConsoleQueryFilters, options?: { requireCom
     ));
   }
 
-  return conditions.length > 0 ? and(...conditions) : undefined;
+  const validConditions = conditions.filter((c): c is SQL => Boolean(c));
+  return validConditions.length > 0 ? and(...validConditions) : undefined;
 }
 
 async function upsertRequest(data: {
@@ -1779,6 +1838,7 @@ export async function listConsoleRequests(
     original_route_prefix: consoleRequests.originalRoutePrefix,
     original_request_model: consoleRequests.originalRequestModel,
     failover_reason: consoleRequests.failoverReason,
+    retry_attempt: consoleRequests.retryAttempt,
   })
     .from(consoleRequests)
     .where(buildRequestWhere(filters))
@@ -1826,17 +1886,17 @@ export async function getConsoleRequest(requestId: string): Promise<ConsoleReque
   };
 }
 
-export async function getConsoleOverview(filters?: { route?: string; model?: string; client?: DetectedRequestKind; created_after?: number }): Promise<ConsoleOverview> {
+export async function getConsoleOverview(filters?: { route?: string; model?: string; client?: DetectedRequestKind; created_after?: number; created_before?: number }): Promise<ConsoleOverview> {
   const usage = await buildUsageStats(filters);
   return usage.overview;
 }
 
-export async function getConsoleGatewayStats(filters?: { route?: string; model?: string; client?: DetectedRequestKind; created_after?: number }): Promise<ConsoleGatewayStats> {
+export async function getConsoleGatewayStats(filters?: { route?: string; model?: string; client?: DetectedRequestKind; created_after?: number; created_before?: number }): Promise<ConsoleGatewayStats> {
   const usage = await buildUsageStats(filters);
   return usage.stats;
 }
 
-export async function getConsoleUsageStats(filters?: { route?: string; model?: string; client?: string; created_after?: number }): Promise<ConsoleUsageStatsPayload> {
+export async function getConsoleUsageStats(filters?: { route?: string; model?: string; client?: string; created_after?: number; created_before?: number }): Promise<ConsoleUsageStatsPayload> {
   return buildUsageStats(filters);
 }
 

@@ -6,13 +6,15 @@ import type {
   ConsoleUsageFilters,
   ConsoleUsageOverview,
   ConsoleUsageTimeSeriesPoint,
+  DateRangePreset,
+  DateRangeValue,
 } from "@/features/dashboard/types"
 
-export type UsageRange = "1h" | "24h" | "72h" | "7d" | "30d" | "all"
+export type UsageRange = DateRangePreset
 
 export function useUsageStats(
   onUnauthorized: () => void,
-  options: { initialClientFilter?: string } = {},
+  options: { initialClientFilter?: string; initialDateRange?: DateRangeValue } = {},
 ) {
   const [overview, setOverview] = useState<ConsoleUsageOverview | null>(null)
   const [stats, setStats] = useState<ConsoleStats>({ routes: [], models: [], clients: [] })
@@ -27,7 +29,9 @@ export function useUsageStats(
   const [routeFilter, setRouteFilter] = useState("")
   const [modelFilter, setModelFilter] = useState("")
   const [clientFilter, setClientFilter] = useState(options.initialClientFilter ?? "")
-  const [rangeFilter, setRangeFilter] = useState<UsageRange>("24h")
+  const [dateRange, setDateRange] = useState<DateRangeValue>(
+    options.initialDateRange ?? { preset: "24h" },
+  )
 
   const loadIdRef = useRef(0)
 
@@ -41,7 +45,13 @@ export function useUsageStats(
         if (routeFilter) query.set("route", routeFilter)
         if (modelFilter) query.set("model", modelFilter)
         if (clientFilter) query.set("client", clientFilter)
-        if (rangeFilter !== "all") query.set("range", rangeFilter)
+
+        if (dateRange.preset === "custom") {
+          if (dateRange.from != null) query.set("from", String(dateRange.from))
+          if (dateRange.to != null) query.set("to", String(dateRange.to))
+        } else if (dateRange.preset !== "all") {
+          query.set("range", dateRange.preset)
+        }
 
         const data = await fetchUsageStats(query)
         if (loadId !== loadIdRef.current) return
@@ -64,7 +74,7 @@ export function useUsageStats(
         }
       }
     },
-    [clientFilter, modelFilter, onUnauthorized, rangeFilter, routeFilter],
+    [clientFilter, dateRange, modelFilter, onUnauthorized, routeFilter],
   )
 
   useEffect(() => {
@@ -82,6 +92,10 @@ export function useUsageStats(
     return () => window.clearInterval(timer)
   }, [refresh])
 
+  const setRangeFilter = useCallback((preset: UsageRange) => {
+    setDateRange({ preset })
+  }, [])
+
   return {
     overview,
     stats,
@@ -95,7 +109,9 @@ export function useUsageStats(
     setModelFilter,
     clientFilter,
     setClientFilter,
-    rangeFilter,
+    rangeFilter: dateRange.preset,
     setRangeFilter,
+    dateRange,
+    setDateRange,
   }
 }

@@ -101,6 +101,21 @@ function jsonFromAdminResult(c: Context, result: AdminResult) {
   return c.json({ data: result.body });
 }
 
+function parseTimestamp(val: string | undefined): number | undefined {
+  if (!val) return undefined;
+  const trimmed = val.trim();
+  if (!trimmed) return undefined;
+  const num = Number(trimmed);
+  if (Number.isFinite(num) && num > 0) {
+    return num < 10_000_000_000 ? num * 1000 : num;
+  }
+  const parsed = Date.parse(trimmed);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return undefined;
+}
+
 function parseFilters(c: Context) {
   const route = c.req.query('route') || undefined;
   const model = c.req.query('model') || undefined;
@@ -118,26 +133,48 @@ function parseFilters(c: Context) {
   const sortBy = c.req.query('sort_by') as RequestSortKey | undefined;
   const sortOrder = c.req.query('sort_order') as SortDirection | undefined;
 
-  let created_after: number | undefined;
   const range = c.req.query('range') || undefined;
-  if (range) {
-    const now = Date.now();
+  const rawFrom = c.req.query('from') || c.req.query('start_time') || undefined;
+  const rawTo = c.req.query('to') || c.req.query('end_time') || undefined;
+
+  let created_after = parseTimestamp(rawFrom);
+  let created_before = parseTimestamp(rawTo);
+
+  if (range && created_after == null) {
+    const now = new Date();
     switch (range) {
       case '1h':
-        created_after = now - 60 * 60 * 1000;
+        created_after = now.getTime() - 60 * 60 * 1000;
         break;
       case '24h':
-        created_after = now - 24 * 60 * 60 * 1000;
+        created_after = now.getTime() - 24 * 60 * 60 * 1000;
         break;
       case '72h':
-        created_after = now - 72 * 60 * 60 * 1000;
+        created_after = now.getTime() - 72 * 60 * 60 * 1000;
         break;
       case '7d':
-        created_after = now - 7 * 24 * 60 * 60 * 1000;
+        created_after = now.getTime() - 7 * 24 * 60 * 60 * 1000;
         break;
       case '30d':
-        created_after = now - 30 * 24 * 60 * 60 * 1000;
+        created_after = now.getTime() - 30 * 24 * 60 * 60 * 1000;
         break;
+      case 'today': {
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        created_after = start;
+        break;
+      }
+      case 'yesterday': {
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1).getTime();
+        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - 1;
+        created_after = start;
+        created_before = end;
+        break;
+      }
+      case 'this_month': {
+        const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+        created_after = start;
+        break;
+      }
     }
   }
 
@@ -147,6 +184,7 @@ function parseFilters(c: Context) {
     client,
     api_key_name: apiKeyName,
     created_after,
+    created_before,
     search,
     status,
     cache_state: cacheState,

@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react"
-import { Download, MoveRight } from "lucide-react"
+import { BarChart3, Download, Filter, MoveRight, X } from "lucide-react"
 import { useTranslation } from "react-i18next"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Combobox } from "@/components/ui/combobox"
+import { PageHeader } from "@/components/ui/page-header"
+import { DateRangePicker } from "@/components/patterns"
 import { UsageTrendChart } from "@/features/dashboard/components/usage-trend-chart"
 import { useUsageStats } from "@/features/dashboard/hooks/use-usage-stats"
 import type { ConsoleStatsBucket } from "@/features/dashboard/types"
@@ -38,21 +40,23 @@ export function UsagePage({
   onNavigateToLogs: () => void
   initialClientFilter?: string
 }) {
-  const { overview, stats, timeseries, refresh, rangeFilter, setRangeFilter } = useUsageStats(
-    onUnauthorized,
-    { initialClientFilter },
-  )
+  const {
+    overview,
+    stats,
+    timeseries,
+    refresh,
+    routeFilter,
+    setRouteFilter,
+    modelFilter,
+    setModelFilter,
+    clientFilter,
+    setClientFilter,
+    dateRange,
+    setDateRange,
+  } = useUsageStats(onUnauthorized, { initialClientFilter })
+
   const { t } = useTranslation()
   const [group, setGroup] = useState<Group>(initialClientFilter ? "clients" : "clients")
-
-  const rangeOptions = [
-    { value: "1h", label: t("timeRange.1h") },
-    { value: "24h", label: t("timeRange.24h") },
-    { value: "72h", label: t("timeRange.72h") },
-    { value: "7d", label: t("timeRange.7d") },
-    { value: "30d", label: t("timeRange.30d") },
-    { value: "all", label: t("timeRange.all") },
-  ]
 
   const groupTabs: { key: Group; label: string }[] = [
     { key: "clients", label: t("usage.byClient") },
@@ -80,6 +84,7 @@ export function UsagePage({
         output: r.total_output_tokens ?? 0,
         cacheRate,
         cost: r.total_cost ?? 0,
+        savings: r.total_cost_savings ?? 0,
         pct: totalReqs > 0 ? Math.round((r.requests / totalReqs) * 100) : 0,
       }
     })
@@ -99,9 +104,18 @@ export function UsagePage({
   }, [rows])
 
   const handleExportCsv = () => {
-    const header = ["name", "requests", "input", "output", "cache_rate", "cost", "share"]
+    const header = ["name", "requests", "input", "output", "cache_rate", "cost", "savings", "share"]
     const lines = rows.map((r) =>
-      [r.name, r.requests, r.input, r.output, `${r.cacheRate.toFixed(1)}%`, r.cost, `${r.pct}%`].join(","),
+      [
+        r.name,
+        r.requests,
+        r.input,
+        r.output,
+        `${r.cacheRate.toFixed(1)}%`,
+        r.cost,
+        r.savings,
+        `${r.pct}%`,
+      ].join(","),
     )
     const blob = new Blob([[header.join(","), ...lines].join("\n")], { type: "text/csv" })
     const url = URL.createObjectURL(blob)
@@ -112,67 +126,138 @@ export function UsagePage({
     URL.revokeObjectURL(url)
   }
 
+  const handleFilterByItem = (key: string) => {
+    if (group === "clients") {
+      setClientFilter(clientFilter === key ? "" : key)
+    } else if (group === "routes") {
+      setRouteFilter(routeFilter === key ? "" : key)
+    } else if (group === "models") {
+      setModelFilter(modelFilter === key ? "" : key)
+    }
+  }
+
+  const isCurrentItemFiltered = (key: string) => {
+    if (group === "clients") return clientFilter === key
+    if (group === "routes") return routeFilter === key
+    if (group === "models") return modelFilter === key
+    return false
+  }
+
+  const hasActiveFilters = Boolean(clientFilter || routeFilter || modelFilter)
+
   return (
     <div className="flex flex-col gap-6">
-      {/* Group tabs + range/export + actions */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border">
-        <div className="flex">
-          {groupTabs.map((g) => (
-            <button
-              key={g.key}
-              type="button"
-              onClick={() => setGroup(g.key)}
-              className={cn(
-                "mr-6 border-b-2 py-3 text-[13px] transition-colors",
-                group === g.key
-                  ? "border-primary font-semibold text-foreground"
-                  : "border-transparent font-medium text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {g.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 pb-2">
-          <Combobox
-            options={rangeOptions}
-            value={rangeFilter}
-            onChange={(value) => setRangeFilter((value || "24h") as typeof rangeFilter)}
-            placeholder={t("timeRange.placeholder")}
-            searchPlaceholder={t("common.searchTimeRange")}
-            className="w-32"
-          />
-          <Button type="button" variant="outline" size="sm" onClick={handleExportCsv}>
-            <Download data-icon="inline-start" />
-            {t("usage.exportCsv")}
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => void refresh()}>
-            {t("common.refreshData")}
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={onNavigateToLogs}>
-            {t("common.viewLogs")}
-            <MoveRight data-icon="inline-end" />
-          </Button>
-        </div>
-      </div>
+      {/* 规范 PageHeader */}
+      <PageHeader
+        icon={BarChart3}
+        title={t("usage.title")}
+        description={t("usage.description")}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <DateRangePicker value={dateRange} onChange={setDateRange} />
+            <Button type="button" variant="outline" size="sm" onClick={handleExportCsv}>
+              <Download data-icon="inline-start" />
+              {t("usage.exportCsv")}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => void refresh()}>
+              {t("common.refreshData")}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={onNavigateToLogs}>
+              {t("common.viewLogs")}
+              <MoveRight data-icon="inline-end" />
+            </Button>
+          </div>
+        }
+      />
 
-      {/* Summary stat strip */}
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-4">
+      {/* 激活的下钻筛选提示 */}
+      {hasActiveFilters && (
+        <div className="flex flex-wrap items-center gap-2 border border-border bg-muted/20 px-3.5 py-2 text-xs">
+          <span className="text-muted-foreground">{t("usage.activeFilter")}:</span>
+          {clientFilter && (
+            <Badge variant="secondary" className="gap-1 rounded-none font-mono text-xs font-normal">
+              {t("usage.nounClient")}: {clientFilter}
+              <X
+                className="h-3 w-3 cursor-pointer opacity-70 hover:opacity-100"
+                onClick={() => setClientFilter("")}
+              />
+            </Badge>
+          )}
+          {routeFilter && (
+            <Badge variant="secondary" className="gap-1 rounded-none font-mono text-xs font-normal">
+              {t("usage.nounRoute")}: {routeFilter}
+              <X
+                className="h-3 w-3 cursor-pointer opacity-70 hover:opacity-100"
+                onClick={() => setRouteFilter("")}
+              />
+            </Badge>
+          )}
+          {modelFilter && (
+            <Badge variant="secondary" className="gap-1 rounded-none font-mono text-xs font-normal">
+              {t("usage.nounModel")}: {modelFilter}
+              <X
+                className="h-3 w-3 cursor-pointer opacity-70 hover:opacity-100"
+                onClick={() => setModelFilter("")}
+              />
+            </Badge>
+          )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onClick={() => {
+              setClientFilter("")
+              setRouteFilter("")
+              setModelFilter("")
+            }}
+            className="ml-auto rounded-none text-muted-foreground hover:text-foreground"
+          >
+            {t("usage.clearFilter")}
+          </Button>
+        </div>
+      )}
+
+      {/* Summary stat strip (5 项卡片) */}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-none border border-border bg-border sm:grid-cols-3 xl:grid-cols-5">
         {[
           { label: t("usage.summaryReqs"), value: formatCount(total) },
           { label: t("usage.summaryTokens"), value: compact(overview?.total_tokens) },
           { label: t("usage.summaryCache"), value: formatPercent(overview?.hit_rate), accent: true },
           { label: t("usage.summaryCost"), value: formatCost(overview?.total_cost) },
+          {
+            label: t("usage.summarySavings"),
+            value: formatCost(overview?.total_cost_savings ?? overview?.estimated_savings ?? 0),
+            savings: true,
+          },
         ].map((s) => (
-          <div key={s.label} className="bg-card px-6 py-5">
+          <div key={s.label} className="bg-card px-5 py-4">
             <div className="text-xs text-muted-foreground">{s.label}</div>
             <div
-              className="mt-2 font-mono text-[26px] font-medium tracking-[-0.02em]"
-              style={s.accent ? { color: "var(--primary)" } : undefined}
+              className="mt-2 font-mono text-[24px] font-medium tracking-[-0.02em]"
+              style={s.savings ? { color: "var(--primary)" } : s.accent ? { color: "var(--primary)" } : undefined}
             >
               {s.value}
             </div>
           </div>
+        ))}
+      </div>
+
+      {/* Group tabs */}
+      <div className="flex border-b border-border">
+        {groupTabs.map((g) => (
+          <button
+            key={g.key}
+            type="button"
+            onClick={() => setGroup(g.key)}
+            className={cn(
+              "mr-6 border-b-2 py-2.5 text-[13px] transition-colors rounded-none",
+              group === g.key
+                ? "border-primary font-semibold text-foreground"
+                : "border-transparent font-medium text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {g.label}
+          </button>
         ))}
       </div>
 
@@ -214,33 +299,54 @@ export function UsagePage({
 
       {/* Breakdown table */}
       <div className="border-t border-border">
-        <div className="grid grid-cols-[1.4fr_90px_80px_80px_72px_92px_64px] gap-3 border-b border-border py-3 text-[10.5px] font-semibold text-muted-foreground">
+        <div className="grid grid-cols-[1.4fr_80px_75px_75px_65px_80px_80px_55px_80px] gap-2 border-b border-border py-3 text-[10.5px] font-semibold text-muted-foreground">
           <span>{groupNoun}</span>
           <span>{t("usage.reqCount")}</span>
           <span>{t("usage.inputCol")}</span>
           <span>{t("usage.outputCol")}</span>
           <span>{t("usage.cacheRate")}</span>
           <span>{t("usage.costCol")}</span>
+          <span>{t("usage.savingsCol")}</span>
           <span>{t("usage.shareCol")}</span>
+          <span className="text-right">操作</span>
         </div>
         {rows.length > 0 ? (
-          rows.map((r) => (
-            <div
-              key={r.key}
-              className="grid grid-cols-[1.4fr_90px_80px_80px_72px_92px_64px] items-center gap-3 border-b border-border/60 py-3 text-[12.5px]"
-            >
-              <span className="flex items-center gap-2.5 font-semibold">
-                <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: r.color }} />
-                <span className="truncate">{r.name}</span>
-              </span>
-              <span className="font-mono">{formatCount(r.requests)}</span>
-              <span className="font-mono text-muted-foreground">{compact(r.input)}</span>
-              <span className="font-mono text-muted-foreground">{compact(r.output)}</span>
-              <span className="font-mono text-muted-foreground">{r.cacheRate.toFixed(0)}%</span>
-              <span className="font-mono font-semibold">{formatCost(r.cost)}</span>
-              <span className="font-mono text-primary">{r.pct}%</span>
-            </div>
-          ))
+          rows.map((r) => {
+            const isFiltered = isCurrentItemFiltered(r.key)
+            return (
+              <div
+                key={r.key}
+                className={cn(
+                  "grid grid-cols-[1.4fr_80px_75px_75px_65px_80px_80px_55px_80px] items-center gap-2 border-b border-border/60 py-2.5 text-[12.5px] transition-colors",
+                  isFiltered && "bg-accent/40",
+                )}
+              >
+                <span className="flex items-center gap-2 font-semibold min-w-0">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-[3px]" style={{ background: r.color }} />
+                  <span className="truncate">{r.name}</span>
+                </span>
+                <span className="font-mono">{formatCount(r.requests)}</span>
+                <span className="font-mono text-muted-foreground">{compact(r.input)}</span>
+                <span className="font-mono text-muted-foreground">{compact(r.output)}</span>
+                <span className="font-mono text-muted-foreground">{r.cacheRate.toFixed(0)}%</span>
+                <span className="font-mono font-semibold">{formatCost(r.cost)}</span>
+                <span className="font-mono text-primary font-medium">{formatCost(r.savings)}</span>
+                <span className="font-mono text-muted-foreground">{r.pct}%</span>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant={isFiltered ? "secondary" : "ghost"}
+                    size="xs"
+                    onClick={() => handleFilterByItem(r.key)}
+                    className="h-6 rounded-none text-xs px-1.5"
+                  >
+                    <Filter data-icon="inline-start" className="h-3 w-3" />
+                    {isFiltered ? "已筛选" : t("usage.filterByItem")}
+                  </Button>
+                </div>
+              </div>
+            )
+          })
         ) : (
           <div className="py-8 text-center text-xs text-muted-foreground">{t("common.noData")}</div>
         )}

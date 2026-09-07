@@ -138,6 +138,7 @@ export type ConsoleStatsBucket = {
   total_reasoning_output_tokens?: number
   total_tokens: number
   total_cost: number
+  total_cost_savings?: number
   avg_first_chunk_ms?: number | null
   avg_first_token_ms: number | null
   avg_duration_ms?: number | null
@@ -177,6 +178,8 @@ export type ConsoleUsageOverview = {
   total_reasoning_output_tokens: number
   total_tokens: number
   total_cost: number
+  total_cost_savings?: number
+  estimated_savings?: number
   total_input_cost: number
   total_output_cost: number
   total_cache_read_cost: number
@@ -195,7 +198,27 @@ export type ConsoleUsageTimeSeriesPoint = {
   requests: number
   total_tokens: number
   total_cost: number
+  cost_savings?: number
+  cache_hits?: number
   errors: number
+}
+
+export type DateRangePreset =
+  | "1h"
+  | "24h"
+  | "72h"
+  | "7d"
+  | "30d"
+  | "today"
+  | "yesterday"
+  | "this_month"
+  | "all"
+  | "custom"
+
+export type DateRangeValue = {
+  preset: DateRangePreset
+  from?: number
+  to?: number
 }
 
 export type ConsoleUsageStatsPayload = {

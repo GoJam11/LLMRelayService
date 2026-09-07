@@ -33,8 +33,10 @@ import {
   StatusBadge,
   FilterCard,
   ConfirmDialog,
+  DateRangePicker,
   type TestResultData,
 } from "@/components/patterns"
+import type { DateRangeValue } from "@/features/dashboard/types"
 
 export function DesignShowcasePage() {
   // Interactive test button demo state
@@ -42,6 +44,7 @@ export function DesignShowcasePage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [demoDateRange, setDemoDateRange] = useState<DateRangeValue>({ preset: "24h" })
 
   const simulateTest = (mode: "ok" | "error") => {
     setInteractiveResult("loading")
@@ -505,6 +508,23 @@ export function DesignShowcasePage() {
                 loading={deleteLoading}
                 onConfirm={handleDeleteConfirm}
               />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">DateRangePicker 日期时间范围选择器</CardTitle>
+              <CardDescription>
+                支持自然快捷预设（过去 1h、24h、72h、7d、30d、今天、昨天、本月）与自定义精确起止时间输入，遵循 `--radius: 0` 风格。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <DateRangePicker value={demoDateRange} onChange={setDemoDateRange} />
+                <div className="text-xs font-mono bg-muted/30 border border-border px-3 py-1.5">
+                  当前值: {JSON.stringify(demoDateRange)}
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
