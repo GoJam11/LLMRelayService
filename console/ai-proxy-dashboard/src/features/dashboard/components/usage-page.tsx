@@ -84,7 +84,6 @@ export function UsagePage({
         output: r.total_output_tokens ?? 0,
         cacheRate,
         cost: r.total_cost ?? 0,
-        savings: r.total_cost_savings ?? 0,
         pct: totalReqs > 0 ? Math.round((r.requests / totalReqs) * 100) : 0,
       }
     })
@@ -104,7 +103,7 @@ export function UsagePage({
   }, [rows])
 
   const handleExportCsv = () => {
-    const header = ["name", "requests", "input", "output", "cache_rate", "cost", "savings", "share"]
+    const header = ["name", "requests", "input", "output", "cache_rate", "cost", "share"]
     const lines = rows.map((r) =>
       [
         r.name,
@@ -113,7 +112,6 @@ export function UsagePage({
         r.output,
         `${r.cacheRate.toFixed(1)}%`,
         r.cost,
-        r.savings,
         `${r.pct}%`,
       ].join(","),
     )
@@ -217,24 +215,19 @@ export function UsagePage({
         </div>
       )}
 
-      {/* Summary stat strip (5 项卡片) */}
-      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-none border border-border bg-border sm:grid-cols-3 xl:grid-cols-5">
+      {/* Summary stat strip (4 项卡片) */}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-none border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
         {[
           { label: t("usage.summaryReqs"), value: formatCount(total) },
           { label: t("usage.summaryTokens"), value: compact(overview?.total_tokens) },
           { label: t("usage.summaryCache"), value: formatPercent(overview?.hit_rate), accent: true },
           { label: t("usage.summaryCost"), value: formatCost(overview?.total_cost) },
-          {
-            label: t("usage.summarySavings"),
-            value: formatCost(overview?.total_cost_savings ?? overview?.estimated_savings ?? 0),
-            savings: true,
-          },
         ].map((s) => (
           <div key={s.label} className="bg-card px-5 py-4">
             <div className="text-xs text-muted-foreground">{s.label}</div>
             <div
               className="mt-2 font-mono text-[24px] font-medium tracking-[-0.02em]"
-              style={s.savings ? { color: "var(--primary)" } : s.accent ? { color: "var(--primary)" } : undefined}
+              style={s.accent ? { color: "var(--primary)" } : undefined}
             >
               {s.value}
             </div>
@@ -299,14 +292,13 @@ export function UsagePage({
 
       {/* Breakdown table */}
       <div className="border-t border-border">
-        <div className="grid grid-cols-[1.4fr_80px_75px_75px_65px_80px_80px_55px_80px] gap-2 border-b border-border py-3 text-[10.5px] font-semibold text-muted-foreground">
+        <div className="grid grid-cols-[1.4fr_90px_85px_85px_75px_90px_65px_90px] gap-2 border-b border-border py-3 text-[10.5px] font-semibold text-muted-foreground">
           <span>{groupNoun}</span>
           <span>{t("usage.reqCount")}</span>
           <span>{t("usage.inputCol")}</span>
           <span>{t("usage.outputCol")}</span>
           <span>{t("usage.cacheRate")}</span>
           <span>{t("usage.costCol")}</span>
-          <span>{t("usage.savingsCol")}</span>
           <span>{t("usage.shareCol")}</span>
           <span className="text-right">操作</span>
         </div>
@@ -317,7 +309,7 @@ export function UsagePage({
               <div
                 key={r.key}
                 className={cn(
-                  "grid grid-cols-[1.4fr_80px_75px_75px_65px_80px_80px_55px_80px] items-center gap-2 border-b border-border/60 py-2.5 text-[12.5px] transition-colors",
+                  "grid grid-cols-[1.4fr_90px_85px_85px_75px_90px_65px_90px] items-center gap-2 border-b border-border/60 py-2.5 text-[12.5px] transition-colors",
                   isFiltered && "bg-accent/40",
                 )}
               >
@@ -330,7 +322,6 @@ export function UsagePage({
                 <span className="font-mono text-muted-foreground">{compact(r.output)}</span>
                 <span className="font-mono text-muted-foreground">{r.cacheRate.toFixed(0)}%</span>
                 <span className="font-mono font-semibold">{formatCost(r.cost)}</span>
-                <span className="font-mono text-primary font-medium">{formatCost(r.savings)}</span>
                 <span className="font-mono text-muted-foreground">{r.pct}%</span>
                 <div className="flex justify-end">
                   <Button

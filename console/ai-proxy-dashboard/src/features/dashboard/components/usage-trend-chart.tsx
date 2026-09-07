@@ -20,7 +20,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { ConsoleUsageTimeSeriesPoint } from "@/features/dashboard/types"
 import { formatCost, formatCount } from "@/features/dashboard/utils"
 
-type MetricTab = "overview" | "tokens" | "cost" | "requests" | "savings"
+type MetricTab = "overview" | "tokens" | "cost" | "requests"
 
 export function UsageTrendChart({ points }: { points: ConsoleUsageTimeSeriesPoint[] }) {
   const { t } = useTranslation()
@@ -51,20 +51,10 @@ export function UsageTrendChart({ points }: { points: ConsoleUsageTimeSeriesPoin
     },
   } as const
 
-  const savingsChartConfig = {
-    cost_savings: {
-      label: t("chart.costSavings"),
-      color: "var(--color-chart-4)",
-    },
-  } as const
-
   const chartData = points.map((point) => ({
     ...point,
-    cost_savings: point.cost_savings ?? 0,
-    cache_hits: point.cache_hits ?? 0,
     total_cost_label: formatCost(point.total_cost),
     total_tokens_label: formatCount(point.total_tokens),
-    cost_savings_label: formatCost(point.cost_savings ?? 0),
   }))
 
   if (!chartData.length) {
@@ -78,7 +68,6 @@ export function UsageTrendChart({ points }: { points: ConsoleUsageTimeSeriesPoin
   const peakTokens = Math.max(...chartData.map((point) => point.total_tokens), 0)
   const peakCost = Math.max(...chartData.map((point) => point.total_cost), 0)
   const peakRequests = Math.max(...chartData.map((point) => point.requests), 0)
-  const peakSavings = Math.max(...chartData.map((point) => point.cost_savings), 0)
 
   const renderTokenChart = (minHeight = "min-h-[260px]") => (
     <Card className="rounded-none">
@@ -210,44 +199,6 @@ export function UsageTrendChart({ points }: { points: ConsoleUsageTimeSeriesPoin
     </Card>
   )
 
-  const renderSavingsChart = () => (
-    <Card className="rounded-none">
-      <CardHeader className="gap-1 border-b border-border/60 pb-3">
-        <CardTitle className="text-base">{t("chart.savingsTrend")}</CardTitle>
-        <CardDescription className="text-xs">{t("chart.savingsTrendDesc")}</CardDescription>
-      </CardHeader>
-      <CardContent className="pt-4">
-        <ChartContainer config={savingsChartConfig} className="min-h-[300px] w-full">
-          <BarChart data={chartData} margin={{ top: 12, right: 12, bottom: 4, left: 0 }}>
-            <CartesianGrid vertical={false} />
-            <XAxis dataKey="bucket_label" tickLine={false} axisLine={false} minTickGap={24} />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              width={72}
-              tickFormatter={(value: string | number) => formatCost(Number(value))}
-            />
-            <ChartTooltip
-              cursor={false}
-              content={
-                <ChartTooltipContent
-                  formatter={(value) => [formatCost(Number(value)), savingsChartConfig.cost_savings.label]}
-                />
-              }
-            />
-            <ChartLegend content={<ChartLegendContent />} />
-            <Bar
-              dataKey="cost_savings"
-              fill="var(--color-cost_savings)"
-              radius={[0, 0, 0, 0]}
-              maxBarSize={32}
-            />
-          </BarChart>
-        </ChartContainer>
-      </CardContent>
-    </Card>
-  )
-
   return (
     <div className="space-y-4">
       {/* 视图切换 */}
@@ -266,9 +217,6 @@ export function UsageTrendChart({ points }: { points: ConsoleUsageTimeSeriesPoin
             <TabsTrigger value="requests" className="text-xs px-2.5 h-6 rounded-none">
               {t("chart.metricRequests")}
             </TabsTrigger>
-            <TabsTrigger value="savings" className="text-xs px-2.5 h-6 rounded-none">
-              {t("chart.metricSavings")}
-            </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -283,7 +231,6 @@ export function UsageTrendChart({ points }: { points: ConsoleUsageTimeSeriesPoin
       {activeTab === "tokens" && renderTokenChart("min-h-[300px]")}
       {activeTab === "cost" && renderCostChart("min-h-[300px]")}
       {activeTab === "requests" && renderRequestChart()}
-      {activeTab === "savings" && renderSavingsChart()}
 
       {/* 底部指标概览 */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -300,8 +247,8 @@ export function UsageTrendChart({ points }: { points: ConsoleUsageTimeSeriesPoin
           <div className="mt-1 font-mono text-sm font-semibold text-foreground">{formatCount(peakRequests)}</div>
         </div>
         <div className="rounded-none border border-border/60 bg-muted/10 p-3">
-          <div className="text-xs text-muted-foreground">{t("chart.peakSavings")}</div>
-          <div className="mt-1 font-mono text-sm font-semibold text-primary">{formatCost(peakSavings)}</div>
+          <div className="text-xs text-muted-foreground">{t("chart.dataPoints")}</div>
+          <div className="mt-1 font-mono text-sm font-semibold text-foreground">{formatCount(chartData.length)}</div>
         </div>
       </div>
     </div>
