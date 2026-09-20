@@ -90,7 +90,7 @@ const typeLabels: Record<string, string> = {
 // `channelName`. Mirrors the "预置渠道" chip row in LRS Clear 风格五. The first
 // matching preset (by type + baseURL) is shown as selected; falls back to
 // "custom" otherwise.
-type PresetChannel = {
+export type PresetChannel = {
   id: string
   label: string
   type: ProviderFormState["type"]
@@ -101,7 +101,7 @@ type PresetChannel = {
   iconFg: string
 }
 
-const PRESET_CHANNELS: PresetChannel[] = [
+export const PRESET_CHANNELS: PresetChannel[] = [
   {
     id: "openai",
     label: "OpenAI",
@@ -162,13 +162,23 @@ const PRESET_CHANNELS: PresetChannel[] = [
     iconBg: "#f6ece4",
     iconFg: "#d97757",
   },
+  {
+    id: "commandcode",
+    label: "CommandCode",
+    type: "openai",
+    baseUrl: "https://api.commandcode.ai/provider/v1",
+    suggestedName: "commandcode",
+    iconText: "CC",
+    iconBg: "#e0f2fe",
+    iconFg: "#0284c7",
+  },
 ]
 
 function normalizeBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, "").toLowerCase()
 }
 
-function matchPreset(type: string, baseUrl: string): PresetChannel | null {
+export function matchPreset(type: string, baseUrl: string): PresetChannel | null {
   const target = normalizeBaseUrl(baseUrl)
   if (!target) return null
   return (
