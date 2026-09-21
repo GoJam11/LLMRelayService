@@ -126,4 +126,74 @@ describe('buildCatalogMapsFromModelsDev', () => {
 
     expect(contextMap.get('claude-opus-4-6')).toBe(200000);
   });
+
+  it('correctly parses reasoning capabilities and effort levels from models.dev', () => {
+    const { reasoningMap } = buildCatalogMapsFromModelsDev({
+      openai: {
+        models: {
+          'o1': {
+            cost: { input: 15, output: 60 },
+            reasoning: true,
+            reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }],
+          },
+          'gpt-4o': {
+            cost: { input: 2.5, output: 10 },
+            reasoning: false,
+          },
+        },
+      },
+    });
+
+    expect(reasoningMap.get('o1')).toEqual({
+      reasoning: true,
+      levels: ['low', 'medium', 'high'],
+    });
+    expect(reasoningMap.get('gpt-4o')).toEqual({
+      reasoning: false,
+      levels: undefined,
+    });
+  });
 });
+
+describe('reasoning heuristics and OpenAI adapter', () => {
+  it('identifies likely reasoning and non-reasoning models', () => {
+    const { isLikelyReasoningModelId, isKnownNonReasoningOpenAiModel } = require('../src/model-catalog');
+
+    expect(isLikelyReasoningModelId('o1')).toBe(true);
+    expect(isLikelyReasoningModelId('openai/o3-mini')).toBe(true);
+    expect(isLikelyReasoningModelId('deepseek-reasoner')).toBe(true);
+    expect(isLikelyReasoningModelId('deepseek-v4.1-flash')).toBe(true);
+    expect(isLikelyReasoningModelId('muse-spark-1.3')).toBe(true);
+    expect(isLikelyReasoningModelId('claude-3-7-sonnet-20250219')).toBe(true);
+
+    expect(isKnownNonReasoningOpenAiModel('gpt-4o')).toBe(true);
+    expect(isKnownNonReasoningOpenAiModel('openai/gpt-4o-mini')).toBe(true);
+    expect(isKnownNonReasoningOpenAiModel('gpt-3.5-turbo')).toBe(true);
+    expect(isKnownNonReasoningOpenAiModel('o1')).toBe(false);
+  });
+
+  it('strips reasoning_effort for non-reasoning models in openai adapter prepareRequest', () => {
+    const { openaiProvider } = require('../src/providers/openai');
+
+    // For gpt-4o (non-reasoning), reasoning_effort should be stripped
+    const res1 = openaiProvider.prepareRequest({
+      method: 'POST',
+      rawBodyText: JSON.stringify({ model: 'gpt-4o', reasoning_effort: 'high', messages: [] }),
+      sourceHeaders: new Headers(),
+    });
+    const parsed1 = JSON.parse(res1.body!);
+    expect(parsed1.reasoning_effort).toBeUndefined();
+    expect(parsed1.model).toBe('gpt-4o');
+
+    // For o1 (reasoning), reasoning_effort should be preserved
+    const res2 = openaiProvider.prepareRequest({
+      method: 'POST',
+      rawBodyText: JSON.stringify({ model: 'o1', reasoning_effort: 'high', messages: [] }),
+      sourceHeaders: new Headers(),
+    });
+    const parsed2 = JSON.parse(res2.body!);
+    expect(parsed2.reasoning_effort).toBe('high');
+    expect(parsed2.model).toBe('o1');
+  });
+});
+

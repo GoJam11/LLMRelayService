@@ -1,6 +1,7 @@
 import type { DetectedRequestKind, PreparedRequestResult, ProviderAdapter, ProviderPrepareRequestOptions, UsageData } from './types';
 import { summarizeJsonPayload } from './summary';
 import type { RouteAuthConfig } from '../config';
+import { isKnownNonReasoningOpenAiModel, lookupModelReasoning } from '../model-catalog';
 
 function createEmptyUsage(): UsageData {
   return {
@@ -53,9 +54,19 @@ function prepareRequest(options: ProviderPrepareRequestOptions): PreparedRequest
 
   try {
     const json = JSON.parse(rawBodyText) as Record<string, unknown>;
+    const requestModel = typeof json.model === 'string' ? json.model : 'unknown';
+
+    let body = rawBodyText;
+    if (json.reasoning_effort !== undefined) {
+      if (isKnownNonReasoningOpenAiModel(requestModel) || !lookupModelReasoning(requestModel).reasoning) {
+        delete json.reasoning_effort;
+        body = JSON.stringify(json);
+      }
+    }
+
     return {
-      requestModel: typeof json.model === 'string' ? json.model : 'unknown',
-      body: rawBodyText,
+      requestModel,
+      body,
     };
   } catch {
     return {

@@ -4,12 +4,18 @@ const MODELS_DEV_URL = 'https://models.dev/api.json';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 let contextCache: Map<string, number> | null = null;
+let reasoningCache: Map<string, ModelReasoningInfo> | null = null;
 let cacheLoadedAt = 0;
 // Shared fetchedAt across context + pricing, set by whoever fetched last
 let networkFetchedAt = 0;
 
+export interface ModelReasoningInfo {
+  reasoning: boolean;
+  levels?: string[];
+}
+
 // A shared in-flight promise so model-catalog and pricing share one fetch
-let sharedFetchPromise: Promise<{ contextMap: Map<string, number>; pricingMap: Map<string, ModelPricing> } | null> | null = null;
+let sharedFetchPromise: Promise<{ contextMap: Map<string, number>; pricingMap: Map<string, ModelPricing>; reasoningMap: Map<string, ModelReasoningInfo> } | null> | null = null;
 
 /**
  * models.dev 用同一个裸模型 ID（如 `claude-opus-4-6`）同时挂在 170+ 个 provider 下，
@@ -47,6 +53,8 @@ interface ModelCandidate {
   providerId: string;
   context?: number;
   cost?: ModelPricing;
+  reasoning?: boolean;
+  reasoningLevels?: string[];
 }
 
 function normalizePrice(value: unknown): number | undefined {
@@ -123,17 +131,70 @@ function backfillCachePricing(chosen: ModelPricing, candidates: ModelCandidate[]
   };
 }
 
+function parseModelReasoning(raw: unknown): { reasoning?: boolean; levels?: string[] } {
+  if (!raw || typeof raw !== 'object') return {};
+  const m = raw as Record<string, unknown>;
+  let reasoning: boolean | undefined = typeof m.reasoning === 'boolean' ? m.reasoning : undefined;
+  let levels: string[] | undefined;
+  if (Array.isArray(m.reasoning_options)) {
+    for (const opt of m.reasoning_options) {
+      if (opt && typeof opt === 'object' && (opt as Record<string, unknown>).type === 'effort') {
+        const vals = (opt as Record<string, unknown>).values;
+        if (Array.isArray(vals)) {
+          levels = vals.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+        }
+      }
+    }
+  }
+  if (levels && levels.length > 0 && reasoning === undefined) {
+    reasoning = true;
+  }
+  return { reasoning, levels };
+}
+
+export function isLikelyReasoningModelId(modelId: string): boolean {
+  const normalized = modelId.toLowerCase();
+  const name = normalized.includes('/') ? normalized.split('/').slice(1).join('/') : normalized;
+  return (
+    /(^|[-_./])(o1|o3|o4|r1|qwq|qvq)([-_./]|$)/i.test(name) ||
+    /thinking/i.test(name) ||
+    /reason(er|ing)/i.test(name) ||
+    /claude-3[.-]7/i.test(name) ||
+    /muse-spark/i.test(name) ||
+    /deepseek-(v4|r1)/i.test(name)
+  );
+}
+
+export function isKnownNonReasoningOpenAiModel(modelId: string): boolean {
+  const normalized = modelId.toLowerCase();
+  const name = normalized.includes('/') ? normalized.split('/').slice(1).join('/') : normalized;
+  if (
+    name.startsWith('gpt-4o') ||
+    name.startsWith('gpt-4-') ||
+    name === 'gpt-4' ||
+    name.startsWith('gpt-3.5') ||
+    name.startsWith('chatgpt-4o') ||
+    name.startsWith('dall-e') ||
+    name.startsWith('text-embedding')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * 把 models.dev 的 `{ provider: { models: { modelId: {...} } } }` 结构压平成按模型 ID 索引的
- * context / pricing 两张表，同一个模型 ID 出现在多个 provider 时按可信度择优并补齐缓存价格。
+ * context / pricing / reasoning 三张表，同一个模型 ID 出现在多个 provider 时按可信度择优并补齐缓存价格。
  */
 export function buildCatalogMapsFromModelsDev(data: unknown): {
   contextMap: Map<string, number>;
   pricingMap: Map<string, ModelPricing>;
+  reasoningMap: Map<string, ModelReasoningInfo>;
 } {
   const contextMap = new Map<string, number>();
   const pricingMap = new Map<string, ModelPricing>();
-  if (!data || typeof data !== 'object') return { contextMap, pricingMap };
+  const reasoningMap = new Map<string, ModelReasoningInfo>();
+  if (!data || typeof data !== 'object') return { contextMap, pricingMap, reasoningMap };
 
   const candidates = new Map<string, ModelCandidate[]>();
   for (const [providerId, provider] of Object.entries(data as Record<string, unknown>)) {
@@ -145,13 +206,16 @@ export function buildCatalogMapsFromModelsDev(data: unknown): {
       const m = model as Record<string, unknown>;
       const context = parseModelContext(m.limit);
       const cost = parseModelCost(m.cost);
-      if (context == null && cost == null) continue;
+      const { reasoning, levels } = parseModelReasoning(m);
+      if (context == null && cost == null && reasoning === undefined) continue;
 
       const list = candidates.get(modelId);
       const candidate: ModelCandidate = {
         providerId,
         ...(context != null ? { context } : {}),
         ...(cost != null ? { cost } : {}),
+        ...(reasoning !== undefined ? { reasoning } : {}),
+        ...(levels != null ? { reasoningLevels: levels } : {}),
       };
       if (list) list.push(candidate);
       else candidates.set(modelId, [candidate]);
@@ -173,12 +237,21 @@ export function buildCatalogMapsFromModelsDev(data: unknown): {
 
     const cost = best.cost ?? ranked.find((candidate) => candidate.cost != null)?.cost;
     if (cost != null) pricingMap.set(modelId, backfillCachePricing(cost, ranked));
+
+    const reasoning = best.reasoning ?? ranked.find((candidate) => candidate.reasoning !== undefined)?.reasoning;
+    const levels = best.reasoningLevels ?? ranked.find((candidate) => candidate.reasoningLevels != null)?.reasoningLevels;
+    if (reasoning !== undefined || levels != null) {
+      reasoningMap.set(modelId, {
+        reasoning: reasoning ?? isLikelyReasoningModelId(modelId),
+        levels: levels && levels.length > 0 ? levels : (reasoning ? ['low', 'medium', 'high', 'xhigh', 'max'] : undefined),
+      });
+    }
   }
 
-  return { contextMap, pricingMap };
+  return { contextMap, pricingMap, reasoningMap };
 }
 
-export async function fetchModelsDevData(): Promise<{ contextMap: Map<string, number>; pricingMap: Map<string, ModelPricing> } | null> {
+export async function fetchModelsDevData(): Promise<{ contextMap: Map<string, number>; pricingMap: Map<string, ModelPricing>; reasoningMap: Map<string, ModelReasoningInfo> } | null> {
   if (sharedFetchPromise) return sharedFetchPromise;
 
   sharedFetchPromise = (async () => {
@@ -201,10 +274,12 @@ async function refreshFromNetwork(): Promise<void> {
   const result = await fetchModelsDevData();
   if (!result) {
     if (contextCache === null) contextCache = new Map();
+    if (reasoningCache === null) reasoningCache = new Map();
     return;
   }
   const now = Date.now();
   contextCache = result.contextMap;
+  reasoningCache = result.reasoningMap;
   cacheLoadedAt = now;
   networkFetchedAt = now;
   // Persist to DB in background (don't await)
@@ -237,4 +312,18 @@ export async function ensureModelCatalogLoaded(): Promise<void> {
  */
 export function lookupModelContext(modelId: string): number | undefined {
   return contextCache?.get(modelId);
+}
+
+/**
+ * Returns the reasoning capability and supported effort levels for the given model ID.
+ * Falls back to name-based heuristics if models.dev catalog does not define it.
+ */
+export function lookupModelReasoning(modelId: string): ModelReasoningInfo {
+  const fromCache = reasoningCache?.get(modelId);
+  if (fromCache) return fromCache;
+  const isReasoning = isLikelyReasoningModelId(modelId);
+  return {
+    reasoning: isReasoning,
+    levels: isReasoning ? ['low', 'medium', 'high', 'xhigh', 'max'] : undefined,
+  };
 }

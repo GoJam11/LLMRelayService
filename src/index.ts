@@ -17,7 +17,7 @@ import { isModelAllowed } from './api-key-model-filter';
 import { recordRequestPerfSample, trackRequestStart, trackRequestEnd } from './perf-monitor';
 import { elapsedPerfMs, getMaxPerfPhase, nowPerfMs, roundPerfMs, shouldLogRequestPerf } from './perf-detail';
 import { PAYLOAD_LOG_LIMIT_BYTES } from './logging-constants';
-import { ensureModelCatalogLoaded, lookupModelContext } from './model-catalog';
+import { ensureModelCatalogLoaded, lookupModelContext, lookupModelReasoning } from './model-catalog';
 import { initializeTokenEstimator } from './token-estimator';
 import { applyCorsHeaders, createCorsPreflightResponse, withCorsHeaders } from './cors';
 import { getGatewayTimeoutSettings, selectUpstreamFirstByteTimeoutMs } from './gateway-timeouts';
@@ -262,11 +262,19 @@ function buildOpenAiModelsPayload(type?: UpstreamType) {
     object: 'list',
     data: models.map((model) => {
       const contextWindow = model.context ?? lookupModelContext(model.id);
+      const reasoningInfo = lookupModelReasoning(model.id);
       return {
         id: model.id,
         object: 'model',
         created: SYNTHETIC_MODEL_CREATED,
         owned_by: 'ai-proxy',
+        reasoning: reasoningInfo.reasoning,
+        capabilities: {
+          reasoning: reasoningInfo.reasoning,
+          ...(reasoningInfo.levels && reasoningInfo.levels.length > 0
+            ? { reasoning_levels: reasoningInfo.levels }
+            : {}),
+        },
         ...(contextWindow !== undefined ? { context_window: contextWindow } : {}),
       };
     }),
