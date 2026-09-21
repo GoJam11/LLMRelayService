@@ -129,6 +129,7 @@ export const modelCatalogCache = pgTable('model_catalog_cache', {
   modelId: text('model_id').primaryKey(),
   contextWindow: integer('context_window'),
   pricingJson: text('pricing_json'),
+  reasoningJson: text('reasoning_json'),
   fetchedAt: bigint('fetched_at', { mode: 'number' }).notNull(),
 });
 
@@ -138,6 +139,7 @@ export const modelMetadataOverrides = pgTable('model_metadata_overrides', {
   modelId: text('model_id').notNull(),
   contextWindow: integer('context_window'),
   pricingJson: text('pricing_json'),
+  reasoningJson: text('reasoning_json'),
   createdAt: bigint('created_at', { mode: 'number' }).notNull(),
   updatedAt: bigint('updated_at', { mode: 'number' }).notNull(),
 }, (table) => ({

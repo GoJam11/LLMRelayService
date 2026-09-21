@@ -753,6 +753,8 @@ export interface ModelInfo {
   channelName: string;
   type: UpstreamType;
   context?: number;
+  reasoning?: boolean;
+  reasoningLevels?: string[];
 }
 
 export function resolveRoute(pathname: string, search: string): RouteResult | null {
@@ -899,6 +901,8 @@ export function getModels(): ModelInfo[] {
         channelName,
         type: routeType,
         context: model.context,
+        reasoning: typeof model.reasoning === 'boolean' ? model.reasoning : undefined,
+        reasoningLevels: Array.isArray(model.reasoning_levels) ? (model.reasoning_levels as string[]) : undefined,
       });
     }
   }
@@ -924,6 +928,8 @@ export function getModels(): ModelInfo[] {
       channelName: 'virtual-route',
       type: routeType,
       context: firstRoute.matchedModel?.context,
+      reasoning: typeof firstRoute.matchedModel?.reasoning === 'boolean' ? firstRoute.matchedModel.reasoning : undefined,
+      reasoningLevels: Array.isArray(firstRoute.matchedModel?.reasoning_levels) ? (firstRoute.matchedModel.reasoning_levels as string[]) : undefined,
     });
   }
   return models;
@@ -947,6 +953,8 @@ export function getChannelModels(): ModelInfo[] {
         channelName,
         type: routeType,
         context: model.context,
+        reasoning: typeof model.reasoning === 'boolean' ? model.reasoning : undefined,
+        reasoningLevels: Array.isArray(model.reasoning_levels) ? (model.reasoning_levels as string[]) : undefined,
       });
     }
   }

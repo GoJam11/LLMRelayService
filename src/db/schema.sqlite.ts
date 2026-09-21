@@ -133,6 +133,7 @@ export const modelCatalogCache = sqliteTable('model_catalog_cache', {
   modelId: text('model_id').primaryKey(),
   contextWindow: integer('context_window'),
   pricingJson: text('pricing_json'),
+  reasoningJson: text('reasoning_json'),
   fetchedAt: integer('fetched_at', { mode: 'number' }).notNull(),
 });
 
@@ -142,6 +143,7 @@ export const modelMetadataOverrides = sqliteTable('model_metadata_overrides', {
   modelId: text('model_id').notNull(),
   contextWindow: integer('context_window'),
   pricingJson: text('pricing_json'),
+  reasoningJson: text('reasoning_json'),
   createdAt: integer('created_at', { mode: 'number' }).notNull(),
   updatedAt: integer('updated_at', { mode: 'number' }).notNull(),
 }, (table) => ({

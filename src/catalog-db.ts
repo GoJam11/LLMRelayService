@@ -14,10 +14,16 @@ export interface ModelPricing {
   cache_write?: number;
 }
 
+export interface ModelReasoningInfo {
+  reasoning: boolean;
+  levels?: string[];
+}
+
 export interface CatalogEntry {
   modelId: string;
   contextWindow?: number;
   pricing?: ModelPricing;
+  reasoning?: ModelReasoningInfo;
   fetchedAt: number;
 }
 
@@ -28,6 +34,7 @@ export interface CatalogEntry {
 export async function loadCatalogFromDb(): Promise<{
   contextMap: Map<string, number>;
   pricingMap: Map<string, ModelPricing>;
+  reasoningMap: Map<string, ModelReasoningInfo>;
   fetchedAt: number;
 }> {
   try {
@@ -35,6 +42,7 @@ export async function loadCatalogFromDb(): Promise<{
     const rows = await db.select().from(modelCatalogCache);
     const contextMap = new Map<string, number>();
     const pricingMap = new Map<string, ModelPricing>();
+    const reasoningMap = new Map<string, ModelReasoningInfo>();
     let maxFetchedAt = 0;
     for (const row of rows) {
       if (row.contextWindow != null) {
@@ -47,12 +55,19 @@ export async function loadCatalogFromDb(): Promise<{
           // ignore corrupt entries
         }
       }
+      if (row.reasoningJson) {
+        try {
+          reasoningMap.set(row.modelId, JSON.parse(row.reasoningJson) as ModelReasoningInfo);
+        } catch {
+          // ignore corrupt entries
+        }
+      }
       if (row.fetchedAt > maxFetchedAt) maxFetchedAt = row.fetchedAt;
     }
-    return { contextMap, pricingMap, fetchedAt: maxFetchedAt };
+    return { contextMap, pricingMap, reasoningMap, fetchedAt: maxFetchedAt };
   } catch (err) {
     console.warn('[catalog-db] Failed to load from DB:', err);
-    return { contextMap: new Map(), pricingMap: new Map(), fetchedAt: 0 };
+    return { contextMap: new Map(), pricingMap: new Map(), reasoningMap: new Map(), fetchedAt: 0 };
   }
 }
 
@@ -62,17 +77,23 @@ export async function loadCatalogFromDb(): Promise<{
 export async function saveCatalogToDb(
   contextMap: Map<string, number>,
   pricingMap: Map<string, ModelPricing>,
-  fetchedAt: number,
+  reasoningMap?: Map<string, ModelReasoningInfo>,
+  fetchedAt: number = Date.now(),
 ): Promise<void> {
   try {
     // Build combined set of all modelIds
-    const allModelIds = new Set([...contextMap.keys(), ...pricingMap.keys()]);
+    const allModelIds = new Set([
+      ...contextMap.keys(),
+      ...pricingMap.keys(),
+      ...(reasoningMap ? reasoningMap.keys() : []),
+    ]);
     if (allModelIds.size === 0) return;
 
     const rows = Array.from(allModelIds).map((modelId) => ({
       modelId,
       contextWindow: contextMap.get(modelId) ?? null,
       pricingJson: pricingMap.has(modelId) ? JSON.stringify(pricingMap.get(modelId)) : null,
+      reasoningJson: reasoningMap?.has(modelId) ? JSON.stringify(reasoningMap.get(modelId)) : null,
       fetchedAt,
     }));
 
@@ -91,6 +112,7 @@ export async function saveCatalogToDb(
           set: {
             contextWindow: sql`excluded.context_window`,
             pricingJson: sql`excluded.pricing_json`,
+            reasoningJson: sql`excluded.reasoning_json`,
             fetchedAt: sql`excluded.fetched_at`,
           },
         });

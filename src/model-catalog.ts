@@ -1,4 +1,6 @@
-import { loadCatalogFromDb, saveCatalogToDb, type ModelPricing } from './catalog-db';
+import { loadCatalogFromDb, saveCatalogToDb, type ModelPricing, type ModelReasoningInfo } from './catalog-db';
+
+export type { ModelReasoningInfo };
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -8,11 +10,6 @@ let reasoningCache: Map<string, ModelReasoningInfo> | null = null;
 let cacheLoadedAt = 0;
 // Shared fetchedAt across context + pricing, set by whoever fetched last
 let networkFetchedAt = 0;
-
-export interface ModelReasoningInfo {
-  reasoning: boolean;
-  levels?: string[];
-}
 
 // A shared in-flight promise so model-catalog and pricing share one fetch
 let sharedFetchPromise: Promise<{ contextMap: Map<string, number>; pricingMap: Map<string, ModelPricing>; reasoningMap: Map<string, ModelReasoningInfo> } | null> | null = null;
@@ -141,7 +138,7 @@ function parseModelReasoning(raw: unknown): { reasoning?: boolean; levels?: stri
       if (opt && typeof opt === 'object' && (opt as Record<string, unknown>).type === 'effort') {
         const vals = (opt as Record<string, unknown>).values;
         if (Array.isArray(vals)) {
-          levels = vals.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+          levels = vals.filter((v): v is string => typeof v === 'string' && v.trim().length > 0 && v.trim().toLowerCase() !== 'none');
         }
       }
     }
@@ -207,9 +204,8 @@ export function buildCatalogMapsFromModelsDev(data: unknown): {
       const context = parseModelContext(m.limit);
       const cost = parseModelCost(m.cost);
       const { reasoning, levels } = parseModelReasoning(m);
-      if (context == null && cost == null && reasoning === undefined) continue;
+      if (context == null && cost == null && reasoning === undefined && levels == null) continue;
 
-      const list = candidates.get(modelId);
       const candidate: ModelCandidate = {
         providerId,
         ...(context != null ? { context } : {}),
@@ -217,8 +213,23 @@ export function buildCatalogMapsFromModelsDev(data: unknown): {
         ...(reasoning !== undefined ? { reasoning } : {}),
         ...(levels != null ? { reasoningLevels: levels } : {}),
       };
-      if (list) list.push(candidate);
-      else candidates.set(modelId, [candidate]);
+
+      const targetKeys = new Set<string>([modelId]);
+      if (typeof m.id === 'string' && m.id.trim()) {
+        targetKeys.add(m.id.trim());
+      }
+      for (const k of Array.from(targetKeys)) {
+        if (k.includes('/')) {
+          const bare = k.split('/').slice(1).join('/');
+          if (bare) targetKeys.add(bare);
+        }
+      }
+
+      for (const key of targetKeys) {
+        const list = candidates.get(key);
+        if (list) list.push(candidate);
+        else candidates.set(key, [candidate]);
+      }
     }
   }
 
@@ -240,10 +251,11 @@ export function buildCatalogMapsFromModelsDev(data: unknown): {
 
     const reasoning = best.reasoning ?? ranked.find((candidate) => candidate.reasoning !== undefined)?.reasoning;
     const levels = best.reasoningLevels ?? ranked.find((candidate) => candidate.reasoningLevels != null)?.reasoningLevels;
-    if (reasoning !== undefined || levels != null) {
+    if (reasoning !== undefined || (levels != null && levels.length > 0)) {
+      const isReasoning = reasoning ?? (levels != null && levels.length > 0);
       reasoningMap.set(modelId, {
-        reasoning: reasoning ?? isLikelyReasoningModelId(modelId),
-        levels: levels && levels.length > 0 ? levels : (reasoning ? ['low', 'medium', 'high', 'xhigh', 'max'] : undefined),
+        reasoning: isReasoning,
+        levels: levels && levels.length > 0 ? levels : (isReasoning ? ['low', 'medium', 'high', 'xhigh', 'max'] : undefined),
       });
     }
   }
@@ -283,24 +295,32 @@ async function refreshFromNetwork(): Promise<void> {
   cacheLoadedAt = now;
   networkFetchedAt = now;
   // Persist to DB in background (don't await)
-  saveCatalogToDb(result.contextMap, result.pricingMap, now).catch(() => {});
+  saveCatalogToDb(result.contextMap, result.pricingMap, result.reasoningMap, now).catch(() => {});
 }
 
 /**
- * Attempt to warm the in-memory context cache from DB.
+ * Attempt to warm the in-memory context and reasoning caches from DB.
  * Returns true if DB had fresh enough data (within TTL).
  */
 export async function warmModelCatalogFromDb(): Promise<boolean> {
-  const { contextMap, fetchedAt } = await loadCatalogFromDb();
+  const { contextMap, reasoningMap, fetchedAt } = await loadCatalogFromDb();
   if (contextMap.size > 0) {
     contextCache = contextMap;
     cacheLoadedAt = fetchedAt;
   }
-  return contextMap.size > 0 && Date.now() - fetchedAt < CACHE_TTL_MS;
+  if (reasoningMap.size > 0) {
+    reasoningCache = reasoningMap;
+  }
+  return contextMap.size > 0 && reasoningMap.size > 0 && Date.now() - fetchedAt < CACHE_TTL_MS;
 }
 
 export async function ensureModelCatalogLoaded(): Promise<void> {
-  if (contextCache !== null && Date.now() - cacheLoadedAt < CACHE_TTL_MS) {
+  if (
+    contextCache !== null &&
+    reasoningCache !== null &&
+    reasoningCache.size > 0 &&
+    Date.now() - cacheLoadedAt < CACHE_TTL_MS
+  ) {
     return;
   }
   await refreshFromNetwork();
@@ -316,14 +336,30 @@ export function lookupModelContext(modelId: string): number | undefined {
 
 /**
  * Returns the reasoning capability and supported effort levels for the given model ID.
- * Falls back to name-based heuristics if models.dev catalog does not define it.
+ * Derives exclusively from exact catalog metadata (models.dev + DB cache).
+ * Returns { reasoning: false } when not defined in the catalog.
  */
 export function lookupModelReasoning(modelId: string): ModelReasoningInfo {
   const fromCache = reasoningCache?.get(modelId);
   if (fromCache) return fromCache;
-  const isReasoning = isLikelyReasoningModelId(modelId);
+
+  if (modelId.includes('/')) {
+    const bareId = modelId.split('/').slice(1).join('/');
+    const fromBare = reasoningCache?.get(bareId);
+    if (fromBare) return fromBare;
+  } else {
+    for (const prefix of FIRST_PARTY_PROVIDERS) {
+      const fromPrefixed = reasoningCache?.get(`${prefix}/${modelId}`);
+      if (fromPrefixed) return fromPrefixed;
+    }
+  }
+
   return {
-    reasoning: isReasoning,
-    levels: isReasoning ? ['low', 'medium', 'high', 'xhigh', 'max'] : undefined,
+    reasoning: false,
+    levels: undefined,
   };
+}
+
+export function setReasoningCacheForTest(map: Map<string, ModelReasoningInfo> | null): void {
+  reasoningCache = map;
 }

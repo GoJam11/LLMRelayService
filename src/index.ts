@@ -263,16 +263,18 @@ function buildOpenAiModelsPayload(type?: UpstreamType) {
     data: models.map((model) => {
       const contextWindow = model.context ?? lookupModelContext(model.id);
       const reasoningInfo = lookupModelReasoning(model.id);
+      const isReasoning = model.reasoning ?? reasoningInfo.reasoning;
+      const reasoningLevels = model.reasoningLevels ?? reasoningInfo.levels;
       return {
         id: model.id,
         object: 'model',
         created: SYNTHETIC_MODEL_CREATED,
         owned_by: 'ai-proxy',
-        reasoning: reasoningInfo.reasoning,
+        reasoning: isReasoning,
         capabilities: {
-          reasoning: reasoningInfo.reasoning,
-          ...(reasoningInfo.levels && reasoningInfo.levels.length > 0
-            ? { reasoning_levels: reasoningInfo.levels }
+          reasoning: isReasoning,
+          ...(reasoningLevels && reasoningLevels.length > 0
+            ? { reasoning_levels: reasoningLevels }
             : {}),
         },
         ...(contextWindow !== undefined ? { context_window: contextWindow } : {}),

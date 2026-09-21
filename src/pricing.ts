@@ -98,7 +98,7 @@ async function fetchModelsDevPricing(): Promise<Map<string, ModelPricing>> {
     pricingCache = result.pricingMap;
     cacheTimestamp = now;
     // DB persistence is handled by model-catalog side
-    saveCatalogToDb(result.contextMap, result.pricingMap, now).catch(() => {});
+    saveCatalogToDb(result.contextMap, result.pricingMap, result.reasoningMap, now).catch(() => {});
     console.log(`[pricing] Loaded ${result.pricingMap.size} model prices from Models.dev`);
   }
 

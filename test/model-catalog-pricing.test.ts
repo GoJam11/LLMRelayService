@@ -177,6 +177,12 @@ describe('reasoning heuristics and OpenAI adapter', () => {
 
   it('strips reasoning_effort for non-reasoning models in openai adapter prepareRequest', () => {
     const { openaiProvider } = require('../src/providers/openai');
+    const { setReasoningCacheForTest } = require('../src/model-catalog');
+
+    setReasoningCacheForTest(new Map([
+      ['o1', { reasoning: true, levels: ['low', 'medium', 'high'] }],
+      ['gpt-4o', { reasoning: false }],
+    ]));
 
     // For gpt-4o (non-reasoning), reasoning_effort should be stripped
     const res1 = openaiProvider.prepareRequest({
@@ -197,6 +203,28 @@ describe('reasoning heuristics and OpenAI adapter', () => {
     const parsed2 = JSON.parse(res2.body!);
     expect(parsed2.reasoning_effort).toBe('high');
     expect(parsed2.model).toBe('o1');
+  });
+
+  it('resolves reasoning capability from catalog without regex', () => {
+    const { lookupModelReasoning, setReasoningCacheForTest } = require('../src/model-catalog');
+
+    setReasoningCacheForTest(new Map([
+      ['gpt-5.6-sol', { reasoning: true, levels: ['low', 'medium', 'high', 'xhigh', 'max'] }],
+      ['gpt-4o', { reasoning: false }],
+    ]));
+
+    // Exact model matches
+    expect(lookupModelReasoning('gpt-5.6-sol').reasoning).toBe(true);
+    expect(lookupModelReasoning('gpt-5.6-sol').levels).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+
+    // Prefix stripping match: openai/gpt-5.6-sol matches gpt-5.6-sol
+    expect(lookupModelReasoning('openai/gpt-5.6-sol').reasoning).toBe(true);
+
+    // Non-reasoning model
+    expect(lookupModelReasoning('gpt-4o').reasoning).toBe(false);
+
+    // Unknown uncataloged model: defaults to false (no regex guessing)
+    expect(lookupModelReasoning('custom-model-without-catalog').reasoning).toBe(false);
   });
 });
 

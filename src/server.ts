@@ -198,8 +198,8 @@ if (!dbCatalogFresh) {
   fetchModelsDevData().then((result) => {
     if (result) {
       const now = Date.now();
-      saveCatalogToDb(result.contextMap, result.pricingMap, now).catch(() => {});
-      console.log(`[catalog] Background refresh: ${result.contextMap.size} context + ${result.pricingMap.size} pricing entries saved`);
+      saveCatalogToDb(result.contextMap, result.pricingMap, result.reasoningMap, now).catch(() => {});
+      console.log(`[catalog] Background refresh: ${result.contextMap.size} context + ${result.pricingMap.size} pricing + ${result.reasoningMap.size} reasoning entries saved`);
     }
   }).catch(() => {});
 }
