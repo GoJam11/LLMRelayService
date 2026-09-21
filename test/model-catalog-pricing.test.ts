@@ -165,6 +165,9 @@ describe('reasoning heuristics and OpenAI adapter', () => {
     expect(isLikelyReasoningModelId('deepseek-v4.1-flash')).toBe(true);
     expect(isLikelyReasoningModelId('muse-spark-1.3')).toBe(true);
     expect(isLikelyReasoningModelId('claude-3-7-sonnet-20250219')).toBe(true);
+    expect(isLikelyReasoningModelId('gpt-5.6-sol')).toBe(true);
+    expect(isLikelyReasoningModelId('gpt-5')).toBe(true);
+    expect(isLikelyReasoningModelId('openai/gpt-5-mini')).toBe(true);
 
     expect(isKnownNonReasoningOpenAiModel('gpt-4o')).toBe(true);
     expect(isKnownNonReasoningOpenAiModel('openai/gpt-4o-mini')).toBe(true);

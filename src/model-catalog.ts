@@ -156,7 +156,7 @@ export function isLikelyReasoningModelId(modelId: string): boolean {
   const normalized = modelId.toLowerCase();
   const name = normalized.includes('/') ? normalized.split('/').slice(1).join('/') : normalized;
   return (
-    /(^|[-_./])(o1|o3|o4|r1|qwq|qvq)([-_./]|$)/i.test(name) ||
+    /(^|[-_./])(o1|o3|o4|r1|qwq|qvq|gpt-5|sol)([-_./]|$)/i.test(name) ||
     /thinking/i.test(name) ||
     /reason(er|ing)/i.test(name) ||
     /claude-3[.-]7/i.test(name) ||
